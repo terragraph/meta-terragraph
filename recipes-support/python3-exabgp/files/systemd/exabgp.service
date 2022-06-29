@@ -1,0 +1,19 @@
+[Unit]
+Description=ExaBGP
+Documentation=man:exabgp(1)
+Documentation=man:exabgp.conf(5)
+Documentation=https://github.com/Exa-Networks/exabgp/wiki
+# TODO: Start after exabgp config generation
+After=network.target
+ConditionPathExists=/data/etc/exabgp/exabgp.conf
+
+[Service]
+Environment=exabgp_daemon_daemonize=false
+ExecStartPre=-mkdir -p /run/exabgp
+ExecStartPre=-mkfifo -m 0666 /run/exabgp/exabgp.in
+ExecStartPre=-mkfifo -m 0666 /run/exabgp/exabgp.out
+ExecStart=/usr/sbin/exabgp --env /etc/exabgp/exabgp.env /data/etc/exabgp/exabgp.conf
+ExecReload=/bin/kill -USR1 $MAINPID
+
+[Install]
+WantedBy=multi-user.target

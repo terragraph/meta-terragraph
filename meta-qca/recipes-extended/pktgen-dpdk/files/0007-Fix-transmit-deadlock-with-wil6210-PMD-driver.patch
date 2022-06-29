@@ -1,0 +1,44 @@
+From eccd409a640bfa3cff2dbea40023414dd5942b5a Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Thu, 5 Dec 2019 19:02:45 -0800
+Subject: [PATCH] Fix transmit deadlock, with wil6210 PMD driver.
+
+---
+ app/pktgen.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/app/pktgen.c b/app/pktgen.c
+index 0fa9f44..918dd28 100644
+--- a/app/pktgen.c
++++ b/app/pktgen.c
+@@ -334,7 +334,12 @@ pktgen_send_burst(port_info_t *info, uint16_t qid)
+ 			pktgen_do_tx_tap(info, pkts, ret);
+ 
+ 		pkts += ret;
+-		cnt -= ret;
++		/* wil6210 PMD driver cannot retry sending packets, until it gave a
++		 * a chance to the transmit completion handler to run.
++		 * As this handler runs in the poll loop, we need to give up
++		 * transmitting to let it run, hence drop the packets.
++		 */
++		cnt = 0;
+ 	}
+ 
+ special_send:
+@@ -359,7 +364,12 @@ special_send:
+ 			pktgen_do_tx_tap(info, pkts, ret);
+ 
+ 		pkts += ret;
+-		cnt -= ret;
++		/* wil6210 PMD driver cannot retry sending packets, until it gave a
++		 * a chance to the transmit completion handler to run.
++		 * As this handler runs in the poll loop, we need to give up
++		 * transmitting to let it run, hence drop the packets.
++		 */
++		cnt = 0;
+ 	}
+ }
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,21 @@
+#!/bin/sh
+E2E_ROOTFS="$1"
+if [ -z "${E2E_ROOTFS}" ] || [ ! -d "${E2E_ROOTFS}" ]; then
+  echo "You must specify the E2E rootfs path as the first argument"
+  exit 1
+fi
+
+# use the resolved symlink for the rootfs
+E2E_ROOTFS=$(realpath $E2E_ROOTFS)
+# unbind /dev/shm
+umount --lazy ${E2E_ROOTFS}/dev/shm
+# unmount /data if no other process is using the rootfs
+if [ -z "$(ps aux | grep -E -e "${E2E_ROOTFS}.*\.start$")" ]; then
+  # loop over 'umount' because multiple scripts could have mounted /data
+  while [ ! -z "$(mount | grep ${E2E_ROOTFS}/data)" ]; do
+    umount -v "${E2E_ROOTFS}/data" || (echo "Unmount failed, sleeping 1s..."; sleep 1)
+  done
+fi
+
+# unmount /proc
+chroot ${E2E_ROOTFS} /bin/umount /proc

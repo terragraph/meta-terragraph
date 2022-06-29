@@ -1,0 +1,80 @@
+From 9511e075ecb6178fda8acba3c2879a0487b0a5fb Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Thu, 5 Dec 2019 06:55:44 -0800
+Subject: [PATCH] Split show trace to CLI and functional parts
+
+This allows one to call cli_do_show_trace_buffer from gdb in case
+of the crash and still get the trace dump.
+---
+ src/vlib/trace.c | 42 ++++++++++++++++++++++++------------------
+ 1 file changed, 24 insertions(+), 18 deletions(-)
+
+diff --git a/src/vlib/trace.c b/src/vlib/trace.c
+index 156378af8..9d4bf3b3e 100644
+--- a/src/vlib/trace.c
++++ b/src/vlib/trace.c
+@@ -282,30 +282,13 @@ trace_apply_filter (vlib_main_t * vm)
+ }
+ 
+ static clib_error_t *
+-cli_show_trace_buffer (vlib_main_t * vm,
+-		       unformat_input_t * input, vlib_cli_command_t * cmd)
++cli_do_show_trace_buffer (vlib_main_t * vm, u32 max)
+ {
+   vlib_trace_main_t *tm;
+   vlib_trace_header_t **h, **traces;
+   u32 i, index = 0;
+   char *fmt;
+   u8 *s = 0;
+-  u32 max;
+-
+-  /*
+-   * By default display only this many traces. To display more, explicitly
+-   * specify a max. This prevents unexpectedly huge outputs.
+-   */
+-  max = 50;
+-  while (unformat_check_input (input) != (uword) UNFORMAT_END_OF_INPUT)
+-    {
+-      if (unformat (input, "max %d", &max))
+-	;
+-      else
+-	return clib_error_create ("expected 'max COUNT', got `%U'",
+-				  format_unformat_error, input);
+-    }
+-
+ 
+   /* Get active traces from pool. */
+ 
+@@ -359,6 +342,29 @@ cli_show_trace_buffer (vlib_main_t * vm,
+   return 0;
+ }
+ 
++static clib_error_t *
++cli_show_trace_buffer (vlib_main_t * vm,
++		       unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  u32 max;
++
++  /*
++   * By default display only this many traces. To display more, explicitly
++   * specify a max. This prevents unexpectedly huge outputs.
++   */
++  max = 50;
++  while (unformat_check_input (input) != (uword) UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (input, "max %d", &max))
++	;
++      else
++	return clib_error_create ("expected 'max COUNT', got `%U'",
++				  format_unformat_error, input);
++    }
++
++  return cli_do_show_trace_buffer(vm, max);
++}
++
+ /* *INDENT-OFF* */
+ VLIB_CLI_COMMAND (show_trace_cli,static) = {
+   .path = "show trace",
+-- 
+2.30.2
+

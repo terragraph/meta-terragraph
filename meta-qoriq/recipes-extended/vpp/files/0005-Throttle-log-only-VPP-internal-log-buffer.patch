@@ -1,0 +1,35 @@
+From 0694710c1b7d53fe9ccb4625ebc5a56840cb5d99 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Fri, 15 Nov 2019 10:59:48 -0800
+Subject: [PATCH] Throttle log only VPP internal log buffer.
+
+---
+ src/vlib/log.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/vlib/log.c b/src/vlib/log.c
+index ed14d9ecd..7cf450b15 100644
+--- a/src/vlib/log.c
++++ b/src/vlib/log.c
+@@ -161,12 +161,17 @@ vlib_log (vlib_log_level_t level, vlib_log_class_t class, char *fmt, ...)
+     {
+       sc->last_sec_count++;
+       if (sc->last_sec_count > sc->rate_limit)
+-	return;
++	{
++	  /* Bypass VPP's log buffer. Send message to syslog only. */
++	  log_enabled = 0;
++	}
+       else if (sc->last_sec_count == sc->rate_limit)
+ 	{
+ 	  vec_reset_length (s);
+ 	  s = format (s, "--- message(s) throttled ---");
+ 	  sc->is_throttling = 1;
++	  /* Start throttle, hence send message to syslog only. */
++	  log_enabled = 0;
+ 	}
+     }
+ 
+-- 
+2.30.2
+

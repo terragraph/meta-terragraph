@@ -1,0 +1,32 @@
+From c701065724dedebc100895921788980fb6bd5b77 Mon Sep 17 00:00:00 2001
+From: Tianyu Li <tianyu.li@arm.com>
+Date: Wed, 23 Jun 2021 07:35:03 +0000
+Subject: [PATCH] vlib: fix buffer pool alignment size
+
+Alignment size should be CLIB_CACHE_LINE_BYTES(64)
+instead of CLIB_LOG2_CACHE_LINE_BYTES(6)
+
+Type: fix
+
+Signed-off-by: Tianyu Li <tianyu.li@arm.com>
+Change-Id: If2d5ae324093be64454377866297f5e76ccddc93
+---
+ src/vlib/buffer.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/vlib/buffer.c b/src/vlib/buffer.c
+index c08b0c3b4..5881d1220 100644
+--- a/src/vlib/buffer.c
++++ b/src/vlib/buffer.c
+@@ -532,7 +532,7 @@ vlib_buffer_pool_create (vlib_main_t * vm, char *name, u32 data_size,
+   if (vec_len (bm->buffer_pools) >= 255)
+     return ~0;
+ 
+-  vec_add2_aligned (bm->buffer_pools, bp, 1, CLIB_LOG2_CACHE_LINE_BYTES);
++  vec_add2_aligned (bm->buffer_pools, bp, 1, CLIB_CACHE_LINE_BYTES);
+ 
+   if (bm->buffer_mem_size == 0)
+     {
+-- 
+2.30.2
+

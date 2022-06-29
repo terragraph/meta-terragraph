@@ -1,0 +1,40 @@
+From 67635bcedb2114f8f596206f816efb58be49ae0b Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 28 May 2019 12:06:18 -0700
+Subject: [PATCH] Fix interrupt type selection for MSI
+
+When probing for interrupts, do not fail if device
+does not support the requested interrupt type and if
+no specific interrupt type is explicitly forced.
+This fixes interrupt mapping for devices that support
+MSI interrupts only.
+---
+ drivers/bus/pci/linux/pci_vfio.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/bus/pci/linux/pci_vfio.c b/drivers/bus/pci/linux/pci_vfio.c
+index e3f7b6abeb..83cec0b973 100644
+--- a/drivers/bus/pci/linux/pci_vfio.c
++++ b/drivers/bus/pci/linux/pci_vfio.c
+@@ -267,6 +267,18 @@ pci_vfio_setup_interrupts(struct rte_pci_device *dev, int vfio_dev_fd)
+ 			return -1;
+ 		}
+ 
++		/* if there are no vectors of specified type available, fail
++		 * if we explicitly specified interrupt type, otherwises
++		 * continue probing for other interrupt types device might
++		 * support */
++		if (irq.count == 0) {
++			if (intr_mode != RTE_INTR_MODE_NONE) {
++				RTE_LOG(ERR, EAL,
++						"  device does not support the requested interrupt type!\n");
++				return -1;
++			} else
++				continue;
++		}
+ 		/* if this vector cannot be used with eventfd, fail if we explicitly
+ 		 * specified interrupt type, otherwise continue */
+ 		if ((irq.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
+-- 
+2.30.2
+

@@ -1,0 +1,79 @@
+From 8f667e7711d405b74de6de52bbdc00dde4661b62 Mon Sep 17 00:00:00 2001
+From: Bob Copeland <bobcopeland@fb.com>
+Date: Tue, 9 Jul 2019 11:24:04 -0700
+Subject: [PATCH] dpdk: teach plugin about wigig interfaces
+
+Add "WigigX" interfaces when wil6210 PMD is being used, rather
+than letting VPP name them UnknownEthernetX.
+---
+ src/plugins/dpdk/device/dpdk.h   | 4 +++-
+ src/plugins/dpdk/device/format.c | 8 ++++++++
+ src/plugins/dpdk/device/init.c   | 4 ++++
+ 3 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/src/plugins/dpdk/device/dpdk.h b/src/plugins/dpdk/device/dpdk.h
+index b61505463..7cc5710af 100644
+--- a/src/plugins/dpdk/device/dpdk.h
++++ b/src/plugins/dpdk/device/dpdk.h
+@@ -92,7 +92,8 @@ extern vlib_node_registration_t admin_up_down_process_node;
+   _ ("net_liovf", LIOVF_ETHER)    \
+   _ ("net_qede", QEDE)		  \
+   _ ("net_netvsc", NETVSC)        \
+-  _ ("net_bnxt", BNXT)
++  _ ("net_bnxt", BNXT)            \
++  _ ("net_wil6210", WIL6210)
+ 
+ typedef enum
+ {
+@@ -122,6 +123,7 @@ typedef enum
+   VNET_DPDK_PORT_TYPE_VHOST_ETHER,
+   VNET_DPDK_PORT_TYPE_FAILSAFE,
+   VNET_DPDK_PORT_TYPE_NETVSC,
++  VNET_DPDK_PORT_TYPE_WIGIG,
+   VNET_DPDK_PORT_TYPE_UNKNOWN,
+ } dpdk_port_type_t;
+ 
+diff --git a/src/plugins/dpdk/device/format.c b/src/plugins/dpdk/device/format.c
+index 634b23fd7..ec09ce06f 100644
+--- a/src/plugins/dpdk/device/format.c
++++ b/src/plugins/dpdk/device/format.c
+@@ -197,6 +197,10 @@ format_dpdk_device_name (u8 * s, va_list * args)
+       device_name = "FailsafeEthernet";
+       break;
+ 
++    case VNET_DPDK_PORT_TYPE_WIGIG:
++      device_name = "Wigig";
++      break;
++
+     default:
+     case VNET_DPDK_PORT_TYPE_UNKNOWN:
+       device_name = "UnknownEthernet";
+@@ -353,6 +357,10 @@ format_dpdk_device_type (u8 * s, va_list * args)
+       dev_type = "Broadcom NetXtreme E/S-Series";
+       break;
+ 
++    case VNET_DPDK_PMD_WIL6210:
++      dev_type = "QTI 60 GHz Wireless";
++      break;
++
+     default:
+     case VNET_DPDK_PMD_UNKNOWN:
+       dev_type = "### UNKNOWN ###";
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index ceb2ec922..a99dc7da9 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -537,6 +537,10 @@ dpdk_lib_init (dpdk_main_t * dm)
+ 	      xd->port_conf.txmode.offloads |= DEV_TX_OFFLOAD_MULTI_SEGS;
+ 	      break;
+ 
++	    case VNET_DPDK_PMD_WIL6210:
++	      xd->port_type = VNET_DPDK_PORT_TYPE_WIGIG;
++	      break;
++
+ 	    case VNET_DPDK_PMD_AF_PACKET:
+ 	      xd->port_type = VNET_DPDK_PORT_TYPE_AF_PACKET;
+ 	      xd->af_packet_instance_num = af_packet_instance_num++;
+-- 
+2.30.2
+

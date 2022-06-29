@@ -1,0 +1,24 @@
+fbthrift's TCompactProtocol (version 2) uses big-endian doubles, while Apache
+Thrift (version 1) uses little-endian. Since fbthrift is used everywhere else,
+patch this here.
+
+Upstream-Status: Inappropriate [protocol incompatibility]
+
+--- a/lib/lua/TCompactProtocol.lua
++++ b/lib/lua/TCompactProtocol.lua
+@@ -204,6 +204,7 @@
+
+ function TCompactProtocol:writeDouble(dub)
+   local buff = libluabpack.bpack('d', dub)
++  buff = buff:reverse()  -- fbthrift compatibility
+   self.trans:write(buff)
+ end
+
+@@ -390,6 +391,7 @@
+
+ function TCompactProtocol:readDouble()
+   local buff = self.trans:readAll(8)
++  buff = buff:reverse()  -- fbthrift compatibility
+   local val = libluabpack.bunpack('d', buff)
+   return val
+ end

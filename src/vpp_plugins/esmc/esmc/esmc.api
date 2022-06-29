@@ -1,0 +1,34 @@
+/* Hey Emacs use -*- mode: C -*- */
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/* Define a simple binary API to control the feature */
+
+option version = "0.1.0";
+
+autoreply define esmc_enable_disable {
+    /* Client identifier, set from api_main.my_client_index */
+    u32 client_index;
+
+    /* Arbitrary context, so client can match reply to request */
+    u32 context;
+
+    /* Enable / disable the feature */
+    u8 enable_disable;
+
+    /* ESMC input sw_if_index */
+    u32 input_sw_if_index;
+
+    /* ESMC output sw_if_index */
+    u32 output_sw_if_index;
+
+    /* Enable / disable Terragraph link ESMC input */
+    u8 enable_tg_input;
+
+    /* Enable / disable Terragraph link ESMC output */
+    u8 enable_tg_output;
+};

@@ -1,0 +1,70 @@
+# /etc/logrotate.d/rsyslog - Ported from Debian
+
+/var/log/mail.info
+/var/log/mail.warn
+/var/log/mail.err
+/var/log/mail.log
+/var/log/daemon.log
+/var/log/kern.log
+/var/log/auth.log
+/var/log/user.log
+/var/log/lpr.log
+/var/log/cron.log
+/var/log/debug
+/var/log/syslog
+/var/log/messages
+/var/log/vpp/vnet.log
+{
+        rotate 7
+        missingok
+        notifempty
+        compress
+        delaycompress
+        nodateext
+        sharedscripts
+        size 1M
+        postrotate
+               /bin/kill -HUP `cat /var/run/rsyslogd.pid 2> /dev/null` 2> /dev/null || true
+        endscript
+}
+
+# Save logs from /var/log (tmpfs) to flash (/data/log)
+/data/log/logs.tar.gz
+{
+        rotate 7
+        daily
+        missingok
+        nocompress
+        nodateext
+        create
+        extension .tar.gz
+        prerotate
+                tar czf $1 -C /var/log . || true
+        endscript
+        postrotate
+                # If /data is getting full (> 90% used), remove any old log.tar.gz files
+                # Also ensure that /data can fit another log.tar.gz of the same size,
+                # AND will not trigger the > 96% watchdog threshold next time (fsys_max_data_percent)
+                #   computed as: ((total - avail + logsize) * 100 / total) >=? 96
+                log_archive_size=$(stat -c %s $2)
+                echo "Size of \"$2\" in bytes: $log_archive_size"
+                get_data_usage() {
+                        local s=$(df -B1 --output=size,avail,pcent /data | awk -v sz="${log_archive_size:-0}" 'END { print int(($1 - $2 + sz) * 100 / $1), substr($3, 1, length($3) - 1)}')
+                        export data_pcent=${s#* }
+                        export data_pcent_next=${s% *}
+                        echo "/data % used = $data_pcent"
+                        echo "/data % used next rotation (hypothetical) = $data_pcent_next"
+                }
+                get_data_usage
+                while [ "${data_pcent:-0}" -gt 90 ] || [ "${data_pcent_next:-0}" -ge 96 ]; do
+                        oldest_file=$(ls -1rt /data/log/logs*.[0-9]*.gz 2> /dev/null | head -n1)
+                        if [ -z "$oldest_file" ]; then
+                                # Even after removing log files /data still
+                                # getting full. Move on
+                                break
+                        fi
+                        /bin/rm -v "$oldest_file"
+                        get_data_usage
+                done
+        endscript
+}

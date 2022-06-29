@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=5
+
+# HACK! wait between restarts to avoid races (ex. when unloading dpdk)
+sleep $DELAY
+
+while [ : ]; do
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if dpdk is enabled
+if [ "${DPDK_ENABLED:-0}" -ne "1" ]; then
+  echo "dpdk is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+# check other starting conditions
+if [ ! -e "/dev/dhd" ]; then
+  echo "Waiting for /dev/dhd"
+  sleep ${DELAY}
+  continue
+fi
+NUM_DEVICES=$(lspci -d 17cb:1201 | wc -l)
+ATTACHED_DEVICES=$(lspci -nk | grep -c vfio-pci)
+if [ "$NUM_DEVICES" -ne "$ATTACHED_DEVICES" ]; then
+  echo "Waiting for devbind"
+  sleep ${DELAY}
+  continue
+fi
+
+exec taskset 0xffffffff wiltest 2>&1
+
+done

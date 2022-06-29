@@ -1,0 +1,84 @@
+From e83a322d57836e33f8ba16d6e079344c17c90963 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Fri, 6 Dec 2019 12:51:05 -0800
+Subject: [PATCH] Accept optional name for vpp side of tapcli
+
+This allows one to name interfaces on vpp size with something
+other than tapcli-<blah>.
+---
+ src/vnet/unix/tapcli.c | 16 +++++++++++++++-
+ src/vnet/unix/tuntap.h |  2 ++
+ 2 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/src/vnet/unix/tapcli.c b/src/vnet/unix/tapcli.c
+index aaad9eaaa..40e51902e 100644
+--- a/src/vnet/unix/tapcli.c
++++ b/src/vnet/unix/tapcli.c
+@@ -67,6 +67,7 @@ typedef struct
+   u32 per_interface_next_index;
+   /** for delete */
+   u8 active;
++  u8 *name;
+ } tapcli_interface_t;
+ 
+ /**
+@@ -627,6 +628,11 @@ format_tapcli_interface_name (u8 * s, va_list * args)
+   u32 i = va_arg (*args, u32);
+   u32 show_dev_instance = ~0;
+   tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti;
++
++  ti = vec_elt_at_index (tm->tapcli_interfaces, i);
++  if (vec_len (ti->name) > 0)
++	  return format (s, "%s", ti->name);
+ 
+   if (i < vec_len (tm->show_dev_instance_by_real_dev_instance))
+     show_dev_instance = tm->show_dev_instance_by_real_dev_instance[i];
+@@ -823,8 +829,10 @@ tapcli_get_new_tapif ()
+     }
+ 
+   // ti was not retrieved from inactive ifaces - create new
+-  if (!ti)
++  if (!ti) {
+     vec_add2 (tm->tapcli_interfaces, ti, 1);
++    ti->name = NULL;
++  }
+ 
+   return ti;
+ }
+@@ -1030,6 +1038,10 @@ vnet_tap_connect (vlib_main_t * vm, vnet_tap_connect_args_t * ap)
+   ti = tapcli_get_new_tapif ();
+   ti->per_interface_next_index = ~0;
+ 
++  vec_reset_length (ti->name);
++  if (ap->sw_if_name != NULL)
++      ti->name = format (ti->name, "%s\0", ap->sw_if_name);
++
+   if (ap->hwaddr_arg != 0)
+     clib_memcpy (hwaddr, ap->hwaddr_arg, 6);
+   else
+@@ -1053,6 +1065,8 @@ vnet_tap_connect (vlib_main_t * vm, vnet_tap_connect_args_t * ap)
+ 
+   if (error)
+     {
++      vec_free(ti->name);
++      ti->name = NULL;
+       clib_error_report (error);
+       rv = VNET_API_ERROR_INVALID_REGISTRATION;
+       goto error;
+diff --git a/src/vnet/unix/tuntap.h b/src/vnet/unix/tuntap.h
+index b612f64fd..df492f4ba 100644
+--- a/src/vnet/unix/tuntap.h
++++ b/src/vnet/unix/tuntap.h
+@@ -53,6 +53,8 @@ typedef struct
+   u32 orig_sw_if_index;
+   /** Kernel MAC address */
+   u8 *intfc_hwaddr_arg;
++  /** Interface name */
++  u8 *sw_if_name;
+ } vnet_tap_connect_args_t;
+ 
+ /** Connect a tap interface */
+-- 
+2.30.2
+

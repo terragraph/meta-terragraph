@@ -1,0 +1,36 @@
+The RCW directories names for the LS1012ARDB boards conform to the following
+naming convention:
+
+a_bcde_f:
+
+a = 'R' indicates RGMII 
+    'N' indicates not available/not used
+
+b = What is available in SerDes1 Lane0
+c = What is available in SerDes1 Lane1
+d = What is available in SerDes1 Lane2
+e = What is available in SerDes1 Lane2
+
+For the Slots (c..j):
+ 'N' is NULL, not available/not used
+ 'P' is PCIe
+ 'S' is SGMII
+ 'H' is SATA
+
+Serdes1 protocol (k):
+f = 'hex value of serdes protocol value'
+
+
+BIN   Core/Platform/DDR
+Bin1: 800MHz/250MHz/1000MT/s
+
+Files naming convention
+=============================
+PBL_f_g_x_y_z_p.bin
+x = Core frequency
+y = platform frequency
+z = DDR frequency
+
+p = default or any spefic information.
+
+for example: PBL_0x35_0x08_800_250_1000_default.bin

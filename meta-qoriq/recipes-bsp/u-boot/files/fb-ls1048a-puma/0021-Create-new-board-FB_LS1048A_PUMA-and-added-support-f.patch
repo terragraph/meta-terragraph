@@ -1,0 +1,2023 @@
+From a2068f38dd163f279c38cf54c11b203558b0de4a Mon Sep 17 00:00:00 2001
+From: Anand Singh <anandsingh@fb.com>
+Date: Wed, 26 Jun 2019 23:17:39 +0000
+Subject: [PATCH] Create new board FB_LS1048A_PUMA and added support for
+ Terragraph
+
+---
+ arch/arm/Kconfig                              |  15 +
+ arch/arm/cpu/armv8/Kconfig                    |   2 +-
+ arch/arm/cpu/armv8/fsl-layerscape/soc.c       |   3 +-
+ arch/arm/dts/Makefile                         |   1 +
+ arch/arm/dts/fb-ls1048a-puma.dts              |   3 +-
+ board/freescale/fb_ls1048a_puma/Kconfig       |  36 +-
+ board/freescale/fb_ls1048a_puma/MAINTAINERS   |  13 +-
+ board/freescale/fb_ls1048a_puma/Makefile      |   7 +-
+ .../fb_ls1048a_puma/eth_fb_ls1048a_puma.c     |  29 +-
+ .../fb_ls1048a_puma/fb_ls1048a_puma.c         | 553 ++++++-----------
+ board/freescale/fb_ls1048a_puma/uboot_ddr1.c  | 323 ++++++++++
+ configs/fb-ls1048a-puma_qspi_defconfig        |  38 +-
+ include/configs/fb_ls1048a_puma.h             | 579 ++++--------------
+ 13 files changed, 685 insertions(+), 917 deletions(-)
+ create mode 100644 board/freescale/fb_ls1048a_puma/uboot_ddr1.c
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 09b81252c8..0b14555153 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -1161,6 +1161,20 @@ config TARGET_LS1048ATG
+ 	  client node for Terragraph network using QorIQ LS1048A
+ 	  Layerscape Architecture processor.
+ 
++config TARGET_FB_LS1048A_PUMA
++	bool "Support fb-ls1048a-puma"
++	select ARCH_LS1088A
++	select ARM64
++	select ARMV8_MULTIENTRY
++	select ARCH_MISC_INIT
++	select BOARD_LATE_INIT
++	select SUPPORT_SPL
++	help
++	  Support for FB LS1048A PUMA platform.
++	  The LS1048A PUMA board is a cost-optimized
++	  client node for Terragraph network using QorIQ LS1048A
++	  Layerscape Architecture processor.
++
+ config TARGET_LS1021AQDS
+ 	bool "Support ls1021aqds"
+ 	select ARCH_LS1021A
+@@ -1510,6 +1524,7 @@ source "board/freescale/ls2080aqds/Kconfig"
+ source "board/freescale/ls2080ardb/Kconfig"
+ source "board/freescale/ls1088a/Kconfig"
+ source "board/freescale/ls1048a/Kconfig"
++source "board/freescale/fb_ls1048a_puma/Kconfig"
+ source "board/freescale/ls1021aqds/Kconfig"
+ source "board/freescale/ls1043aqds/Kconfig"
+ source "board/freescale/ls1021atwr/Kconfig"
+diff --git a/arch/arm/cpu/armv8/Kconfig b/arch/arm/cpu/armv8/Kconfig
+index ad88b6c16b..d8548c1f98 100644
+--- a/arch/arm/cpu/armv8/Kconfig
++++ b/arch/arm/cpu/armv8/Kconfig
+@@ -101,7 +101,7 @@ config PSCI_RESET
+ 		   !TARGET_LS2080ARDB && !TARGET_LS2080A_EMU && \
+ 		   !TARGET_LS1088ARDB && !TARGET_LS1088AQDS && \
+ 		   !TARGET_LS1012ARDB && !TARGET_LS1012AFRDM && \
+-		   !TARGET_LS1048ATG && \
++		   !TARGET_LS1048ATG && !TARGET_FB_LS1048A_PUMA && \
+ 		   !TARGET_LS1012A2G5RDB && !TARGET_LS1012AQDS && \
+ 		   !TARGET_LS1012AFRWY && \
+ 		   !TARGET_LS1043ARDB && !TARGET_LS1043AQDS && \
+diff --git a/arch/arm/cpu/armv8/fsl-layerscape/soc.c b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+index 6aec1f41bc..924e39c7ca 100644
+--- a/arch/arm/cpu/armv8/fsl-layerscape/soc.c
++++ b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+@@ -164,7 +164,8 @@ static void erratum_a009007(void)
+ 	PROGRAM_USB_PHY_RX_OVRD_IN_HI(usb_phy);
+ #endif
+ #elif defined(CONFIG_ARCH_LS2080A) || defined(CONFIG_ARCH_LS1088A)
+-#ifndef CONFIG_TARGET_LS1048ATG
++#if  defined(CONFIG_TARGET_LS1048ATG) || defined(CONFIG_TARGET_FB_LS1048A_PUMA)
++#else
+ 	void __iomem *dcsr = (void __iomem *)DCSR_BASE;
+ 
+ 	PROGRAM_USB_PHY_RX_OVRD_IN_HI(dcsr + DCSR_USB_PHY1);
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index 8b54fee2fb..98d59c1ad3 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -227,6 +227,7 @@ dtb-$(CONFIG_FSL_LSCH3) += fsl-ls2080a-qds.dtb \
+ 	fsl-ls2088a-rdb-qspi.dtb \
+ 	fsl-ls1088a-rdb.dtb \
+ 	fsl-ls1048a-tg.dtb \
++	fb-ls1048a-puma.dtb \
+ 	fsl-ls1088a-qds.dtb \
+ 	fsl-lx2160a-rdb.dtb \
+ 	fsl-lx2160a-qds.dtb
+diff --git a/arch/arm/dts/fb-ls1048a-puma.dts b/arch/arm/dts/fb-ls1048a-puma.dts
+index f30bbb7247..a8ebcd0da7 100644
+--- a/arch/arm/dts/fb-ls1048a-puma.dts
++++ b/arch/arm/dts/fb-ls1048a-puma.dts
+@@ -5,12 +5,13 @@
+  * Copyright 2017 NXP
+  */
+ 
++/* LS1048-ATG Needs Fixing */
+ /dts-v1/;
+ 
+ #include "fsl-ls1088a.dtsi"
+ 
+ / {
+-	model = "NXP Layerscape 1088a RDB Board";
++	model = "NXP TG Board LS1048A (PUMA)";
+ 	compatible = "fsl,ls1088a-rdb", "fsl,ls1088a";
+ 	aliases {
+ 		spi0 = &qspi;
+diff --git a/board/freescale/fb_ls1048a_puma/Kconfig b/board/freescale/fb_ls1048a_puma/Kconfig
+index 8bb828e3fd..68dcfb5522 100644
+--- a/board/freescale/fb_ls1048a_puma/Kconfig
++++ b/board/freescale/fb_ls1048a_puma/Kconfig
+@@ -1,7 +1,7 @@
+-if TARGET_LS1088AQDS
++if TARGET_FB_LS1048A_PUMA
+ 
+ config SYS_BOARD
+-	default "ls1088a"
++	default "fb_ls1048a_puma"
+ 
+ config SYS_VENDOR
+ 	default "freescale"
+@@ -10,7 +10,7 @@ config SYS_SOC
+ 	default "fsl-layerscape"
+ 
+ config SYS_CONFIG_NAME
+-	default "ls1088aqds"
++	default "fb_ls1048a_puma"
+ 
+ if FSL_LS_PPA
+ config SYS_LS_PPA_FW_ADDR
+@@ -29,33 +29,3 @@ endif
+ source "board/freescale/common/Kconfig"
+ endif
+ 
+-if TARGET_LS1088ARDB
+-
+-config SYS_BOARD
+-	default "ls1088a"
+-
+-config SYS_VENDOR
+-	default "freescale"
+-
+-config SYS_SOC
+-	default "fsl-layerscape"
+-
+-config SYS_CONFIG_NAME
+-	default "ls1088ardb"
+-
+-if FSL_LS_PPA
+-config SYS_LS_PPA_FW_ADDR
+-        hex "PPA Firmware Addr"
+-	default 0x20400000 if SYS_LS_PPA_FW_IN_XIP
+-	default 0x400000 if SYS_LS_PPA_FW_IN_MMC || SYS_LS_PPA_FW_IN_NAND
+-
+-if CHAIN_OF_TRUST
+-config SYS_LS_PPA_ESBC_ADDR
+-	hex "PPA Firmware HDR Addr"
+-	default 0x20680000 if SYS_LS_PPA_FW_IN_XIP
+-	default 0x680000 if SYS_LS_PPA_FW_IN_MMC || SYS_LS_PPA_FW_IN_NAND
+-endif
+-endif
+-
+-source "board/freescale/common/Kconfig"
+-endif
+diff --git a/board/freescale/fb_ls1048a_puma/MAINTAINERS b/board/freescale/fb_ls1048a_puma/MAINTAINERS
+index bca9969637..24f163b8f7 100644
+--- a/board/freescale/fb_ls1048a_puma/MAINTAINERS
++++ b/board/freescale/fb_ls1048a_puma/MAINTAINERS
+@@ -1,13 +1,8 @@
+-LS1088ARDB BOARD
+-M:	Prabhakar Kushwaha <prabhakar.kushwaha@nxp.com>
+-M:	Ashish Kumar <Ashish.Kumar@nxp.com>
+-M:	Rajesh Bhagat <rajesh.bhagat@nxp.com>
++FB_LS1048A_PUMA BOARD
+ S:	Maintained
+-F:	board/freescale/ls1088a/
+-F:	include/configs/ls1088ardb.h
+-F:	configs/ls1088ardb_qspi_defconfig
+-F:	configs/ls1088ardb_sdcard_qspi_defconfig
+-F:	configs/ls1088ardb_tfa_defconfig
++F:	board/freescale/fb_ls1048a_puma/
++F:	include/configs/fb_ls1048a_puma.h
++F:	configs/fb-ls1048a-puma_qspi_defconfig
+ 
+ LS1088AQDS BOARD
+ M:	Prabhakar Kushwaha <prabhakar.kushwaha@nxp.com>
+diff --git a/board/freescale/fb_ls1048a_puma/Makefile b/board/freescale/fb_ls1048a_puma/Makefile
+index c2b0e7dc0f..8d5f62d79c 100644
+--- a/board/freescale/fb_ls1048a_puma/Makefile
++++ b/board/freescale/fb_ls1048a_puma/Makefile
+@@ -2,9 +2,8 @@
+ #
+ # Copyright 2017 NXP
+ 
+-obj-y += ls1088a.o
+-obj-y += ddr.o
++obj-y += fb_ls1048a_puma.o
++obj-y += uboot_ddr1.o
+ ifndef CONFIG_SPL_BUILD
+-obj-$(CONFIG_TARGET_LS1088ARDB) += eth_ls1088ardb.o
+-obj-$(CONFIG_TARGET_LS1088AQDS) += eth_ls1088aqds.o
++obj-$(CONFIG_TARGET_FB_LS1048A_PUMA) += eth_fb_ls1048a_puma.o
+ endif
+diff --git a/board/freescale/fb_ls1048a_puma/eth_fb_ls1048a_puma.c b/board/freescale/fb_ls1048a_puma/eth_fb_ls1048a_puma.c
+index 0af8054971..42e621bb9a 100644
+--- a/board/freescale/fb_ls1048a_puma/eth_fb_ls1048a_puma.c
++++ b/board/freescale/fb_ls1048a_puma/eth_fb_ls1048a_puma.c
+@@ -40,36 +40,20 @@ int board_eth_init(bd_t *bis)
+ 	/* Register the EMI 1 */
+ 	fm_memac_mdio_init(bis, &mdio_info);
+ 
+-	reg = (struct memac_mdio_controller *)CONFIG_SYS_FSL_WRIOP1_MDIO2;
+-	mdio_info.regs = reg;
+-	mdio_info.name = DEFAULT_WRIOP_MDIO2_NAME;
+-
+-	/* Register the EMI 2 */
+-	fm_memac_mdio_init(bis, &mdio_info);
+-
+ 	switch (srds_s1) {
+-	case 0x1D:
++	case 0x15:
+ 		/*
+ 		 * XFI does not need a PHY to work, but to avoid U-boot use
+ 		 * default PHY address which is zero to a MAC when it found
+ 		 * a MAC has no PHY address, we give a PHY address to XFI
+ 		 * MAC error.
+ 		 */
+-		wriop_set_phy_address(WRIOP1_DPMAC1, 0, 0x0a);
+-		wriop_set_phy_address(WRIOP1_DPMAC2, 0, AQ_PHY_ADDR1);
+-		wriop_set_phy_address(WRIOP1_DPMAC3, 0, QSGMII1_PORT1_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC4, 0, QSGMII1_PORT2_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC5, 0, QSGMII1_PORT3_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC6, 0, QSGMII1_PORT4_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC7, 0, QSGMII2_PORT1_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC8, 0, QSGMII2_PORT2_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC9, 0, QSGMII2_PORT3_PHY_ADDR);
+-		wriop_set_phy_address(WRIOP1_DPMAC10, 0,
+-				      QSGMII2_PORT4_PHY_ADDR);
++		wriop_set_phy_address(WRIOP1_DPMAC2, 0, 0x0A);  /* XFI */
++		wriop_set_phy_address(WRIOP1_DPMAC7, 0, 2);  /* SGMII */
+ 
+ 		break;
+ 	default:
+-		printf("SerDes1 protocol 0x%x is not supported on LS1088ARDB\n",
++		printf("SerDes1 protocol 0x%x is not supported on FB-LS1048A-PUMA\n",
+ 		       srds_s1);
+ 		break;
+ 	}
+@@ -77,7 +61,7 @@ int board_eth_init(bd_t *bis)
+ 	for (i = WRIOP1_DPMAC3; i <= WRIOP1_DPMAC10; i++) {
+ 		interface = wriop_get_enet_if(i);
+ 		switch (interface) {
+-		case PHY_INTERFACE_MODE_QSGMII:
++		case PHY_INTERFACE_MODE_SGMII:
+ 			dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO1_NAME);
+ 			wriop_set_mdio(i, dev);
+ 			break;
+@@ -86,9 +70,6 @@ int board_eth_init(bd_t *bis)
+ 		}
+ 	}
+ 
+-	dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO2_NAME);
+-	wriop_set_mdio(WRIOP1_DPMAC2, dev);
+-
+ 	cpu_eth_init(bis);
+ #endif /* CONFIG_FMAN_ENET */
+ 
+diff --git a/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c b/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c
+index ab79855571..2a73316757 100644
+--- a/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c
++++ b/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c
+@@ -5,6 +5,7 @@
+ #include <common.h>
+ #include <i2c.h>
+ #include <malloc.h>
++#include <mmc.h>
+ #include <errno.h>
+ #include <netdev.h>
+ #include <fsl_ifc.h>
+@@ -18,16 +19,21 @@
+ #include <asm/arch-fsl-layerscape/soc.h>
+ #include <asm/arch/ppa.h>
+ #include <hwconfig.h>
++#include <asm/gpio.h>
+ #include <asm/arch/fsl_serdes.h>
+ #include <asm/arch/soc.h>
+ 
+-#include "../common/qixis.h"
+-#include "ls1088a_qixis.h"
+ #include "../common/vid.h"
+ #include <fsl_immap.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++int board_mmc_getcd(struct mmc *mmc)
++{
++	/* onboard mmc device */
++	return 1;
++}
++
+ #ifdef CONFIG_TARGET_LS1088AQDS
+ #ifdef CONFIG_TFABOOT
+ struct ifc_regs ifc_cfg_ifc_nor_boot[CONFIG_SYS_FSL_IFC_BANK_COUNT] = {
+@@ -152,26 +158,6 @@ int board_early_init_f(void)
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_FSL_QIXIS
+-unsigned long long get_qixis_addr(void)
+-{
+-	unsigned long long addr;
+-
+-	if (gd->flags & GD_FLG_RELOC)
+-		addr = QIXIS_BASE_PHYS;
+-	else
+-		addr = QIXIS_BASE_PHYS_EARLY;
+-
+-	/*
+-	 * IFC address under 256MB is mapped to 0x30000000, any address above
+-	 * is mapped to 0x5_10000000 up to 4GB.
+-	 */
+-	addr = addr  > 0x10000000 ? addr + 0x500000000ULL : addr + 0x30000000;
+-
+-	return addr;
+-}
+-#endif
+-
+ #if defined(CONFIG_VID)
+ int init_func_vid(void)
+ {
+@@ -184,12 +170,6 @@ int init_func_vid(void)
+ 
+ int is_pb_board(void)
+ {
+-	u8 board_id;
+-
+-	board_id = QIXIS_READ(id);
+-	if (board_id == LS1088ARDB_PB_BOARD)
+-		return 1;
+-	else
+ 		return 0;
+ }
+ 
+@@ -207,34 +187,11 @@ int checkboard(void)
+ 	enum boot_src src = get_boot_src();
+ #endif
+ 	char buf[64];
+-	u8 sw;
+-	static const char *const freq[] = {"100", "125", "156.25",
+-					    "100 separate SSCG"};
+-	int clock;
+-
+-#ifdef CONFIG_TARGET_LS1088AQDS
+-	printf("Board: LS1088A-QDS, ");
+-#else
+-	if (is_pb_board())
+-		printf("Board: LS1088ARDB-PB, ");
+-	else
+-		printf("Board: LS1088A-RDB, ");
+-#endif
+ 
+-	sw = QIXIS_READ(arch);
+-	printf("Board Arch: V%d, ", sw >> 4);
+-
+-#ifdef CONFIG_TARGET_LS1088AQDS
+-	printf("Board version: %c, boot from ", (sw & 0xf) + 'A' - 1);
+-#else
+-	printf("Board version: %c, boot from ", (sw & 0xf) + 'A');
+-#endif
++	printf("Board: FB-LS1048A-PUMA, ");
+ 
+ 	memset((u8 *)buf, 0x00, ARRAY_SIZE(buf));
+ 
+-	sw = QIXIS_READ(brdcfg[0]);
+-	sw = (sw & QIXIS_LBMAP_MASK) >> QIXIS_LBMAP_SHIFT;
+-
+ #ifdef CONFIG_TFABOOT
+ 	if (src == BOOT_SOURCE_SD_MMC)
+ 		puts("SD card\n");
+@@ -243,152 +200,27 @@ int checkboard(void)
+ 	puts("SD card\n");
+ #endif
+ #endif /* CONFIG_TFABOOT */
+-	switch (sw) {
+-#ifdef CONFIG_TARGET_LS1088AQDS
+-	case 0:
+-	case 1:
+-	case 2:
+-	case 3:
+-	case 4:
+-	case 5:
+-	case 6:
+-	case 7:
+-		printf("vBank: %d\n", sw);
+-		break;
+-	case 8:
+-		puts("PromJet\n");
+-		break;
+-	case 15:
+-		puts("IFCCard\n");
+-		break;
+-	case 14:
+-#else
+-	case 0:
+-#endif
+-		puts("QSPI:");
+-		sw = QIXIS_READ(brdcfg[0]);
+-		sw = (sw & QIXIS_QMAP_MASK) >> QIXIS_QMAP_SHIFT;
+-		if (sw == 0 || sw == 4)
+-			puts("0\n");
+-		else if (sw == 1)
+-			puts("1\n");
+-		else
+-			puts("EMU\n");
+-		break;
+-
+-	default:
+-		printf("invalid setting of SW%u\n", QIXIS_LBMAP_SWITCH);
+-		break;
+-	}
+-
+-#ifdef CONFIG_TARGET_LS1088AQDS
+-	printf("FPGA: v%d (%s), build %d",
+-	       (int)QIXIS_READ(scver), qixis_read_tag(buf),
+-	       (int)qixis_read_minor());
+-	/* the timestamp string contains "\n" at the end */
+-	printf(" on %s", qixis_read_time(buf));
+-#else
+-	printf("CPLD: v%d.%d\n", QIXIS_READ(scver), QIXIS_READ(tagdata));
+-#endif
+-
+-	/*
+-	 * Display the actual SERDES reference clocks as configured by the
+-	 * dip switches on the board.  Note that the SWx registers could
+-	 * technically be set to force the reference clocks to match the
+-	 * values that the SERDES expects (or vice versa).  For now, however,
+-	 * we just display both values and hope the user notices when they
+-	 * don't match.
+-	 */
+-	puts("SERDES1 Reference : ");
+-	sw = QIXIS_READ(brdcfg[2]);
+-	clock = (sw >> 6) & 3;
+-	printf("Clock1 = %sMHz ", freq[clock]);
+-	clock = (sw >> 4) & 3;
+-	printf("Clock2 = %sMHz", freq[clock]);
+-
+-	puts("\nSERDES2 Reference : ");
+-	clock = (sw >> 2) & 3;
+-	printf("Clock1 = %sMHz ", freq[clock]);
+-	clock = (sw >> 0) & 3;
+-	printf("Clock2 = %sMHz\n", freq[clock]);
+ 
+ 	return 0;
+ }
+ #endif
+ 
+-bool if_board_diff_clk(void)
+-{
+-#ifdef CONFIG_TARGET_LS1088AQDS
+-	u8 diff_conf = QIXIS_READ(brdcfg[11]);
+-	return diff_conf & 0x40;
+-#else
+-	u8 diff_conf = QIXIS_READ(dutcfg[11]);
+-	return diff_conf & 0x80;
+-#endif
+-}
+-
+ unsigned long get_board_sys_clk(void)
+ {
+-	u8 sysclk_conf = QIXIS_READ(brdcfg[1]);
+-
+-	switch (sysclk_conf & 0x0f) {
+-	case QIXIS_SYSCLK_83:
+-		return 83333333;
+-	case QIXIS_SYSCLK_100:
+-		return 100000000;
+-	case QIXIS_SYSCLK_125:
+-		return 125000000;
+-	case QIXIS_SYSCLK_133:
+-		return 133333333;
+-	case QIXIS_SYSCLK_150:
+-		return 150000000;
+-	case QIXIS_SYSCLK_160:
+-		return 160000000;
+-	case QIXIS_SYSCLK_166:
+-		return 166666666;
+-	}
+-
+-	return 66666666;
++	return CONFIG_SYS_CLK_FREQ;
+ }
+ 
+ unsigned long get_board_ddr_clk(void)
+ {
+-	u8 ddrclk_conf = QIXIS_READ(brdcfg[1]);
+-
+-	if (if_board_diff_clk())
+-		return get_board_sys_clk();
+-	switch ((ddrclk_conf & 0x30) >> 4) {
+-	case QIXIS_DDRCLK_100:
+-		return 100000000;
+-	case QIXIS_DDRCLK_125:
+-		return 125000000;
+-	case QIXIS_DDRCLK_133:
+-		return 133333333;
+-	}
+-
+-	return 66666666;
+-}
+-
+-int select_i2c_ch_pca9547(u8 ch)
+-{
+-	int ret;
+-
+-	ret = i2c_write(I2C_MUX_PCA_ADDR_PRI, 0, 1, &ch, 1);
+-	if (ret) {
+-		puts("PCA: failed to select proper channel\n");
+-		return ret;
+-	}
+-
+-	return 0;
++	return CONFIG_DDR_CLK_FREQ;
+ }
+ 
+-#if !defined(CONFIG_SPL_BUILD)
+ void board_retimer_init(void)
+ {
+ 	u8 reg;
+ 
+-	/* Retimer is connected to I2C1_CH5 */
+-	select_i2c_ch_pca9547(I2C_MUX_CH5);
++	/* Retimer is connected to I2C4 */
++	i2c_set_bus_num(3);
+ 
+ 	/* Access to Control/Shared register */
+ 	reg = 0x0;
+@@ -425,206 +257,139 @@ void board_retimer_init(void)
+ 	reg |= 0x70;
+ 	i2c_write(I2C_RETIMER_ADDR, 0x2F, 1, &reg, 1);
+ 
+-#ifdef	CONFIG_TARGET_LS1088AQDS
+-	/* Retimer is connected to I2C1_CH5 */
+-	select_i2c_ch_pca9547(I2C_MUX_CH5);
+-
+-	/* Access to Control/Shared register */
+-	reg = 0x0;
+-	i2c_write(I2C_RETIMER_ADDR2, 0xff, 1, &reg, 1);
+-
+-	/* Read device revision and ID */
+-	i2c_read(I2C_RETIMER_ADDR2, 1, 1, &reg, 1);
+-	debug("Retimer version id = 0x%x\n", reg);
+-
+-	/* Enable Broadcast. All writes target all channel register sets */
+-	reg = 0x0c;
+-	i2c_write(I2C_RETIMER_ADDR2, 0xff, 1, &reg, 1);
+-
+-	/* Reset Channel Registers */
+-	i2c_read(I2C_RETIMER_ADDR2, 0, 1, &reg, 1);
+-	reg |= 0x4;
+-	i2c_write(I2C_RETIMER_ADDR2, 0, 1, &reg, 1);
+-
+-	/* Set data rate as 10.3125 Gbps */
+-	reg = 0x90;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x60, 1, &reg, 1);
+-	reg = 0xb3;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x61, 1, &reg, 1);
+-	reg = 0x90;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x62, 1, &reg, 1);
+-	reg = 0xb3;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x63, 1, &reg, 1);
+-	reg = 0xcd;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x64, 1, &reg, 1);
+-
+-	/* Select VCO Divider to full rate (000) */
+-	i2c_read(I2C_RETIMER_ADDR2, 0x2F, 1, &reg, 1);
+-	reg &= 0x0f;
+-	reg |= 0x70;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x2F, 1, &reg, 1);
+-#endif
+ 	/*return the default channel*/
+-	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT);
++	i2c_set_bus_num(I2C_CH_DEFAULT);
+ }
+ 
+ #ifdef CONFIG_MISC_INIT_R
+ int misc_init_r(void)
+ {
+-#ifdef CONFIG_TARGET_LS1088ARDB
+-	u8 brdcfg5;
+-
+-	if (hwconfig("esdhc-force-sd")) {
+-		brdcfg5 = QIXIS_READ(brdcfg[5]);
+-		brdcfg5 &= ~BRDCFG5_SPISDHC_MASK;
+-		brdcfg5 |= BRDCFG5_FORCE_SD;
+-		QIXIS_WRITE(brdcfg[5], brdcfg5);
+-	}
+-#endif
+ 	return 0;
+ }
+ #endif
+-#endif
+ 
+-int i2c_multiplexer_select_vid_channel(u8 channel)
+-{
+-	return select_i2c_ch_pca9547(channel);
+-}
+-
+-#ifdef CONFIG_TARGET_LS1088AQDS
+-/* read the current value(SVDD) of the LTM Regulator Voltage */
+-int get_serdes_volt(void)
++#if !defined(CONFIG_SPL_BUILD)
++int board_init(void)
+ {
+-	int  ret, vcode = 0;
+-	u8 chan = PWM_CHANNEL0;
+-
+-	/* Select the PAGE 0 using PMBus commands PAGE for VDD */
+-	ret = i2c_write(I2C_SVDD_MONITOR_ADDR,
+-			PMBUS_CMD_PAGE, 1, &chan, 1);
+-	if (ret) {
+-		printf("VID: failed to select VDD Page 0\n");
+-		return ret;
+-	}
++	init_final_memctl_regs();
+ 
+-	/* Read the output voltage using PMBus command READ_VOUT */
+-	ret = i2c_read(I2C_SVDD_MONITOR_ADDR,
+-		       PMBUS_CMD_READ_VOUT, 1, (void *)&vcode, 2);
+-	if (ret) {
+-		printf("VID: failed to read the volatge\n");
+-		return ret;
+-	}
++	board_retimer_init();
+ 
+-	return vcode;
+-}
++#ifdef CONFIG_ENV_IS_NOWHERE
++	gd->env_addr = (ulong)&default_environment[0];
++#endif
+ 
+-int set_serdes_volt(int svdd)
+-{
+-	int ret, vdd_last;
+-	u8 buff[5] = {0x04, PWM_CHANNEL0, PMBUS_CMD_VOUT_COMMAND,
+-			svdd & 0xFF, (svdd & 0xFF00) >> 8};
+-
+-	/* Write the desired voltage code to the SVDD regulator */
+-	ret = i2c_write(I2C_SVDD_MONITOR_ADDR,
+-			PMBUS_CMD_PAGE_PLUS_WRITE, 1, (void *)&buff, 5);
+-	if (ret) {
+-		printf("VID: I2C failed to write to the volatge regulator\n");
+-		return -1;
+-	}
++#ifdef CONFIG_FSL_CAAM
++	sec_init();
++#endif
++#ifdef CONFIG_FSL_LS_PPA
++	ppa_init();
++#endif
+ 
+-	/* Wait for the volatge to get to the desired value */
+-	do {
+-		vdd_last = get_serdes_volt();
+-		if (vdd_last < 0) {
+-			printf("VID: Couldn't read sensor abort VID adjust\n");
+-			return -1;
+-		}
+-	} while (vdd_last != svdd);
++#define GPIO(N,P)  (32 * ((N)-1) + (P))
+ 
+-	return 1;
+-}
+-#else
+-int get_serdes_volt(void)
+-{
+-	return 0;
+-}
++#define BB1_RF_WAKE  GPIO(2,29)
+ 
+-int set_serdes_volt(int svdd)
+-{
+-	int ret;
+-	u8 brdcfg4;
++#define BB2_PWR_ON GPIO(1, 3)  /*   3 */
++#define BB3_PWR_ON GPIO(1, 4)  /*   4 */
++#define BB4_PWR_ON GPIO(1, 5)  /*   5 */
+ 
+-	printf("SVDD changing of RDB\n");
++#define BB1_RST_N  GPIO(4,11)  /* 107 */
++#define BB2_RST_N  GPIO(2,17)  /*  49 */
++#define BB3_RST_N  GPIO(2,18)  /*  50 */
++#define BB4_RST_N  GPIO(2, 8)  /*  40 */
+ 
+-	/* Read the BRDCFG54 via CLPD */
+-	ret = i2c_read(CONFIG_SYS_I2C_FPGA_ADDR,
+-		       QIXIS_BRDCFG4_OFFSET, 1, (void *)&brdcfg4, 1);
+-	if (ret) {
+-		printf("VID: I2C failed to read the CPLD BRDCFG4\n");
+-		return -1;
+-	}
++#define BB1_REG_ON GPIO(4, 9)  /* 105 */
++#define BB2_REG_ON GPIO(2,19)  /*  51 */
++#define BB3_REG_ON GPIO(2,22)  /*  54 */
++#define BB4_REG_ON GPIO(4,13)  /* 109 */
+ 
+-	brdcfg4 = brdcfg4 | 0x08;
++#define BB1_RF_CONN_RST_N GPIO(2,14) /*  46 */
++#define BB2_RF_CONN_RST_N GPIO(2,26) /*  58 */
++#define BB3_RF_CONN_RST_N GPIO(2,27)    /*  59 */
++#define BB4_RF_CONN_RST_N GPIO(2,28)    /*  60 */
+ 
+-	/* Write to the BRDCFG4 */
+-	ret = i2c_write(CONFIG_SYS_I2C_FPGA_ADDR,
+-			QIXIS_BRDCFG4_OFFSET, 1, (void *)&brdcfg4, 1);
+-	if (ret) {
+-		debug("VID: I2C failed to set the SVDD CPLD BRDCFG4\n");
+-		return -1;
+-	}
++#define BB1_PERST  GPIO(2,15)  /*  47 */
++#define BB2_PERST  GPIO(1, 7)  /*   7 */
+ 
+-	/* Wait for the volatge to get to the desired value */
+-	udelay(10000);
++#define I2C_4_BB3_EN	GPIO(1, 0)	/* 0 */
++#define I2C_4_BB4_EN	GPIO(2, 23)	/* 55 */
+ 
+-	return 1;
+-}
++#if 0
++#define BB3_PERST        Connected to PcieSW
++#define BB4_PERST        Connected to PcieSW
+ #endif
+ 
+-/* this function disables the SERDES, changes the SVDD Voltage and enables it*/
+-int board_adjust_vdd(int vdd)
+-{
+-	int ret = 0;
++#define PCIESW_RESET GPIO(2,30)  /*  62 */
+ 
+-	debug("%s: vdd = %d\n", __func__, vdd);
++#define GPS_1PPS_IN  GPIO(4,27)  /* 123 */
++#define GPS_1PPS_OUT GPIO(4,24)  /* 120 */
+ 
+-	/* Special settings to be performed when voltage is 900mV */
+-	if (vdd == 900) {
+-		ret = setup_serdes_volt(vdd);
+-		if (ret < 0) {
+-			ret = -1;
+-			goto exit;
+-		}
+-	}
+-exit:
+-	return ret;
+-}
++#define LED_BLUE GPIO(1,26)  /*  26 */
++#define LED_GRN    GPIO(1,22)  /*  22 */
++#define LED_RED    GPIO(4,10)  /* 106 */
+ 
+-#if !defined(CONFIG_SPL_BUILD)
+-int board_init(void)
+-{
+-	init_final_memctl_regs();
+-#if defined(CONFIG_TARGET_LS1088ARDB) && defined(CONFIG_FSL_MC_ENET)
+-	u32 __iomem *irq_ccsr = (u32 __iomem *)ISC_BASE;
+-#endif
++#define SFP_TX_EN  GPIO(4, 8)  /* 104 */
+ 
+-	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT);
+-	board_retimer_init();
++    /* SFP TX_EN set low */
++    gpio_direction_output(SFP_TX_EN, 0);
+ 
+-#ifdef CONFIG_ENV_IS_NOWHERE
+-	gd->env_addr = (ulong)&default_environment[0];
+-#endif
+ 
+-#if defined(CONFIG_TARGET_LS1088ARDB) && defined(CONFIG_FSL_MC_ENET)
+-	/* invert AQR105 IRQ pins polarity */
+-	out_le32(irq_ccsr + IRQCR_OFFSET / 4, AQR105_IRQ_MASK);
+-#endif
++    /* BB2/BB3/BB4 power on */
++    gpio_direction_output(BB2_PWR_ON, 0);
++    gpio_direction_output(BB3_PWR_ON, 0);
++    gpio_direction_output(BB4_PWR_ON, 0);
++    udelay(100000);
++
++    /* BB1/BB2 - Toggle REG_ON and RF_CONN_RST
++    *    - Set RST/PERST High
++    */
++    gpio_direction_output(BB1_REG_ON, 0);
++    gpio_direction_output(BB1_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB1_RST_N, 1);
++    gpio_direction_output(BB1_PERST, 1);
++
++    gpio_direction_output(BB2_REG_ON, 0);
++    gpio_direction_output(BB2_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB1_RST_N, 1);
++    gpio_direction_output(BB2_PERST, 1);
++
++    /* BB3/BB4 - Toggle REG_ON and RF_CONN_RST
++    *         - Set RST High
++    * PE_RST comes from switch
++    */
++    gpio_direction_output(BB3_REG_ON, 0);
++    gpio_direction_output(BB3_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB3_RST_N, 1);
++
++    gpio_direction_output(BB4_REG_ON, 0);
++    gpio_direction_output(BB4_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB4_RST_N, 1);
++
++    udelay(500000);
++
++    gpio_set_value(BB1_REG_ON, 1);
++    gpio_set_value(BB1_RF_CONN_RST_N, 1);
++
++    gpio_set_value(BB2_REG_ON, 1);
++    gpio_set_value(BB2_RF_CONN_RST_N, 1);
++
++    gpio_set_value(BB3_REG_ON, 1);
++    gpio_set_value(BB3_RF_CONN_RST_N, 1);
++
++    gpio_set_value(BB4_REG_ON, 1);
++    gpio_set_value(BB4_RF_CONN_RST_N, 1);
++
++    /*
++    * After toggling baseband gpios need to
++    * reset the upstream pcie switch.  If not causing pcie
++    * problems and aborts.
++    */
++    printf("Resetting PCIE switch \n");
++    gpio_direction_output(PCIESW_RESET, 0);
++    udelay(500000);
++    gpio_set_value(PCIESW_RESET, 1);
+ 
+-#ifdef CONFIG_FSL_CAAM
+-	sec_init();
+-#endif
+-#ifdef CONFIG_FSL_LS_PPA
+-	ppa_init();
+-#endif
+ 	return 0;
+ }
+ 
+@@ -636,8 +401,98 @@ void detail_board_ddr_info(void)
+ }
+ 
+ #if defined(CONFIG_ARCH_MISC_INIT)
++
++#define BB2_PCI_BUS_NUM      3
++#define BB3_PCI_BUS_NUM      7
++#define BB4_PCI_BUS_NUM      8
++
++#define I2C_EXPANDER_ADDR   0x41
++#define OUTPUT_PORT_REG     0x1
++#define CONFIG_PORT_REG     0x3
++#define LED_PIN             3
++#define RF_POWER_CTL_PIN    0
++
++void set_secondary_led(int sec_bus, int on)
++{
++	uint8_t buf;
++
++	/* Need to access the right bus */
++	if (sec_bus == BB2_PCI_BUS_NUM)
++		i2c_set_bus_num(2);
++
++	if ((sec_bus == BB3_PCI_BUS_NUM) || (sec_bus == BB4_PCI_BUS_NUM)) {
++		i2c_set_bus_num(3);
++
++		/* Set gpios to chose the right secondary board */
++		if (sec_bus == BB3_PCI_BUS_NUM) {
++			/* I2C_4_BB3_EN=H (GPIO1_0)
++			 * and
++			 * I2C_4_BB4_EN=L (GPIO2_23) */
++			gpio_direction_output(I2C_4_BB3_EN, 1);
++			gpio_direction_output(I2C_4_BB4_EN, 0);
++		} else {
++			/* I2C_4_BB3_EN=L (GPIO1_0)
++			 * and
++			 * I2C_4_BB4_EN=H (GPIO2_23)
++			 */
++			gpio_direction_output(I2C_4_BB3_EN, 0);
++			gpio_direction_output(I2C_4_BB4_EN, 1);
++		}
++	}
++
++	/* If I2C Expander found, then turn on/off led based on whether
++	 * the corresponding baseband device present or not
++	 */
++	if (i2c_probe(I2C_EXPANDER_ADDR) == 0) {
++
++		/* set LED_PIN and RF power ctrl as output */
++		i2c_read(I2C_EXPANDER_ADDR, CONFIG_PORT_REG, 1, &buf, 1);
++		buf &= ~((1 << LED_PIN) | (1 << RF_POWER_CTL_PIN));
++		i2c_write(I2C_EXPANDER_ADDR, CONFIG_PORT_REG, 1, &buf, 1);
++
++		/* light up led/rf power ctl if bb present else turn it off  */
++		i2c_read(I2C_EXPANDER_ADDR, OUTPUT_PORT_REG, 1, &buf, 1);
++		if (on)
++			buf |= ((1 << LED_PIN) | (1 << RF_POWER_CTL_PIN));
++		else
++			buf &= ~((1 << LED_PIN) | (1 << RF_POWER_CTL_PIN));
++		i2c_write(I2C_EXPANDER_ADDR, OUTPUT_PORT_REG, 1, &buf, 1);
++	}
++
++	return;
++}
++
+ int arch_misc_init(void)
+ {
++	int idx = 0;
++	struct pci_device_id brcm[] = {
++		{PCI_VENDOR_ID_BROADCOM, 0x4e98},
++		{}
++	};
++	pci_dev_t devno;
++	int bb2_present = 0;
++	int bb3_present = 0;
++	int bb4_present = 0;
++
++	/* find which secondary pci devices are present */
++	while ((devno = pci_find_devices (brcm, idx++)) >= 0) {
++		if (PCI_BUS(devno) == BB2_PCI_BUS_NUM)
++			bb2_present = 1;
++		if (PCI_BUS(devno) == BB3_PCI_BUS_NUM)
++			bb3_present = 1;
++		if (PCI_BUS(devno) == BB4_PCI_BUS_NUM)
++			bb4_present = 1;
++	}
++	/*
++	 * Set secondary board led thru i2c ioexpander.
++	 *
++	 * Note there might be secondary board but no baseband on it.
++	 * We turn on LED only if baseband detected and turn it off
++	 * otherwise.
++	 */
++	set_secondary_led(BB2_PCI_BUS_NUM, bb2_present);
++	set_secondary_led(BB3_PCI_BUS_NUM, bb3_present);
++	set_secondary_led(BB4_PCI_BUS_NUM, bb4_present);
+ 	return 0;
+ }
+ #endif
+diff --git a/board/freescale/fb_ls1048a_puma/uboot_ddr1.c b/board/freescale/fb_ls1048a_puma/uboot_ddr1.c
+new file mode 100644
+index 0000000000..ff8a05719f
+--- /dev/null
++++ b/board/freescale/fb_ls1048a_puma/uboot_ddr1.c
+@@ -0,0 +1,323 @@
++/*
++**      DDR controller #1 initialization code
++**      Use this code to integrate the DDR controller initialization code into a boot loader code
++**
++**     Copyright : 2016 Freescale Semiconductor, Inc. All Rights Reserved.
++**     SOURCE DISTRIBUTION PERMISSIBLE as directed in End User License Agreement.
++**
++**     http      : www.nxp.com
++**     mail      : support@nxp.com
++*/
++
++#include <common.h>
++#include <fsl_ddr_sdram.h>
++#include <fsl_ddr_dimm_params.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++
++/*
++typedef unsigned int uint32_t;
++
++typedef struct ddr_cs
++{
++        uint32_t bnds;
++        uint32_t config;
++        uint32_t config_2;
++} ddr_cs_t;
++
++typedef struct ddr_cfg_regs
++{
++        ddr_cs_t cs[4];
++        uint32_t timing_cfg_0;
++        uint32_t timing_cfg_1;
++        uint32_t timing_cfg_2;
++        uint32_t timing_cfg_3;
++        uint32_t timing_cfg_4;
++        uint32_t timing_cfg_5;
++
++        uint32_t timing_cfg_6;
++        uint32_t timing_cfg_7;
++        uint32_t timing_cfg_8;
++        uint32_t sdram_cfg;
++        uint32_t sdram_cfg_2;
++
++        uint32_t sdram_cfg_3;
++        uint32_t sdram_mode;
++        uint32_t sdram_mode_2;
++        uint32_t sdram_mode_3;
++        uint32_t sdram_mode_4;
++        uint32_t sdram_mode_5;
++        uint32_t sdram_mode_6;
++        uint32_t sdram_mode_7;
++        uint32_t sdram_mode_8;
++        uint32_t sdram_mode_9;
++        uint32_t sdram_mode_10;
++        uint32_t sdram_mode_11;
++        uint32_t sdram_mode_12;
++        uint32_t sdram_mode_13;
++        uint32_t sdram_mode_14;
++        uint32_t sdram_mode_15;
++        uint32_t sdram_mode_16;
++        uint32_t sdram_md_cntl;
++        uint32_t sdram_interval;
++        uint32_t sdram_data_init;
++        uint32_t sdram_clk_cntl;
++        uint32_t init_addr;
++        uint32_t init_ext_addr;
++        uint32_t zq_cntl;
++        uint32_t wrlvl_cntl;
++        uint32_t wrlvl_cntl_2;
++        uint32_t wrlvl_cntl_3;
++        uint32_t sdram_rcw_1;
++        uint32_t sdram_rcw_2;
++        uint32_t sdram_rcw_3;
++        uint32_t sdram_rcw_4;
++        uint32_t sdram_rcw_5;
++        uint32_t sdram_rcw_6;
++        uint32_t sdram_cdr_1;
++        uint32_t sdram_cdr_2;
++        uint32_t err_disable;
++        uint32_t err_int_en;
++        uint32_t err_sbe;
++        uint32_t deskew_cntl;
++} ddr_cfg_regs_t;
++
++typedef struct fixed_ddr_param
++{
++        uint32_t data_rate_low;
++        uint32_t data_rate_high;
++        ddr_cfg_regs_t* p_ddr_cfg;
++} fixed_ddr_param_t;
++
++*/
++
++#define DATARATE_300MHZ        300000000
++#define DATARATE_400MHZ        400000000
++#define DATARATE_500MHZ        500000000
++#define DATARATE_600MHZ        600000000
++#define DATARATE_700MHZ        700000000
++#define DATARATE_800MHZ        800000000
++#define DATARATE_900MHZ        900000000
++#define DATARATE_1000MHZ      1000000000
++#define DATARATE_1200MHZ      1200000000
++#define DATARATE_1300MHZ      1300000000
++#define DATARATE_1400MHZ      1400000000
++#define DATARATE_1500MHZ      1500000000
++#define DATARATE_1600MHZ      1600000000
++#define DATARATE_1700MHZ      1700000000
++#define DATARATE_1800MHZ      1800000000
++#define DATARATE_1900MHZ      1900000000
++#define DATARATE_2000MHZ      2000000000
++#define DATARATE_2100MHZ      2100000000
++#define DATARATE_2200MHZ      2200000000
++#define DATARATE_2300MHZ      2300000000
++#define DATARATE_2400MHZ      2400000000
++
++/* swaps the bits [i.e. changes endianess] of a 32-bit value */
++#define SWAP(x)  ( \
++    (((x) >> 24) & 0xFF) \
++  | (((x) << 8) & 0xFF0000) \
++  | (((x) >> 8) & 0xFF00) \
++  | (((x) << 24) & 0xFF000000) \
++)
++
++/*
++#define VALUE_OF(x) \
++        SWAP(x)
++        */
++#define VALUE_OF(x) x
++
++#define DDRmc1_CS0_BNDS                 VALUE_OF(0xFF)
++#define DDRmc1_CS1_BNDS         VALUE_OF(0x0100013F)
++#define DDRmc1_CS0_CONFIG       VALUE_OF(0x80010412)
++#define DDRmc1_CS1_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS0_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS1_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS2_BNDS         VALUE_OF(0x0140017F)
++#define DDRmc1_CS3_BNDS         VALUE_OF(0x018001BF)
++#define DDRmc1_CS2_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS3_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS2_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS3_CONFIG_2     VALUE_OF(0x00)
++
++#define DDRmc1_TIMING_CFG_3         VALUE_OF(0x02161100)
++#define DDRmc1_TIMING_CFG_0         VALUE_OF(0x80770010)
++#define DDRmc1_TIMING_CFG_1         VALUE_OF(0xF8FC8265)
++#define DDRmc1_TIMING_CFG_2         VALUE_OF(0x005951A0)
++#define DDRmc1_SDRAM_CFG                        VALUE_OF(0x65200000)
++#define DDRmc1_SDRAM_CFG2       VALUE_OF(0x00401050)
++#define DDRmc1_MODE_1           VALUE_OF(0x01010631)
++#define DDRmc1_MODE_2           VALUE_OF(0x00100000)
++#define DDRmc1_MODE_3           VALUE_OF(0x00)
++#define DDRmc1_MODE_4           VALUE_OF(0x00)
++#define DDRmc1_MODE_5           VALUE_OF(0x00)
++#define DDRmc1_MODE_6           VALUE_OF(0x00)
++#define DDRmc1_MODE_7           VALUE_OF(0x00)
++#define DDRmc1_MODE_8           VALUE_OF(0x00)
++
++#define DDRmc1_MODE_CONTROL     VALUE_OF(0x00)
++#define DDRmc1_INTERVAL         VALUE_OF(0x1FFE07FF)
++#define DDRmc1_MEM_INIT_VALUE   VALUE_OF(0xDEADBEEF)
++#define DDRmc1_CLK_CTRL         VALUE_OF(0x02800000)
++#define DDRmc1_INIT_ADDR        VALUE_OF(0x00)
++#define DDRmc1_INIT_EXT_ADDR    VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_4         VALUE_OF(0x00220002)
++#define DDRmc1_TIMING_CFG_5         VALUE_OF(0x06401400)
++#define DDRmc1_ZQ_CNTL          VALUE_OF(0x8A090705)
++#define DDRmc1_WRLVL_CNTL       VALUE_OF(0x86750608)
++#define DDRmc1_WRLVL_CNTL_2     VALUE_OF(0x08080807)
++#define DDRmc1_WRLVL_CNTL_3     VALUE_OF(0x07060608)
++#define DDRmc1_RCW_1            VALUE_OF(0x00)
++#define DDRmc1_RCW_2            VALUE_OF(0x00)
++#define DDRmc1_CDR_1            VALUE_OF(0x80040000)
++#define DDRmc1_CDR_2            VALUE_OF(0xA181)
++#define DDRmc1_SDRAM_CFG_3              VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_6             VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_7             VALUE_OF(0x20000000)
++#define DDRmc1_TIMING_CFG_8             VALUE_OF(0x05226A00)
++#define DDRmc1_DESKEW_CNTL              VALUE_OF(0x00)
++#define DDRmc1_DQ_MAP0                  VALUE_OF(0x56C12D30)
++#define DDRmc1_DQ_MAP1                  VALUE_OF(0xD95D95D8)
++#define DDRmc1_DQ_MAP2                  VALUE_OF(0x57643558)
++#define DDRmc1_DQ_MAP3                  VALUE_OF(0xD55D8000)
++#define DDRmc1_RCW_3            VALUE_OF(0x00)
++#define DDRmc1_RCW_4            VALUE_OF(0x00)
++#define DDRmc1_RCW_5            VALUE_OF(0x00)
++#define DDRmc1_RCW_6            VALUE_OF(0x00)
++#define DDRmc1_MODE_9           VALUE_OF(0x0500)
++#define DDRmc1_MODE_10          VALUE_OF(0x08800000)
++#define DDRmc1_MODE_11          VALUE_OF(0x00)
++#define DDRmc1_MODE_12           VALUE_OF(0x00)
++#define DDRmc1_MODE_13           VALUE_OF(0x00)
++#define DDRmc1_MODE_14           VALUE_OF(0x00)
++#define DDRmc1_MODE_15           VALUE_OF(0x00)
++#define DDRmc1_MODE_16           VALUE_OF(0x00)
++#define DDRmc1_ERR_DISABLE      VALUE_OF(0x00)
++#define DDRmc1_ERR_INT_EN               VALUE_OF(0x1D)
++#define DDRmc1_ERR_SBE                  VALUE_OF(0x00010000)
++
++
++#define CLK_ADJ_MASK           0x07C00000
++#define CLK_ADJ_OFFSET         22
++#define WRLVL_START_MASK       0x0000001F
++#define HSE_MASK               0x00000008
++#define HSE_OFFSET             3
++
++#define CLK_ADJ                ((0x02800000 & CLK_ADJ_MASK) >> CLK_ADJ_OFFSET)
++#define WRLVL_START            (0x86750608 & WRLVL_START_MASK)
++#define HALF_STRENGTH_ENABLE   ((0x65200000 & HSE_MASK) >> HSE_OFFSET)
++
++
++fsl_ddr_cfg_regs_t ddr_cfg_regs_1 = {
++
++        .cs[0].bnds = DDRmc1_CS0_BNDS,
++        .cs[1].bnds = DDRmc1_CS1_BNDS,
++        .cs[0].config = DDRmc1_CS0_CONFIG,
++        .cs[1].config = DDRmc1_CS1_CONFIG,
++        .cs[0].config_2 = DDRmc1_CS0_CONFIG_2,
++        .cs[1].config_2 =  DDRmc1_CS1_CONFIG_2,
++        .cs[2].bnds = DDRmc1_CS2_BNDS,
++        .cs[3].bnds = DDRmc1_CS3_BNDS,
++        .cs[2].config = DDRmc1_CS2_CONFIG,
++        .cs[3].config = DDRmc1_CS3_CONFIG,
++        .cs[2].config_2 =  DDRmc1_CS2_CONFIG_2,
++        .cs[3].config_2 =  DDRmc1_CS3_CONFIG_2,
++        .timing_cfg_0 = DDRmc1_TIMING_CFG_0,
++        .timing_cfg_1 = DDRmc1_TIMING_CFG_1,
++        .timing_cfg_2 = DDRmc1_TIMING_CFG_2,
++        .timing_cfg_3 = DDRmc1_TIMING_CFG_3,
++        .timing_cfg_4 = DDRmc1_TIMING_CFG_4,
++        .timing_cfg_5 = DDRmc1_TIMING_CFG_5,
++        .timing_cfg_6 = DDRmc1_TIMING_CFG_6,
++        .timing_cfg_7 = DDRmc1_TIMING_CFG_7,
++        .timing_cfg_8 = DDRmc1_TIMING_CFG_8,
++        .ddr_sdram_cfg = DDRmc1_SDRAM_CFG,
++        .ddr_sdram_cfg_2 = DDRmc1_SDRAM_CFG2,
++        .ddr_sdram_cfg_3 = DDRmc1_SDRAM_CFG_3,
++        .ddr_sdram_mode = DDRmc1_MODE_1,
++        .ddr_sdram_mode_2 = DDRmc1_MODE_2,
++        .ddr_sdram_mode_3 = DDRmc1_MODE_3,
++        .ddr_sdram_mode_4 = DDRmc1_MODE_4,
++        .ddr_sdram_mode_5 = DDRmc1_MODE_5,
++        .ddr_sdram_mode_6 = DDRmc1_MODE_6,
++        .ddr_sdram_mode_7 = DDRmc1_MODE_7,
++        .ddr_sdram_mode_8 = DDRmc1_MODE_8,
++        .ddr_sdram_mode_9 = DDRmc1_MODE_9,
++        .ddr_sdram_mode_10 = DDRmc1_MODE_10,
++        .ddr_sdram_mode_11 = DDRmc1_MODE_11,
++        .ddr_sdram_mode_12 = DDRmc1_MODE_12,
++        .ddr_sdram_mode_13 = DDRmc1_MODE_13,
++        .ddr_sdram_mode_14 = DDRmc1_MODE_14,
++        .ddr_sdram_mode_15 = DDRmc1_MODE_15,
++        .ddr_sdram_mode_16 = DDRmc1_MODE_16,
++        .ddr_sdram_md_cntl = DDRmc1_MODE_CONTROL,
++        .ddr_sdram_interval = DDRmc1_INTERVAL,
++        .ddr_data_init = DDRmc1_MEM_INIT_VALUE,
++        .ddr_sdram_clk_cntl = DDRmc1_CLK_CTRL,
++        .ddr_init_addr = DDRmc1_INIT_ADDR,
++        .ddr_init_ext_addr = DDRmc1_INIT_EXT_ADDR,
++        .ddr_zq_cntl = DDRmc1_ZQ_CNTL,
++        .ddr_wrlvl_cntl = DDRmc1_WRLVL_CNTL,
++        .ddr_wrlvl_cntl_2 = DDRmc1_WRLVL_CNTL_2,
++        .ddr_wrlvl_cntl_3 = DDRmc1_WRLVL_CNTL_3,
++        .ddr_sdram_rcw_1 = DDRmc1_RCW_1,
++        .ddr_sdram_rcw_2 = DDRmc1_RCW_2,
++        .ddr_sdram_rcw_3 = DDRmc1_RCW_3,
++        .ddr_sdram_rcw_4 = DDRmc1_RCW_4,
++        .ddr_sdram_rcw_5 = DDRmc1_RCW_5,
++        .ddr_sdram_rcw_6 = DDRmc1_RCW_6,
++        .dq_map_0 =  DDRmc1_DQ_MAP0,
++        .dq_map_1 =  DDRmc1_DQ_MAP1,
++        .dq_map_2 =  DDRmc1_DQ_MAP2,
++        .dq_map_3 =  DDRmc1_DQ_MAP3,
++      /*  .deskew_cntl = DDRmc1_DESKEW_CNTL, TODO */
++        .ddr_cdr1 = DDRmc1_CDR_1,
++        .ddr_cdr2 = DDRmc1_CDR_2,
++        .err_disable = DDRmc1_ERR_DISABLE,
++        .err_int_en = DDRmc1_ERR_INT_EN,
++       /* .err_sbe = DDRmc1_ERR_SBE TODO */
++};
++
++/*
++ * Fixed sdram init -- doesn't use serial presence detect.
++ */
++phys_size_t fixed_sdram(void)
++{
++        int i;
++        char buf[32];
++        fsl_ddr_cfg_regs_t *ddr_cfg_regs;
++        phys_size_t ddr_size;
++        ulong ddr_freq, ddr_freq_mhz;
++
++        ddr_freq = get_ddr_freq(0);
++        ddr_freq_mhz = ddr_freq / 1000000;
++
++        printf("Configuring DDR for %s MT/s data rate\n",
++               strmhz(buf, ddr_freq));
++
++        ddr_cfg_regs = &ddr_cfg_regs_1;
++        ddr_size = (phys_size_t) CONFIG_SYS_SDRAM_SIZE * 1024 * 1024;
++        fsl_ddr_set_memctl_regs(ddr_cfg_regs, 0, 0);
++
++        printf("Ram size: %08lX\n", ddr_size);
++        return ddr_size;
++}
++
++int fsl_initdram(void)
++{
++        phys_size_t dram_size;
++
++#if defined(CONFIG_SPL_BUILD) || !defined(CONFIG_SPL)
++        puts("Initializing DDR....\n");
++        dram_size = fixed_sdram();
++#else
++        dram_size =  CONFIG_SYS_SDRAM_SIZE * 1024 * 1024;
++#endif
++        gd->ram_size = dram_size;
++        printf("Ram size: %08lX\n", gd->ram_size);
++
++        return 0;
++}
++
++
+diff --git a/configs/fb-ls1048a-puma_qspi_defconfig b/configs/fb-ls1048a-puma_qspi_defconfig
+index febf0d88b1..3dd30fa1c1 100644
+--- a/configs/fb-ls1048a-puma_qspi_defconfig
++++ b/configs/fb-ls1048a-puma_qspi_defconfig
+@@ -1,15 +1,17 @@
+ CONFIG_ARM=y
+-CONFIG_TARGET_LS1088ARDB=y
+-CONFIG_SYS_TEXT_BASE=0x20100000
++CONFIG_TARGET_FB_LS1048A_PUMA=y
++CONFIG_SYS_TEXT_BASE=0x20010000
+ CONFIG_FSL_LS_PPA=y
+ CONFIG_QSPI_AHB_INIT=y
+ CONFIG_DISTRO_DEFAULTS=y
+ CONFIG_NR_DRAM_BANKS=2
++#
+ # CONFIG_SYS_MALLOC_F is not set
+ CONFIG_FIT_VERBOSE=y
+ CONFIG_OF_BOARD_SETUP=y
+ CONFIG_OF_STDOUT_VIA_ALIAS=y
+ CONFIG_SYS_EXTRA_OPTIONS="SYS_FSL_DDR4, QSPI_BOOT"
++CONFIG_HUSH_PARSER=y
+ CONFIG_USE_BOOTARGS=y
+ CONFIG_BOOTARGS="console=ttyS0,115200 root=/dev/ram0 earlycon=uart8250,mmio,0x21c0500 ramdisk_size=0x3000000 default_hugepagesz=2m hugepagesz=2m hugepages=256"
+ # CONFIG_USE_BOOTCOMMAND is not set
+@@ -21,11 +23,12 @@ CONFIG_CMD_MEMTEST=y
+ CONFIG_CMD_I2C=y
+ CONFIG_CMD_MMC=y
+ CONFIG_CMD_SF=y
+-CONFIG_CMD_USB=y
+ # CONFIG_CMD_SETEXPR is not set
+ CONFIG_MP=y
++CONFIG_CMD_DHCP=y
++CONFIG_CMD_PING=y
+ CONFIG_OF_CONTROL=y
+-CONFIG_DEFAULT_DEVICE_TREE="fsl-ls1088a-rdb"
++CONFIG_DEFAULT_DEVICE_TREE="fb-ls1048a-puma"
+ CONFIG_ENV_IS_IN_SPI_FLASH=y
+ CONFIG_NET_RANDOM_ETHADDR=y
+ CONFIG_DM=y
+@@ -35,7 +38,7 @@ CONFIG_DM_SPI_FLASH=y
+ CONFIG_SPI_FLASH=y
+ CONFIG_SPI_FLASH_SPANSION=y
+ CONFIG_FSL_SPI_ALIGNED_TXFIFO=y
+-# CONFIG_SPI_FLASH_USE_4K_SECTORS is not set
++CONFIG_NETDEVICES=y
+ CONFIG_E1000=y
+ CONFIG_MII=y
+ CONFIG_PCI=y
+@@ -47,17 +50,14 @@ CONFIG_SPI=y
+ CONFIG_DM_SPI=y
+ CONFIG_FSL_DSPI=y
+ CONFIG_FSL_QSPI=y
+-CONFIG_USB=y
+-CONFIG_DM_USB=y
+-CONFIG_USB_XHCI_HCD=y
+-CONFIG_USB_XHCI_DWC3=y
+-CONFIG_USB_DWC3=y
+-CONFIG_USB_STORAGE=y
+-CONFIG_USB_GADGET=y
+-CONFIG_EFI_LOADER_BOUNCE_BUFFER=y
+-CONFIG_DM_MMC=y
+-CONFIG_DM_SCSI=y
+-CONFIG_SATA_CEVA=y
+-CONFIG_SCSI_AHCI=y
+-CONFIG_SCSI=y
+-CONFIG_AHCI=y
++CONFIG_FSL_LS_PPA=y
++CONFIG_PARTITIONS=y
++# CONFIG_DISPLAY_BOARDINFO is not set
++CONFIG_DISTRO_DEFAULTS=y
++CONFIG_TERRAGRAPH=y
++CONFIG_CMD_GPIO=y
++CONFIG_WDT_SP805=y
++CONFIG_CMD_GPT=y
++CONFIG_SYS_LS_PPA_FW_ADDR=0x200D0000
++CONFIG_CONS_INDEX=2
++CONFIG_FDT_EEPROM=y
+diff --git a/include/configs/fb_ls1048a_puma.h b/include/configs/fb_ls1048a_puma.h
+index 335135e8de..4ad5ebc1a1 100644
+--- a/include/configs/fb_ls1048a_puma.h
++++ b/include/configs/fb_ls1048a_puma.h
+@@ -3,11 +3,21 @@
+  * Copyright 2017 NXP
+  */
+ 
+-#ifndef __LS1088A_RDB_H
+-#define __LS1088A_RDB_H
++#ifndef __FB_LS1048A_PUMA_H
++#define __FB_LS1048A_PUMA_H
+ 
+ #include "ls1088a_common.h"
+ 
++/* Override defaults that differ from ones in ls1088a_common.h */
++#undef CONFIG_MAX_CPUS
++#define CONFIG_MAX_CPUS 4
++
++#undef CONFIG_SYS_TEXT_BASE
++#define CONFIG_SYS_TEXT_BASE            0x20010000
++
++#undef CONFIG_CONS_INDEX
++#define CONFIG_CONS_INDEX 2
++
+ #ifdef CONFIG_TFABOOT
+ #define CONFIG_SYS_MMC_ENV_DEV		0
+ 
+@@ -20,6 +30,11 @@
+ #if defined(CONFIG_QSPI_BOOT)
+ #define CONFIG_ENV_SIZE			0x2000          /* 8KB */
+ #define CONFIG_ENV_SECT_SIZE		0x40000
++#undef CONFIG_ENV_OFFSET
++#define CONFIG_ENV_OFFSET		0xe0000
++#undef CONFIG_ENV_ADDR
++#define CONFIG_ENV_ADDR			(CONFIG_SYS_FSL_QSPI_BASE + \
++					 CONFIG_ENV_OFFSET)
+ #elif defined(CONFIG_SD_BOOT)
+ #define CONFIG_ENV_OFFSET		(3 * 1024 * 1024)
+ #define CONFIG_SYS_MMC_ENV_DEV		0
+@@ -34,9 +49,6 @@
+ 
+ #if defined(CONFIG_TFABOOT) || \
+ 	defined(CONFIG_QSPI_BOOT) || defined(CONFIG_SD_BOOT_QSPI)
+-#ifndef CONFIG_SPL_BUILD
+-#define CONFIG_QIXIS_I2C_ACCESS
+-#endif
+ #define SYS_NO_FLASH
+ #undef CONFIG_CMD_IMLS
+ #endif
+@@ -55,218 +67,20 @@
+ #define CONFIG_DDR_ECC
+ #define CONFIG_ECC_INIT_VIA_DDRCONTROLLER
+ #define CONFIG_MEM_INIT_VALUE		0xdeadbeef
++#define CONFIG_SYS_SDRAM_SIZE          4096
+ #endif
+-#define SPD_EEPROM_ADDRESS	0x51
+-#define CONFIG_SYS_SPD_BUS_NUM	0	/* SPD on I2C bus 0 */
+ #define CONFIG_DIMM_SLOTS_PER_CTLR	1
+ 
++/* I2C Addresses */
++#define I2C_RETIMER_ADDR	0x18
++#define I2C_CH_DEFAULT		0x1
+ 
+-#if !defined(CONFIG_QSPI_BOOT) && !defined(CONFIG_SD_BOOT_QSPI)
+-#define CONFIG_SYS_NOR0_CSPR_EXT	(0x0)
+-#define CONFIG_SYS_NOR_AMASK		IFC_AMASK(128 * 1024 * 1024)
+-#define CONFIG_SYS_NOR_AMASK_EARLY	IFC_AMASK(64 * 1024 * 1024)
+-
+-#define CONFIG_SYS_NOR0_CSPR					\
+-	(CSPR_PHYS_ADDR(CONFIG_SYS_FLASH_BASE_PHYS)		| \
+-	CSPR_PORT_SIZE_16					| \
+-	CSPR_MSEL_NOR						| \
+-	CSPR_V)
+-#define CONFIG_SYS_NOR0_CSPR_EARLY				\
+-	(CSPR_PHYS_ADDR(CONFIG_SYS_FLASH_BASE_PHYS_EARLY)	| \
+-	CSPR_PORT_SIZE_16					| \
+-	CSPR_MSEL_NOR						| \
+-	CSPR_V)
+-#define CONFIG_SYS_NOR_CSOR	CSOR_NOR_ADM_SHIFT(6)
+-#define CONFIG_SYS_NOR_FTIM0	(FTIM0_NOR_TACSE(0x1) | \
+-				FTIM0_NOR_TEADC(0x1) | \
+-				FTIM0_NOR_TEAHC(0x1))
+-#define CONFIG_SYS_NOR_FTIM1	(FTIM1_NOR_TACO(0x1) | \
+-				FTIM1_NOR_TRAD_NOR(0x1))
+-#define CONFIG_SYS_NOR_FTIM2	(FTIM2_NOR_TCS(0x0) | \
+-				FTIM2_NOR_TCH(0x0) | \
+-				FTIM2_NOR_TWP(0x1))
+-#define CONFIG_SYS_NOR_FTIM3	0x04000000
+-#define CONFIG_SYS_IFC_CCR	0x01000000
+-
+-#ifndef SYS_NO_FLASH
+-#define CONFIG_FLASH_CFI_DRIVER
+-#define CONFIG_SYS_FLASH_CFI
+-#define CONFIG_SYS_FLASH_USE_BUFFER_WRITE
+-#define CONFIG_SYS_FLASH_QUIET_TEST
+-#define CONFIG_FLASH_SHOW_PROGRESS	45 /* count down from 45/5: 9..1 */
+-
+-#define CONFIG_SYS_MAX_FLASH_BANKS	1	/* number of banks */
+-#define CONFIG_SYS_MAX_FLASH_SECT	1024	/* sectors per device */
+-#define CONFIG_SYS_FLASH_ERASE_TOUT	60000	/* Flash Erase Timeout (ms) */
+-#define CONFIG_SYS_FLASH_WRITE_TOUT	500	/* Flash Write Timeout (ms) */
+-
+-#define CONFIG_SYS_FLASH_EMPTY_INFO
+-#define CONFIG_SYS_FLASH_BANKS_LIST	{ CONFIG_SYS_FLASH_BASE }
+-#endif
+-#endif
+-
+-#ifndef SPL_NO_IFC
+-#define CONFIG_NAND_FSL_IFC
+-#endif
+-
+-#define CONFIG_SYS_NAND_MAX_ECCPOS	256
+-#define CONFIG_SYS_NAND_MAX_OOBFREE	2
+-
+-#define CONFIG_SYS_NAND_CSPR_EXT	(0x0)
+-#define CONFIG_SYS_NAND_CSPR	(CSPR_PHYS_ADDR(CONFIG_SYS_NAND_BASE_PHYS) \
+-				| CSPR_PORT_SIZE_8 /* Port Size = 8 bit */ \
+-				| CSPR_MSEL_NAND	/* MSEL = NAND */ \
+-				| CSPR_V)
+-#define CONFIG_SYS_NAND_AMASK	IFC_AMASK(64 * 1024)
+-
+-#define CONFIG_SYS_NAND_CSOR    (CSOR_NAND_ECC_ENC_EN   /* ECC on encode */ \
+-				| CSOR_NAND_ECC_DEC_EN  /* ECC on decode */ \
+-				| CSOR_NAND_ECC_MODE_4  /* 4-bit ECC */ \
+-				| CSOR_NAND_RAL_3	/* RAL = 3Byes */ \
+-				| CSOR_NAND_PGS_2K	/* Page Size = 2K */ \
+-				| CSOR_NAND_SPRZ_64/* Spare size = 64 */ \
+-				| CSOR_NAND_PB(64))	/*Pages Per Block = 64*/
+-
+-#define CONFIG_SYS_NAND_ONFI_DETECTION
+-
+-/* ONFI NAND Flash mode0 Timing Params */
+-#define CONFIG_SYS_NAND_FTIM0		(FTIM0_NAND_TCCST(0x07) | \
+-					FTIM0_NAND_TWP(0x18)   | \
+-					FTIM0_NAND_TWCHT(0x07) | \
+-					FTIM0_NAND_TWH(0x0a))
+-#define CONFIG_SYS_NAND_FTIM1		(FTIM1_NAND_TADLE(0x32) | \
+-					FTIM1_NAND_TWBE(0x39)  | \
+-					FTIM1_NAND_TRR(0x0e)   | \
+-					FTIM1_NAND_TRP(0x18))
+-#define CONFIG_SYS_NAND_FTIM2		(FTIM2_NAND_TRAD(0x0f) | \
+-					FTIM2_NAND_TREH(0x0a) | \
+-					FTIM2_NAND_TWHRE(0x1e))
+-#define CONFIG_SYS_NAND_FTIM3		0x0
+-
+-#define CONFIG_SYS_NAND_BASE_LIST	{ CONFIG_SYS_NAND_BASE }
+-#define CONFIG_SYS_MAX_NAND_DEVICE	1
+-#define CONFIG_MTD_NAND_VERIFY_WRITE
+-#define CONFIG_CMD_NAND
+-
+-#define CONFIG_SYS_NAND_BLOCK_SIZE	(128 * 1024)
+-
+-#ifndef SPL_NO_QIXIS
+-#define CONFIG_FSL_QIXIS
+-#endif
+-
+-#define CONFIG_SYS_I2C_FPGA_ADDR	0x66
+-#define QIXIS_BRDCFG4_OFFSET            0x54
+-#define QIXIS_LBMAP_SWITCH		2
+-#define QIXIS_QMAP_MASK			0xe0
+-#define QIXIS_QMAP_SHIFT		5
+-#define QIXIS_LBMAP_MASK		0x1f
+-#define QIXIS_LBMAP_SHIFT		5
+-#define QIXIS_LBMAP_DFLTBANK		0x00
+-#define QIXIS_LBMAP_ALTBANK		0x20
+-#define QIXIS_LBMAP_SD			0x00
+-#define QIXIS_LBMAP_EMMC		0x00
+-#define QIXIS_LBMAP_SD_QSPI		0x00
+-#define QIXIS_LBMAP_QSPI		0x00
+-#define QIXIS_RCW_SRC_SD		0x40
+-#define QIXIS_RCW_SRC_EMMC		0x41
+-#define QIXIS_RCW_SRC_QSPI		0x62
+-#define QIXIS_RST_CTL_RESET		0x31
+-#define QIXIS_RCFG_CTL_RECONFIG_IDLE	0x20
+-#define QIXIS_RCFG_CTL_RECONFIG_START	0x21
+-#define QIXIS_RCFG_CTL_WATCHDOG_ENBLE	0x08
+-#define	QIXIS_RST_FORCE_MEM		0x01
+-
+-#define CONFIG_SYS_FPGA_CSPR_EXT	(0x0)
+-#define CONFIG_SYS_FPGA_CSPR		(CSPR_PHYS_ADDR(QIXIS_BASE_PHYS_EARLY) \
+-					| CSPR_PORT_SIZE_8 \
+-					| CSPR_MSEL_GPCM \
+-					| CSPR_V)
+-#define SYS_FPGA_CSPR_FINAL	(CSPR_PHYS_ADDR(QIXIS_BASE_PHYS) \
+-					| CSPR_PORT_SIZE_8 \
+-					| CSPR_MSEL_GPCM \
+-					| CSPR_V)
+-
+-#define CONFIG_SYS_FPGA_AMASK		IFC_AMASK(64*1024)
+-#define CONFIG_SYS_FPGA_CSOR		CSOR_GPCM_ADM_SHIFT(0)
+-/* QIXIS Timing parameters*/
+-#define SYS_FPGA_CS_FTIM0	(FTIM0_GPCM_TACSE(0x0e) | \
+-					FTIM0_GPCM_TEADC(0x0e) | \
+-					FTIM0_GPCM_TEAHC(0x0e))
+-#define SYS_FPGA_CS_FTIM1	(FTIM1_GPCM_TACO(0xff) | \
+-					FTIM1_GPCM_TRAD(0x3f))
+-#define SYS_FPGA_CS_FTIM2	(FTIM2_GPCM_TCS(0xf) | \
+-					FTIM2_GPCM_TCH(0xf) | \
+-					FTIM2_GPCM_TWP(0x3E))
+-#define SYS_FPGA_CS_FTIM3	0x0
+-
+-#if defined(CONFIG_TFABOOT) || \
+-	defined(CONFIG_QSPI_BOOT) || defined(CONFIG_SD_BOOT_QSPI)
+-#define CONFIG_SYS_CSPR0_EXT		CONFIG_SYS_NAND_CSPR_EXT
+-#define CONFIG_SYS_CSPR0		CONFIG_SYS_NAND_CSPR
+-#define CONFIG_SYS_AMASK0		CONFIG_SYS_NAND_AMASK
+-#define CONFIG_SYS_CSOR0		CONFIG_SYS_NAND_CSOR
+-#define CONFIG_SYS_CS0_FTIM0		CONFIG_SYS_NAND_FTIM0
+-#define CONFIG_SYS_CS0_FTIM1		CONFIG_SYS_NAND_FTIM1
+-#define CONFIG_SYS_CS0_FTIM2		CONFIG_SYS_NAND_FTIM2
+-#define CONFIG_SYS_CS0_FTIM3		CONFIG_SYS_NAND_FTIM3
+-#define CONFIG_SYS_CSPR2_EXT		CONFIG_SYS_FPGA_CSPR_EXT
+-#define CONFIG_SYS_CSPR2		CONFIG_SYS_FPGA_CSPR
+-#define CONFIG_SYS_CSPR2_FINAL		SYS_FPGA_CSPR_FINAL
+-#define CONFIG_SYS_AMASK2		CONFIG_SYS_FPGA_AMASK
+-#define CONFIG_SYS_CSOR2		CONFIG_SYS_FPGA_CSOR
+-#define CONFIG_SYS_CS2_FTIM0		SYS_FPGA_CS_FTIM0
+-#define CONFIG_SYS_CS2_FTIM1		SYS_FPGA_CS_FTIM1
+-#define CONFIG_SYS_CS2_FTIM2		SYS_FPGA_CS_FTIM2
+-#define CONFIG_SYS_CS2_FTIM3		SYS_FPGA_CS_FTIM3
+-#else
+-#define CONFIG_SYS_CSPR0_EXT		CONFIG_SYS_NOR0_CSPR_EXT
+-#define CONFIG_SYS_CSPR0		CONFIG_SYS_NOR0_CSPR_EARLY
+-#define CONFIG_SYS_CSPR0_FINAL		CONFIG_SYS_NOR0_CSPR
+-#define CONFIG_SYS_AMASK0		CONFIG_SYS_NOR_AMASK
+-#define CONFIG_SYS_CSOR0		CONFIG_SYS_NOR_CSOR
+-#define CONFIG_SYS_CS0_FTIM0		CONFIG_SYS_NOR_FTIM0
+-#define CONFIG_SYS_CS0_FTIM1		CONFIG_SYS_NOR_FTIM1
+-#define CONFIG_SYS_CS0_FTIM2		CONFIG_SYS_NOR_FTIM2
+-#define CONFIG_SYS_CS0_FTIM3		CONFIG_SYS_NOR_FTIM3
+-#endif
++/* no qixis */
++#define SPL_NO_QIXIS
++#undef CONFIG_FSL_QIXIS
+ 
+ #define CONFIG_SYS_LS_MC_BOOT_TIMEOUT_MS 5000
+ 
+-#define I2C_MUX_CH_VOL_MONITOR          0xA
+-/* Voltage monitor on channel 2*/
+-#define I2C_VOL_MONITOR_ADDR           0x63
+-#define I2C_VOL_MONITOR_BUS_V_OFFSET   0x2
+-#define I2C_VOL_MONITOR_BUS_V_OVF      0x1
+-#define I2C_VOL_MONITOR_BUS_V_SHIFT    3
+-#define I2C_SVDD_MONITOR_ADDR		0x4F
+-
+-#define CONFIG_VID_FLS_ENV              "ls1088ardb_vdd_mv"
+-#define CONFIG_VID
+-
+-/* The lowest and highest voltage allowed for LS1088ARDB */
+-#define VDD_MV_MIN			819
+-#define VDD_MV_MAX			1212
+-
+-#define CONFIG_VOL_MONITOR_LTC3882_SET
+-#define CONFIG_VOL_MONITOR_LTC3882_READ
+-
+-/* PM Bus commands code for LTC3882*/
+-#define PMBUS_CMD_PAGE                  0x0
+-#define PMBUS_CMD_READ_VOUT             0x8B
+-#define PMBUS_CMD_PAGE_PLUS_WRITE       0x05
+-#define PMBUS_CMD_VOUT_COMMAND          0x21
+-
+-#define PWM_CHANNEL0                    0x0
+-
+-/*
+- * I2C bus multiplexer
+- */
+-#define I2C_MUX_PCA_ADDR_PRI		0x77
+-#define I2C_MUX_PCA_ADDR_SEC		0x76 /* Secondary multiplexer */
+-#define I2C_RETIMER_ADDR		0x18
+-#define I2C_MUX_CH_DEFAULT		0x8
+-#define I2C_MUX_CH5			0xD
+-
+ #ifndef SPL_NO_RTC
+ /*
+ * RTC configuration
+@@ -278,21 +92,21 @@
+ #endif
+ 
+ /* EEPROM */
+-#define CONFIG_ID_EEPROM
+-#define CONFIG_SYS_I2C_EEPROM_NXID
+-#define CONFIG_SYS_EEPROM_BUS_NUM		0
+-#define CONFIG_SYS_I2C_EEPROM_ADDR		0x57
+-#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN		1
++#define CONFIG_SYS_EEPROM_BUS_NUM		1
++#define CONFIG_SYS_I2C_EEPROM_ADDR		0x54
++#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN		2
+ #define CONFIG_SYS_EEPROM_PAGE_WRITE_BITS	3
+ #define CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS	5
+ 
+ #ifndef SPL_NO_QSPI
+ /* QSPI device */
+-#if defined(CONFIG_TFABOOT) || \
+-	defined(CONFIG_QSPI_BOOT) || defined(CONFIG_SD_BOOT_QSPI)
+-#define FSL_QSPI_FLASH_SIZE		(1 << 26)
+-#define FSL_QSPI_FLASH_NUM		2
+-#endif
++#undef CONFIG_FSL_QSPI
++#define CONFIG_FSL_QSPI
++#undef CONFIG_SPI_FLASH_SPANSION
++#define CONFIG_SPI_FLASH_WINBOND
++#define CONFIG_SPI_FLASH_ATMEL
++#define FSL_QSPI_FLASH_SIZE    SZ_2M
++#define FSL_QSPI_FLASH_NUM   1
+ #endif
+ 
+ #define CONFIG_CMD_MEMINFO
+@@ -309,286 +123,99 @@
+ 
+ #ifndef SPL_NO_ENV
+ /* Initial environment variables */
+-#ifdef CONFIG_TFABOOT
+-#define QSPI_MC_INIT_CMD				\
+-	"sf probe 0:0;sf read 0x80000000 0xA00000 0x100000;"	\
+-	"sf read 0x80100000 0xE00000 0x100000;"				\
+-	"env exists secureboot && "			\
+-	"sf read 0x80700000 0x700000 0x40000 && "	\
+-	"sf read 0x80740000 0x740000 0x40000 && "	\
+-	"esbc_validate 0x80700000 && "			\
+-	"esbc_validate 0x80740000 ;"			\
+-	"fsl_mc start mc 0x80000000 0x80100000\0"
+-#define SD_MC_INIT_CMD				\
+-	"mmcinfo;mmc read 0x80000000 0x5000 0x800;"		\
+-	"mmc read 0x80100000 0x7000 0x800;"				\
+-	"env exists secureboot && "			\
+-	"mmc read 0x80700000 0x3800 0x10 && "		\
+-	"mmc read 0x80740000 0x3A00 0x10 && "		\
+-	"esbc_validate 0x80700000 && "			\
+-	"esbc_validate 0x80740000 ;"			\
+-	"fsl_mc start mc 0x80000000 0x80100000\0"
+-#else
+-#if defined(CONFIG_QSPI_BOOT)
+-#define MC_INIT_CMD				\
+-	"mcinitcmd=sf probe 0:0;sf read 0x80000000 0xA00000 0x100000;"	\
+-	"sf read 0x80100000 0xE00000 0x100000;"				\
+-	"env exists secureboot && "			\
+-	"sf read 0x80700000 0x700000 0x40000 && "	\
+-	"sf read 0x80740000 0x740000 0x40000 && "	\
+-	"esbc_validate 0x80700000 && "			\
+-	"esbc_validate 0x80740000 ;"			\
+-	"fsl_mc start mc 0x80000000 0x80100000\0"	\
+-	"mcmemsize=0x70000000\0"
+-#elif defined(CONFIG_SD_BOOT)
+-#define MC_INIT_CMD				\
+-	"mcinitcmd=mmcinfo;mmc read 0x80000000 0x5000 0x800;"		\
+-	"mmc read 0x80100000 0x7000 0x800;"				\
+-	"env exists secureboot && "			\
+-	"mmc read 0x80700000 0x3800 0x10 && "		\
+-	"mmc read 0x80740000 0x3A00 0x10 && "		\
+-	"esbc_validate 0x80700000 && "			\
+-	"esbc_validate 0x80740000 ;"			\
+-	"fsl_mc start mc 0x80000000 0x80100000\0"	\
+-	"mcmemsize=0x70000000\0"
+-#endif
+-#endif /* CONFIG_TFABOOT */
++#ifdef CONFIG_TERRAGRAPH
++
++/*
++ * Partitions to use in eMMC
++ */
++#define TG_MMC_PARTITIONS "partitions="         \
++	"name=rootfs1,size=1GiB,start=1MiB;"    \
++	"name=rootfs2,size=1GiB;"               \
++	"name=recovery,size=1GiB;"              \
++	"name=data,size=0\0"                    \
++
++#define TG_SPI_PARTITIONS "tg_mtdparts="        \
++	"1944K@0(allboot),"                     \
++	"64K@0(rcw),"                           \
++	"768K(u-boot),"                         \
++	"64k(ppa),"                             \
++	"8K(u-boot-env),"                       \
++	"8K(dpl),"                              \
++	"8K(dpc),"                              \
++	"1024K(MC)\0"
++
++/*
++ * Some Terragraph specific variables for this platform for testcode support.
++ * mtd below in names is bogus. We don't use mtd for this platform. Used just
++ * as an identifier for a partition. This is due to compatibility with older
++ * platforms which used mtd.
++ *
++ * Unset fdt_high, if not fdt used in place which is causing issues.
++ */
++#define TG_ENV_SETTINGS \
++	"tg_mtd_a=1\0"         \
++	"tg_mtd_b=2\0"         \
++	"tg_mtd_recovery=3\0"  \
++	"tg_rootfs_mtd=1\0"    \
++	"tg_fitimage_conf=5\0" \
++	"tg_bootargs_mmc=setenv bootargs console=ttyS0,115200 earlycon=uart8250,mmio,0x21c0600 rootfstype=ext4 root=/dev/mmcblk0p${tg_active_mtd} rw rootwait lpj=250000 mtdparts=20c0000.quadspi:${tg_mtdparts} ${tg_extra_kernel_args}\0" \
++	"tg_load_mc=sf probe 0; sf read 0x80000000 0xe6000 0x100000; sf read 0x80100000 0xe4000 0x2000; fsl_mc start mc 0x80000000 0x80100000\0" \
++	"tg_apply_mc_dpl=sf read 0x80200000 0xe2000 0x2000; fsl_mc apply dpl 0x80200000\0" \
++	"tg_bootcmd_mmc=setenv loadaddr 0x8f000000; ext4load mmc 0:${tg_active_mtd} $loadaddr /boot/fitImage; run tg_bootargs_mmc; setenv fdt_high ; bootm $loadaddr#conf@${tg_fitimage_conf}\0" \
++	"tg_bootcmd=run tg_load_mc; run tg_apply_mc_dpl; tgFindMtdBootOrder; for part in ${tg_mtd_1} ${tg_mtd_2} ${tg_mtd_3}; do setenv tg_active_mtd ${part}; tgPrepareToBoot; run tg_bootcmd_mmc; done\0" \
++	"bootcmd=run tg_bootcmd\0" \
++	"ethaddr\0" \
++	"eth1addr\0" \
++	"mcmemsize=0x30000000\0"
++
++#define CONFIG_LS10XXA_GPIO
++#undef CONFIG_RANDOM_UUID
++#define CONFIG_RANDOM_UUID
++
++#endif /* CONFIG_TERRAGRAPH */
+ 
+ #undef CONFIG_EXTRA_ENV_SETTINGS
+-#ifdef CONFIG_TFABOOT
+ #define CONFIG_EXTRA_ENV_SETTINGS		\
+-	"BOARD=ls1088ardb\0"			\
+-	"hwconfig=fsl_ddr:bank_intlv=auto\0"	\
+-	"ramdisk_addr=0x800000\0"		\
+-	"ramdisk_size=0x2000000\0"		\
+-	"fdt_high=0xa0000000\0"			\
+-	"initrd_high=0xffffffffffffffff\0"	\
+-	"fdt_addr=0x64f00000\0"			\
+-	"kernel_addr=0x1000000\0"		\
+-	"kernel_addr_sd=0x8000\0"		\
+-	"kernelhdr_addr_sd=0x4000\0"		\
+-	"kernel_start=0x580100000\0"		\
+-	"kernelheader_start=0x580800000\0"	\
+-	"scriptaddr=0x80000000\0"		\
+-	"scripthdraddr=0x80080000\0"		\
+-	"fdtheader_addr_r=0x80100000\0"		\
+-	"kernelheader_addr=0x800000\0"		\
+-	"kernelheader_addr_r=0x80200000\0"	\
+-	"kernel_addr_r=0x81000000\0"		\
+-	"kernelheader_size=0x40000\0"		\
+-	"fdt_addr_r=0x90000000\0"		\
+-	"load_addr=0xa0000000\0"		\
+-	"kernel_size=0x2800000\0"		\
+-	"kernel_size_sd=0x14000\0"		\
+-	"kernelhdr_size_sd=0x10\0"		\
+-	QSPI_MC_INIT_CMD			\
+-	"mcmemsize=0x70000000\0"		\
+-	BOOTENV					\
+-	"boot_scripts=ls1088ardb_boot.scr\0"	\
+-	"boot_script_hdr=hdr_ls1088ardb_bs.out\0"	\
+-	"scan_dev_for_boot_part="		\
+-		"part list ${devtype} ${devnum} devplist; "	\
+-		"env exists devplist || setenv devplist 1; "	\
+-		"for distro_bootpart in ${devplist}; do "	\
+-			"if fstype ${devtype} "			\
+-				"${devnum}:${distro_bootpart} "	\
+-				"bootfstype; then "		\
+-				"run scan_dev_for_boot; "	\
+-			"fi; "					\
+-		"done\0"					\
+-	"scan_dev_for_boot="					\
+-		"echo Scanning ${devtype} "			\
+-		"${devnum}:${distro_bootpart}...; "		\
+-		"for prefix in ${boot_prefixes}; do "		\
+-			"run scan_dev_for_scripts; "		\
+-		"done;\0"					\
+-	"boot_a_script="					\
+-		"load ${devtype} ${devnum}:${distro_bootpart} " \
+-		"${scriptaddr} ${prefix}${script}; "		\
+-	"env exists secureboot && load ${devtype} "		\
+-		"${devnum}:${distro_bootpart} "			\
+-		"${scripthdraddr} ${prefix}${boot_script_hdr}; "\
+-		"env exists secureboot "			\
+-		"&& esbc_validate ${scripthdraddr};"		\
+-		"source ${scriptaddr}\0"			\
+-	"installer=load mmc 0:2 $load_addr "			\
+-		"/flex_installer_arm64.itb; "			\
+-		"env exists mcinitcmd && run mcinitcmd && "	\
+-		"mmc read 0x80001000 0x6800 0x800;"		\
+-		"fsl_mc lazyapply dpl 0x80001000;"			\
+-		"bootm $load_addr#ls1088ardb\0"			\
+-	"qspi_bootcmd=echo Trying load from qspi..;"		\
+-		"sf probe && sf read $load_addr "		\
+-		"$kernel_addr $kernel_size ; env exists secureboot "	\
+-		"&& sf read $kernelheader_addr_r $kernelheader_addr "	\
+-		"$kernelheader_size && esbc_validate ${kernelheader_addr_r}; "\
+-		"bootm $load_addr#$BOARD\0"			\
+-		"sd_bootcmd=echo Trying load from sd card..;"		\
+-		"mmcinfo; mmc read $load_addr "			\
+-		"$kernel_addr_sd $kernel_size_sd ;"		\
+-		"env exists secureboot && mmc read $kernelheader_addr_r "\
+-		"$kernelhdr_addr_sd $kernelhdr_size_sd "	\
+-		" && esbc_validate ${kernelheader_addr_r};"	\
+-		"bootm $load_addr#$BOARD\0"
+-#else
+-#define CONFIG_EXTRA_ENV_SETTINGS		\
+-	"BOARD=ls1088ardb\0"			\
+-	"hwconfig=fsl_ddr:bank_intlv=auto\0"	\
+-	"ramdisk_addr=0x800000\0"		\
+-	"ramdisk_size=0x2000000\0"		\
+-	"fdt_high=0xa0000000\0"			\
+-	"initrd_high=0xffffffffffffffff\0"	\
+-	"fdt_addr=0x64f00000\0"			\
+-	"kernel_addr=0x1000000\0"		\
+-	"kernel_addr_sd=0x8000\0"		\
+-	"kernelhdr_addr_sd=0x4000\0"		\
+-	"kernel_start=0x580100000\0"		\
+-	"kernelheader_start=0x580800000\0"	\
+-	"scriptaddr=0x80000000\0"		\
+-	"scripthdraddr=0x80080000\0"		\
+-	"fdtheader_addr_r=0x80100000\0"		\
+-	"kernelheader_addr=0x800000\0"		\
+-	"kernelheader_addr_r=0x80200000\0"	\
+-	"kernel_addr_r=0x81000000\0"		\
+-	"kernelheader_size=0x40000\0"		\
+-	"fdt_addr_r=0x90000000\0"		\
+-	"load_addr=0xa0000000\0"		\
+-	"kernel_size=0x2800000\0"		\
+-	"kernel_size_sd=0x14000\0"		\
+-	"kernelhdr_size_sd=0x10\0"		\
+-	MC_INIT_CMD				\
+-	BOOTENV					\
+-	"boot_scripts=ls1088ardb_boot.scr\0"	\
+-	"boot_script_hdr=hdr_ls1088ardb_bs.out\0"	\
+-	"scan_dev_for_boot_part="		\
+-		"part list ${devtype} ${devnum} devplist; "	\
+-		"env exists devplist || setenv devplist 1; "	\
+-		"for distro_bootpart in ${devplist}; do "	\
+-			"if fstype ${devtype} "			\
+-				"${devnum}:${distro_bootpart} "	\
+-				"bootfstype; then "		\
+-				"run scan_dev_for_boot; "	\
+-			"fi; "					\
+-		"done\0"					\
+-	"scan_dev_for_boot="					\
+-		"echo Scanning ${devtype} "			\
+-		"${devnum}:${distro_bootpart}...; "		\
+-		"for prefix in ${boot_prefixes}; do "		\
+-			"run scan_dev_for_scripts; "		\
+-		"done;\0"					\
+-	"boot_a_script="					\
+-		"load ${devtype} ${devnum}:${distro_bootpart} " \
+-		"${scriptaddr} ${prefix}${script}; "		\
+-	"env exists secureboot && load ${devtype} "		\
+-		"${devnum}:${distro_bootpart} "			\
+-		"${scripthdraddr} ${prefix}${boot_script_hdr} " \
+-		"&& esbc_validate ${scripthdraddr};"		\
+-		"source ${scriptaddr}\0"			\
+-	"installer=load mmc 0:2 $load_addr "			\
+-		"/flex_installer_arm64.itb; "			\
+-		"env exists mcinitcmd && run mcinitcmd && "	\
+-		"mmc read 0x80001000 0x6800 0x800;"		\
+-		"fsl_mc lazyapply dpl 0x80001000;"			\
+-		"bootm $load_addr#ls1088ardb\0"			\
+-	"qspi_bootcmd=echo Trying load from qspi..;"		\
+-		"sf probe && sf read $load_addr "		\
+-		"$kernel_addr $kernel_size ; env exists secureboot "	\
+-		"&& sf read $kernelheader_addr_r $kernelheader_addr "	\
+-		"$kernelheader_size && esbc_validate ${kernelheader_addr_r}; "\
+-		"bootm $load_addr#$BOARD\0"			\
+-		"sd_bootcmd=echo Trying load from sd card..;"		\
+-		"mmcinfo; mmc read $load_addr "			\
+-		"$kernel_addr_sd $kernel_size_sd ;"		\
+-		"env exists secureboot && mmc read $kernelheader_addr_r "\
+-		"$kernelhdr_addr_sd $kernelhdr_size_sd "	\
+-		" && esbc_validate ${kernelheader_addr_r};"	\
+-		"bootm $load_addr#$BOARD\0"
+-#endif /* CONFIG_TFABOOT */
+-
+-#undef CONFIG_BOOTCOMMAND
+-#ifdef CONFIG_TFABOOT
+-#define QSPI_NOR_BOOTCOMMAND					\
+-		"sf read 0x80001000 0xd00000 0x100000;"		\
+-		"env exists mcinitcmd && env exists secureboot "	\
+-		" && sf read 0x80780000 0x780000 0x100000 "	\
+-		"&& esbc_validate 0x80780000;env exists mcinitcmd "	\
+-		"&& fsl_mc lazyapply dpl 0x80001000;"		\
+-		"run distro_bootcmd;run qspi_bootcmd;"		\
+-		"env exists secureboot && esbc_halt;"
+-#define SD_BOOTCOMMAND						\
+-		"env exists mcinitcmd && mmcinfo; "		\
+-		"mmc read 0x80001000 0x6800 0x800; "		\
+-		"env exists mcinitcmd && env exists secureboot "	\
+-		" && mmc read 0x80780000 0x3C00 0x10 "		\
+-		"&& esbc_validate 0x80780000;env exists mcinitcmd "	\
+-		"&& fsl_mc lazyapply dpl 0x80001000;"		\
+-		"run distro_bootcmd;run sd_bootcmd;"		\
+-		"env exists secureboot && esbc_halt;"
+-#else
+-#if defined(CONFIG_QSPI_BOOT)
+-/* Try to boot an on-QSPI kernel first, then do normal distro boot */
+-#define CONFIG_BOOTCOMMAND                                      \
+-		"sf read 0x80001000 0xd00000 0x100000;"		\
+-		"env exists mcinitcmd && env exists secureboot "	\
+-		" && sf read 0x80780000 0x780000 0x100000 "	\
+-		"&& esbc_validate 0x80780000;env exists mcinitcmd "	\
+-		"&& fsl_mc lazyapply dpl 0x80001000;"		\
+-		"run distro_bootcmd;run qspi_bootcmd;"		\
+-		"env exists secureboot && esbc_halt;"
+-
+-/* Try to boot an on-SD kernel first, then do normal distro boot */
+-#elif defined(CONFIG_SD_BOOT)
+-#define CONFIG_BOOTCOMMAND                                      \
+-		"env exists mcinitcmd && mmcinfo; "		\
+-		"mmc read 0x80001000 0x6800 0x800; "		\
+-		"env exists mcinitcmd && env exists secureboot "	\
+-		" && mmc read 0x80780000 0x3C00 0x10 "		\
+-		"&& esbc_validate 0x80780000;env exists mcinitcmd "	\
+-		"&& fsl_mc lazyapply dpl 0x80001000;"		\
+-		"run distro_bootcmd;run sd_bootcmd;"		\
+-		"env exists secureboot && esbc_halt;"
+-#endif
+-#endif /* CONFIG_TFABOOT */
++	TG_ENV_SETTINGS                    \
++	TG_MMC_PARTITIONS                  \
++	TG_SPI_PARTITIONS                  \
++	"\0"
+ 
+ /* MAC/PHY configuration */
++#undef CONFIG_RESET_PHY_R
++#define CONFIG_RESET_PHY_R
+ #ifdef CONFIG_FSL_MC_ENET
+ #define CONFIG_PHYLIB_10G
+ #define CONFIG_PHY_GIGE
+ #define CONFIG_PHYLIB
+ 
+-#define CONFIG_PHY_VITESSE
+-#define CONFIG_PHY_AQUANTIA
+-#define AQ_PHY_ADDR1			0x00
+-#define AQR105_IRQ_MASK			0x00000004
+-
+-#define QSGMII1_PORT1_PHY_ADDR		0x0c
+-#define QSGMII1_PORT2_PHY_ADDR		0x0d
+-#define QSGMII1_PORT3_PHY_ADDR		0x0e
+-#define QSGMII1_PORT4_PHY_ADDR		0x0f
+-#define QSGMII2_PORT1_PHY_ADDR		0x1c
+-#define QSGMII2_PORT2_PHY_ADDR		0x1d
+-#define QSGMII2_PORT3_PHY_ADDR		0x1e
+-#define QSGMII2_PORT4_PHY_ADDR		0x1f
+-
+-#define CONFIG_ETHPRIME		"DPMAC1@xgmii"
++#define CONFIG_PHY_REALTEK
++#define PHY_ADDR			0x2
++
++#define CONFIG_ETHPRIME		"DPMAC7@sgmii"
+ #define CONFIG_PHY_GIGE
+ #endif
+ #endif
+ 
++#define CONFIG_VID_FLS_ENV              "fb_ls1048a_puma_vdd_mv"
++
++/* The lowest and highest voltage allowed for LS1088ARDB */
++#define VDD_MV_MIN                      819
++#define VDD_MV_MAX                      1212
++
+ /*  MMC  */
+ #ifdef CONFIG_MMC
+ #define CONFIG_SYS_FSL_MMC_HAS_CAPBLT_VS33
++#define CONFIG_SUPPORT_EMMC_BOOT
+ #endif
+ 
+ #ifndef SPL_NO_ENV
+ 
+ #define BOOT_TARGET_DEVICES(func) \
+-	func(MMC, mmc, 0) \
+-	func(SCSI, scsi, 0) \
+-	func(DHCP, dhcp, na)
++	func(MMC, mmc, 0)
+ #include <config_distro_bootcmd.h>
+ #endif
+ 
+ #include <asm/fsl_secure_boot.h>
+ 
+-#endif /* __LS1088A_RDB_H */
++#endif /* __FB_LS1048A_PUMA_H */
+-- 
+2.17.1
+

@@ -1,0 +1,45 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+# Default config files (can be overridden by config_get_env or controller config flags)
+TOPOLOGY_FILE="/data/e2e_topology.conf"
+E2E_CONFIG_FILE="/data/cfg/controller_config.json"
+
+while [ : ]; do
+
+# load tg config environment variables
+if [ -f /usr/sbin/config_get_env.sh ]; then
+  . /usr/sbin/config_get_env.sh
+fi
+
+# read controller config file
+if [ ! -f "$E2E_CONFIG_FILE" ]; then
+  echo "$E2E_CONFIG_FILE not found, copying default controller config file..."
+  mkdir -p "$(dirname "${E2E_CONFIG_FILE}")"
+  cp -v /etc/e2e_config/controller_config_default.json "$E2E_CONFIG_FILE"
+fi
+if [ -f /usr/sbin/config_print_flags ]; then
+  CONFIG_ARGS=$(/usr/sbin/config_print_flags "$E2E_CONFIG_FILE")
+  if [ $? -ne 0 ]; then
+    echo "Controller config file ($E2E_CONFIG_FILE) had errors: $CONFIG_ARGS"
+    sleep ${DELAY}
+    continue
+  fi
+fi
+
+# create empty topology file if needed
+if [ ! -f "$TOPOLOGY_FILE" ]; then
+  echo "$TOPOLOGY_FILE does not exist, creating empty file..."
+  touch "$TOPOLOGY_FILE"
+fi
+
+RUN_E2E_CONTROLLER="e2e_controller -topology_file $TOPOLOGY_FILE -controller_config_file $E2E_CONFIG_FILE $CONFIG_ARGS"
+
+# run e2e_controller
+eval exec $RUN_E2E_CONTROLLER 2>&1
+
+done

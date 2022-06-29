@@ -1,0 +1,13 @@
+Index: wpa_supplicant-2.7/wpa_supplicant/scan.c
+===================================================================
+--- wpa_supplicant-2.7.orig/wpa_supplicant/scan.c
++++ wpa_supplicant-2.7/wpa_supplicant/scan.c
+@@ -211,7 +211,7 @@ static void wpas_trigger_scan_cb(struct
+ 		if (wpa_s->wpa_state == WPA_SCANNING)
+ 			wpa_supplicant_set_state(wpa_s,
+ 						 wpa_s->scan_prev_wpa_state);
+-		wpa_msg(wpa_s, MSG_INFO, WPA_EVENT_SCAN_FAILED "ret=%d%s",
++		wpa_msg(wpa_s, MSG_MSGDUMP, WPA_EVENT_SCAN_FAILED "ret=%d%s",
+ 			ret, retry ? " retry=1" : "");
+ 		radio_work_done(work);
+ 

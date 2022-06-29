@@ -1,0 +1,36 @@
+From 34df41115d02bed1aa67767adc1431822d22e4c4 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Wed, 10 Jan 2018 17:15:19 -0800
+Subject: [PATCH 06/21] Force pci_init in uboot
+
+pci_init is needed in uboot for linux to see devices for NXP
+LS10XX.
+---
+ common/board_r.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/common/board_r.c b/common/board_r.c
+index 963ea3b73c..089b0abfec 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -213,8 +213,17 @@ static int initr_unlock_ram_in_cache(void)
+ #ifdef CONFIG_PCI
+ static int initr_pci(void)
+ {
++#ifdef CONFIG_PCIE_LAYERSCAPE
++	/* call pci_init anyway, if not if no pcie
++	 * enumeration is done in uboot then linux fails to
++	 * see pcie devices.  Some mandatory init invoked by
++	 * pci_init is needed
++	 */
++	pci_init();
++#else
+ #ifndef CONFIG_DM_PCI
+ 	pci_init();
++#endif
+ #endif
+ 
+ 	return 0;
+-- 
+2.17.1
+

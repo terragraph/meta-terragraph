@@ -1,0 +1,40 @@
+From 8b1809bbb2c0327ec4eba93cd0aba4a5f3f3b6aa Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Mon, 12 Nov 2018 14:22:59 -0800
+Subject: [PATCH 18/20] Clear mac addresses when env clear is required.
+
+---
+ common/board_r.c            | 1 +
+ include/configs/ls1048atg.h | 4 +++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/common/board_r.c b/common/board_r.c
+index 089b0abfec..1842bd720b 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -484,6 +484,7 @@ static int initr_env(void)
+ 			      sizeof(CONFIG_EXTRA_ENV_SETTINGS),
+ 			      '\0', H_NOCLEAR, 0, 0, NULL) == 0)
+ 			fprintf(stderr, "Environment import failed: errno = %d\n", errno);
++			env_set("tg_env_init", "yes");
+ #ifndef CONFIG_SECURE_BOOT
+ 		printf("Recreating terragraph uboot environment. \n");
+ 		env_save();
+diff --git a/include/configs/ls1048atg.h b/include/configs/ls1048atg.h
+index 524c6b92b5..c61bd78292 100644
+--- a/include/configs/ls1048atg.h
++++ b/include/configs/ls1048atg.h
+@@ -159,7 +159,9 @@
+ 	"tg_bootcmd_mmc=setenv loadaddr 0x8f000000; ext4load mmc 0:${tg_active_mtd} $loadaddr /boot/fitImage; run tg_bootargs_mmc; setenv fdt_high ; bootm $loadaddr#conf@${tg_fitimage_conf}\0" \
+ 	"tg_bootcmd=run tg_load_mc; run tg_apply_mc_dpl; tgFindMtdBootOrder; for part in ${tg_mtd_1} ${tg_mtd_2} ${tg_mtd_3}; do setenv tg_active_mtd ${part}; tgPrepareToBoot; run tg_bootcmd_mmc; done\0" \
+ 	"bootcmd=run tg_bootcmd\0" \
+-	"tg_env_init=yes\0"
++	"ethaddr\0" \
++	"eth1addr\0" \
++	"mcmemsize=0x30000000\0"
+ 
+ #define CONFIG_LS10XXA_GPIO
+ #undef CONFIG_RANDOM_UUID
+-- 
+2.17.1
+

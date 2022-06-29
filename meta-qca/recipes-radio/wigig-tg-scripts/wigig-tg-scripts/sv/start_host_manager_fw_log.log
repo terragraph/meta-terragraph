@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/start_host_manager_fw_log
+exec svlogd /var/log/start_host_manager_fw_log

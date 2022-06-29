@@ -1,0 +1,113 @@
+From e7c8a33d0cbeb57df4e33c78585bdf8398be3e24 Mon Sep 17 00:00:00 2001
+From: Alex Landau <alandau@fb.com>
+Date: Mon, 9 Mar 2020 18:40:00 -0700
+Subject: [PATCH] squashfs: Add symlink support
+
+---
+ fs/squashfs/namei.c                     | 19 +++++++++++++++++++
+ fs/squashfs/squashfs.c                  | 24 ++++++++++++++++++++++--
+ fs/squashfs/squashfs.h                  |  1 +
+ 3 files changed, 42 insertions(+), 2 deletions(-)
+
+diff --git a/fs/squashfs/namei.c b/fs/squashfs/namei.c
+index 63d3d4cade..56a8ab16df 100644
+--- a/fs/squashfs/namei.c
++++ b/fs/squashfs/namei.c
+@@ -130,6 +130,25 @@ out:
+ }
+ 
+ 
++int squashfs_readlink(struct inode *inode, char *buf, int size)
++{
++	int err, offset;
++	u64 block;
++
++	if ((inode->i_mode & S_IFMT) != S_IFLNK)
++		return -EINVAL;
++
++	block = squashfs_i(inode)->start;
++	offset = squashfs_i(inode)->offset;
++
++	size = min(size - 1, (int)inode->i_size);
++	err = squashfs_read_metadata(inode->i_sb, buf, &block, &offset, size);
++	if (err < 0)
++		return err;
++	buf[size] = '\0';
++	return 0;
++}
++
+ struct inode *squashfs_lookup(struct inode *dir, const char *cur_name,
+ 				 unsigned int flags)
+ {
+diff --git a/fs/squashfs/squashfs.c b/fs/squashfs/squashfs.c
+index 1148d1bb1b..f4a12d2086 100644
+--- a/fs/squashfs/squashfs.c
++++ b/fs/squashfs/squashfs.c
+@@ -58,7 +58,7 @@ static struct inode *duplicate_inode(struct inode *inode)
+ 	return &ei->vfs_inode;
+ }
+ 
+-static struct inode *squashfs_findfile(struct super_block *sb,
++static struct inode *squashfs_findfileat(struct inode *start,
+ 		const char *filename, char *buf)
+ {
+ 	char *next;
+@@ -69,11 +69,14 @@ static struct inode *squashfs_findfile(struct super_block *sb,
+ 
+ 	strcpy(fpath, filename);
+ 
++	if (*name == '/')
++		start = start->i_sb->s_root->d_inode;
++
+ 	/* Remove all leading slashes */
+ 	while (*name == '/')
+ 		name++;
+ 
+-	inode = duplicate_inode(sb->s_root->d_inode);
++	inode = duplicate_inode(start);
+ 
+ 	/*
+ 	 * Handle root-directory ('/')
+@@ -94,6 +97,17 @@ static struct inode *squashfs_findfile(struct super_block *sb,
+ 		if (t_inode == NULL)
+ 			break;
+ 
++		if ((t_inode->i_mode & S_IFMT) == S_IFLNK) {
++			char readlink[128];
++			if (squashfs_readlink(t_inode, readlink, sizeof(readlink)) < 0) {
++				ERROR("Error reading symlink %s\n", name);
++				free(squashfs_i(t_inode));
++				return NULL;
++			}
++			free(squashfs_i(t_inode));
++			t_inode = squashfs_findfileat(inode, readlink, NULL);
++		}
++
+ 		/*
+ 		 * Check if directory with this name exists
+ 		 */
+@@ -117,6 +131,12 @@ static struct inode *squashfs_findfile(struct super_block *sb,
+ 	return NULL;
+ }
+ 
++static struct inode *squashfs_findfile(struct super_block *sb,
++		const char *filename, char *buf)
++{
++	return squashfs_findfileat(sb->s_root->d_inode, filename, buf);
++}
++
+ int squashfs_probe(struct blk_desc *dev_desc, disk_partition_t *info)
+ {
+     int ret;
+diff --git a/fs/squashfs/squashfs.h b/fs/squashfs/squashfs.h
+index b7ba8a1d34..83c800691c 100644
+--- a/fs/squashfs/squashfs.h
++++ b/fs/squashfs/squashfs.h
+@@ -117,6 +117,7 @@ extern struct inode *squashfs_lookup(struct inode *dir, const char *cur_name,
+ 				 unsigned int flags);
+ extern int squashfs_lookup_next(struct inode *dir,
+ 		char *root_name, char *cur_name);
++extern int squashfs_readlink(struct inode *inode, char *buf, int size);
+ 
+ /* symlink.c */
+ extern const struct address_space_operations squashfs_symlink_aops;

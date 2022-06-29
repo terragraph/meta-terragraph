@@ -1,0 +1,32 @@
+From 673a364d71a8bf2f904f77693b3a80cde2ae7d3a Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Fri, 5 Apr 2019 08:06:19 -0700
+Subject: [PATCH] Disable FLR and D3 power modes for Talyn2
+
+---
+ drivers/pci/quirks.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/pci/quirks.c b/drivers/pci/quirks.c
+index ab3179dd0aea..6abbfa80cc3b 100644
+--- a/drivers/pci/quirks.c
++++ b/drivers/pci/quirks.c
+@@ -4837,6 +4837,15 @@ static void quirk_intel_no_flr(struct pci_dev *dev)
+ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x1502, quirk_intel_no_flr);
+ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x1503, quirk_intel_no_flr);
+ 
++static void quirk_talyn_fixups(struct pci_dev *dev)
++{
++	/* Chip does not survive FLR */
++	dev->dev_flags |= PCI_DEV_FLAGS_NO_FLR_RESET;
++	/* Chip does not like to be put in D3[hot] mode */
++	dev->dev_flags |= PCI_DEV_FLAGS_NO_D3;
++}
++DECLARE_PCI_FIXUP_EARLY(0x17cb, 0x1201, quirk_talyn_fixups);
++
+ static void quirk_no_ext_tags(struct pci_dev *pdev)
+ {
+ 	struct pci_host_bridge *bridge = pci_find_host_bridge(pdev->bus);
+-- 
+2.17.1
+

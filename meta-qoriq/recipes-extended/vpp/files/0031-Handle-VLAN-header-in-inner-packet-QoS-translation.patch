@@ -1,0 +1,81 @@
+From fb55d694a57d6125cbd16f6c713a5d416dea5f6b Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Tue, 13 Apr 2021 14:49:55 -0700
+Subject: [PATCH] Handle VLAN header in inner packet QoS translation
+
+Parse VLAN header and correctly translate QoS fields from inner packet.
+---
+ src/vnet/vxlan/encap.c | 36 ++++++++++++++++++++++++++++++------
+ 1 file changed, 30 insertions(+), 6 deletions(-)
+
+diff --git a/src/vnet/vxlan/encap.c b/src/vnet/vxlan/encap.c
+index 00a74ebdc..f0d96058e 100644
+--- a/src/vnet/vxlan/encap.c
++++ b/src/vnet/vxlan/encap.c
+@@ -13,6 +13,7 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++#include <arpa/inet.h>
+ #include <vppinfra/error.h>
+ #include <vppinfra/hash.h>
+ #include <vnet/vnet.h>
+@@ -67,6 +68,32 @@ format_vxlan_encap_trace (u8 * s, va_list * args)
+ }
+ #endif
+ 
++static_always_inline ip6_header_t *
++get_inner_ipv6_header (vlib_main_t * vm, void * vxlan_hdr)
++{
++  ethernet_header_t *eth = vxlan_hdr +
++      sizeof (ip6_vxlan_header_t);
++
++  u32 ethernet_hdr_offset = sizeof (ethernet_header_t);
++  ethernet_vlan_header_t *vlan;
++  if (ethernet_frame_is_tagged (clib_net_to_host_u16 (eth->type)))
++    {
++      vlan = (void *) (eth + 1);
++      ethernet_hdr_offset += sizeof (ethernet_vlan_header_t);
++      /*
++       * Handle frames with two tags.
++       */
++      if (vlan->type == ntohs (ETHERNET_TYPE_VLAN))
++      {
++        ethernet_hdr_offset += sizeof (ethernet_vlan_header_t);
++      }
++    }
++
++  return vxlan_hdr +
++    sizeof (ip6_vxlan_header_t) + ethernet_hdr_offset;
++}
++
++
+ always_inline uword
+ vxlan_encap_inline (vlib_main_t * vm,
+ 		    vlib_node_runtime_t * node,
+@@ -267,10 +294,8 @@ vxlan_encap_inline (vlib_main_t * vm,
+ 	      ip6_0->payload_length = payload_l0;
+ 	      ip6_1->payload_length = payload_l1;
+ 
+-	      ip6_header_t *inner_ip6_0 = underlay0 +
+-	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
+-	      ip6_header_t *inner_ip6_1 = underlay1 +
+-	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
++	      ip6_header_t *inner_ip6_0 = get_inner_ipv6_header(vm, underlay0);
++	      ip6_header_t *inner_ip6_1 = get_inner_ipv6_header(vm, underlay1);
+ 
+ 	      /* Check for inner IPv4 or IPv6 header and set TC appropriately */
+ 	      if (clib_net_to_host_u32
+@@ -470,8 +495,7 @@ vxlan_encap_inline (vlib_main_t * vm,
+ 	      ip6_0 = &hdr->ip6;
+ 	      ip6_0->payload_length = payload_l0;
+ 
+-	      ip6_header_t *inner_ip6 = underlay0 +
+-	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
++	      ip6_header_t *inner_ip6 = get_inner_ipv6_header(vm, underlay0);
+ 
+ 	      /* Check for inner IPv4 or IPv6 header and set TC appropriately */
+ 	      if (clib_net_to_host_u32
+-- 
+2.30.2
+

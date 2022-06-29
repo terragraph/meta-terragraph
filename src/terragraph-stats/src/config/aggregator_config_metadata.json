@@ -1,0 +1,176 @@
+{
+  "flags": {
+    "v": {
+      "desc": "Show all VLOG(m) messages for m <= this",
+      "action": "UPDATE_GLOG_LEVEL",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-2147483648, 2147483647]]
+      },
+      "tag": "Logging"
+    },
+    "controller_ip": {
+      "desc": "The controller to connect to",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Stats"
+    },
+    "controller_port": {
+      "desc": "The port controller listens on",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Stats"
+    },
+    "listen_addr": {
+      "desc": "The IP address to bind to",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Host Configuration"
+    },
+    "agent_router_port": {
+      "desc": "The port aggregator listens on for agents",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Host Configuration"
+    },
+    "app_router_port": {
+      "desc": "The port aggregator listens on for apps",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Host Configuration"
+    },
+    "data_publish_interval_s": {
+      "desc": "Stats publish interval",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "tag": "Stats"
+    },
+    "high_frequency_data_publish_interval_s": {
+      "desc": "High-frequency stats publish interval",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "tag": "Stats"
+    },
+    "topology_fetch_interval_s": {
+      "desc": "Topology fetching interval",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "tag": "Stats"
+    },
+    "zmq_sender_app_identity": {
+      "desc": "ZMQ socket identity used when fetching the topology from the controller",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Stats"
+    },
+    "zmq_read_timeout_ms": {
+      "desc": "ZMQ read timeout in milliseconds for fetching the topology from the controller",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "tag": "Stats"
+    },
+    "curl_timeout_s": {
+      "desc": "cURL timeout for an entire stats request",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "tag": "Stats"
+    },
+    "proxy_url": {
+      "desc": "IPv6 to IPv4 proxy URL",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Stats"
+    },
+    "proxy_port": {
+      "desc": "IPv6 to IPv4 proxy port",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Stats"
+    }
+  },
+  "dataEndpoints": {
+    "desc": "List of endpoints to push stats, events and/or logs to. Map keys can be arbitrary strings and are ignored.",
+    "action": "REBOOT",
+    "tag": "Stats",
+    "type": "MAP",
+    "mapVal": {
+      "type": "OBJECT",
+      "objVal": {
+        "properties": {
+          "host": {
+            "desc": "Endpoint to submit stats, events and logs",
+            "type": "STRING",
+            "required": true
+          },
+          "statsWriterSuffix": {
+            "desc": "URL suffix to submit stats to",
+            "type": "STRING",
+            "required": true
+          },
+          "statsEnabled": {
+            "desc": "Enable stats publishing to this endpoint",
+            "type": "BOOLEAN",
+            "required": true
+          },
+          "eventsWriterSuffix": {
+            "desc": "URL suffix to submit events to",
+            "type": "STRING",
+            "required": true
+          },
+          "eventsEnabled": {
+            "desc": "Enable events publishing to this endpoint",
+            "type": "BOOLEAN",
+            "required": true
+          },
+          "logsWriterSuffix": {
+            "desc": "URL suffix to submit logs to",
+            "type": "STRING",
+            "required": true
+          },
+          "logsEnabled": {
+            "desc": "Enable log publishing to this endpoint",
+            "type": "BOOLEAN",
+            "required": true
+          },
+          "highFreqStatsWriterSuffix": {
+            "desc": "URL suffix to high frequency submit stats to",
+            "type": "STRING",
+            "required": true
+          },
+          "highFreqStatsEnabled": {
+            "desc": "Enable high frequency stats publishing to this endpoint",
+            "type": "BOOLEAN",
+            "required": true
+          }
+        }
+      }
+    }
+  }
+}

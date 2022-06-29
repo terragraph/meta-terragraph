@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+if [ x"$1" = x ]; then
+	echo "Usage: $0 pin"
+	exit 64
+fi
+
+pin=$1
+
+if [ x"$2" != x ]; then
+	holdtime=$2
+else
+	holdtime=2
+fi
+
+echo ${pin} > /sys/class/gpio/export
+echo out > /sys/class/gpio/gpio${pin}/direction
+echo 0 > /sys/class/gpio/gpio${pin}/value
+sleep ${holdtime}
+echo 1 > /sys/class/gpio/gpio${pin}/value
+echo ${pin} > /sys/class/gpio/unexport

@@ -1,0 +1,32 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# process crashed or exited.  Log the info
+RUN_EXIT_CODE=$1
+EXIT_STATUS=$2
+
+PROC=$(basename $PWD)
+
+# log to a file and syslog
+msg="Process ${PROC} exited at $(date). Exit code: $RUN_EXIT_CODE. Exit Status: $EXIT_STATUS"
+echo "$msg" >> /var/log/${PROC}/process_history
+/usr/bin/logger "$msg"
+
+while [ : ]; do
+
+	# load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+	proc_no_restart=$(eval echo "\${STOP_RESTART_${PROC}}")
+	if [ "$proc_no_restart" == 1  -o  "$STOP_RESTART_ALL" == 1 ]; then
+		sleep 20
+		continue
+	fi
+
+exit 0
+
+done

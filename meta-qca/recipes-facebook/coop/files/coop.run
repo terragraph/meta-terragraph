@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+# TODO: Maybe parse out of /etc/vpp/startup.conf
+VPPCTL="/usr/bin/vppctl"
+DELAY=10
+
+while [ : ]; do
+  # check if VPP CLI is accessible
+  if ! ${VPPCTL} show version >/dev/null 2>&1; then
+    echo "Waiting for vpp CLI access"
+    sleep ${DELAY}
+    continue
+  fi
+
+  exec /usr/bin/coop 2>&1
+done

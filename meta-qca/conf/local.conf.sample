@@ -1,0 +1,156 @@
+#
+# Local configuration file for building the Terragraph image.
+#
+
+# Set the VENDOR_ID variable to brand the resulting image.  For
+# instance "Facebook ", "Foo Co ", etc.  This string will show up in
+# the build version information as "Facebook Terragraph" or "Foo Co Terragraph".
+# The string requires a trailing space as it will be prepended to "Terragraph".
+# It is blank by default.
+VENDOR_ID ?= ""
+
+# Always look for packages first in our own local package mirror
+SOURCE_MIRROR_URL ?= "file://${COREBASE}/../source_mirrors/"
+INHERIT += "own-mirrors"
+
+# Parallelism Options
+#
+# How many tasks bitbake should run in parallel:
+BB_NUMBER_THREADS ?= "${@oe.utils.cpu_count()}"
+# How many processes make should run in parallel:
+PARALLEL_MAKE ?= "-j ${@oe.utils.cpu_count()}"
+
+# Machine Selection
+# When targeting NXP LS1012ARDB board
+#MACHINE ??= "ls1012ardb"
+# When targeting new FB CN board, use
+MACHINE ??= "qoriq"
+
+#
+# Default policy config
+# We could eventually create our own distro config if desired,
+# but for now we use the standard poky distro settings.
+#
+DISTRO ?= "poky"
+
+# Use IPK packages
+PACKAGE_CLASSES ?= "package_ipk"
+OPKGBUILDCMD = "opkg-build -Z gzip -a '-n1'"
+
+# Don't build x11 for headless system
+DISTRO_FEATURES_remove = " x11 wayland bluetooth"
+
+# Extra image features.
+# Currently we do not enable anything extra here.
+#EXTRA_IMAGE_FEATURES = ""
+
+# Avoid using these licenses when possible.
+INCOMPATIBLE_LICENSE = "AGPL-3.0"
+
+# Add centos-8 to the list of supported distributions.
+SANITY_TESTED_DISTROS_append ?= " centos-8 \n"
+
+#
+# Additional image features
+#
+# The following is a list of additional classes to use when building images which
+# enable extra features. Some available options which can be included in this variable
+# are:
+#   - 'buildstats' collect build statistics
+#   - 'image-mklibs' to reduce shared library files size for an image
+#   - 'image-prelink' in order to prelink the filesystem image
+#   - 'image-swab' to perform host system intrusion detection
+# NOTE: if listing mklibs & prelink both, then make sure mklibs is before prelink
+# NOTE: mklibs also needs to be explicitly enabled for a given image, see local.conf.extended
+USER_CLASSES ?= "buildstats image-mklibs image-prelink"
+
+#
+# Interactive shell configuration
+#
+# Under certain circumstances the system may need input from you and to do this it
+# can launch an interactive shell. It needs to do this since the build is
+# multithreaded and needs to be able to handle the case where more than one parallel
+# process may require the user's attention. The default is iterate over the available
+# terminal types to find one that works.
+#
+# Examples of the occasions this may happen are when resolving patches which cannot
+# be applied, to use the devshell or the kernel menuconfig
+#
+# Supported values are auto, gnome, xfce, rxvt, screen, konsole (KDE 3.x only), none
+# Note: currently, Konsole support only works for KDE 3.x due to the way
+# newer Konsole versions behave
+#OE_TERMINAL = "auto"
+# By default disable interactive patch resolution (tasks will just fail instead):
+PATCHRESOLVE = "noop"
+
+#
+# Disk Space Monitoring during the build
+#
+# Monitor the disk space during the build. If there is less that 1GB of space or less
+# than 100K inodes in any key build location (TMPDIR, DL_DIR, SSTATE_DIR), gracefully
+# shutdown the build. If there is less that 100MB or 1K inodes, perform a hard abort
+# of the build. The reason for this is that running completely out of space can corrupt
+# files and damages the build in ways which may not be easily recoverable.
+BB_DISKMON_DIRS = "\
+    STOPTASKS,${TMPDIR},1G,100K \
+    STOPTASKS,${DL_DIR},1G,100K \
+    STOPTASKS,${SSTATE_DIR},1G,100K \
+    ABORT,${TMPDIR},100M,1K \
+    ABORT,${DL_DIR},100M,1K \
+    ABORT,${SSTATE_DIR},100M,1K"
+
+#
+# Shared-state files from other locations
+#
+# As mentioned above, shared state files are prebuilt cache data objects which can
+# used to accelerate build time. This variable can be used to configure the system
+# to search other mirror locations for these objects before it builds the data itself.
+#
+# This can be a filesystem directory, or a remote url such as http or ftp. These
+# would contain the sstate-cache results from previous builds (possibly from other
+# machines). This variable works like fetcher MIRRORS/PREMIRRORS and points to the
+# cache locations to check for the shared objects.
+# NOTE: if the mirror uses the same structure as SSTATE_DIR, you need to add PATH
+# at the end as shown in the examples below. This will be substituted with the
+# correct path within the directory structure.
+SSTATE_MIRRORS ?= "\
+file://.* file:///data/users/tg/terragraph.sstatecache.qca/LAST/qca/PATH"
+
+# CONF_VERSION is increased each time build/conf/ changes incompatibly and is used to
+# track the version of this file when it was generated. This can safely be ignored if
+# this doesn't mean anything to you.
+CONF_VERSION = "1"
+
+# Update root password to 'facebook' and change the root shell back to bash.
+# Also add a debugging user for techsupport that has no access to PII + Cert Only Auth
+INHERIT += "extrausers"
+
+EXTRA_USERS_PARAMS = " \
+  usermod -s /bin/bash root; \
+  usermod -p '\$1\$twb9FeH.\$eIuyZ9BujtTjqh73Qeqpr0' root; \
+  useradd -c 'Support Account' -d /home/techsupport -g 100 -m -N -s /bin/bash techsupport; \
+  "
+ENABLE_ASAN = "0"
+export ENABLE_ASAN
+
+# Compile the QTI firmware from QTI/FB firmware sources and driver libraries
+#PREFERRED_PROVIDER_virtual/wigig-fw-bin = "wigig-tg-src-lib-bin"
+
+# Compile the QTI firmware from source using restricted libraries.
+#PREFERRED_PROVIDER_virtual/wigig-fw-bin = "wigig-fw-bin"
+
+# Compile the QTI firmware from source using restricted libraries from GES (QTI ADC).
+#PREFERRED_PROVIDER_virtual/wigig-fw-bin = "wigig-fw-bin-ges"
+
+# Use the January 20 2022 DPDK-OEMR2-CSU4 OEM QTI firmware release.
+PREFERRED_PROVIDER_virtual/wigig-fw-bin = "wigig-fw-release-bin"
+PREFERRED_VERSION_wireless-fw-interface = "44.21"
+PREFERRED_VERSION_wigig-fw-release-bin = "44.21"
+PREFERRED_VERSION_wigig-utils = "44.21"
+
+# Use the June 29 2021 DPDK-OEMR2-CSU3 OEM QTI firmware release.
+#PREFERRED_PROVIDER_virtual/wigig-fw-bin = "wigig-fw-release-bin"
+#PREFERRED_VERSION_wireless-fw-interface = "44.20"
+#PREFERRED_VERSION_wigig-fw-release-bin = "44.20"
+#PREFERRED_VERSION_wigig-utils = "44.20"
+#PREFERRED_VERSION_wigig-dpdk = "0.pre44.21"

@@ -1,0 +1,202 @@
+From 0659fbe35922a07bf2472a08fea0e229b2f3db3c Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 12 Aug 2021 16:57:16 -0700
+Subject: [PATCH] tghqos: set 4 traffic classes and 1 queue per traffic class
+
+Constants were set to 8 and 4, respectively, but only 4 TCs and
+1 queue were being used anyway. These can be changed later if
+more TCs/queues get used.
+---
+ src/plugins/dpdk/tghqos/sched/tghqos_sched.h |  4 +-
+ src/plugins/dpdk/tghqos/tghqos.c             | 55 ++++----------------
+ src/plugins/dpdk/tghqos/tghqos_cli.c         | 40 ++++----------
+ 3 files changed, 22 insertions(+), 77 deletions(-)
+
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+index 7543a799d..5630e53c0 100644
+--- a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+@@ -48,8 +48,8 @@
+ #define NUM_DSCP_VALUES 64
+ 
+ #define TGHQOS_SCHED_PIPES_PER_PORT 16
+-#define TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE 8
+-#define TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS 4
++#define TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE 4
++#define TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS 1
+ 
+ #define TGHQOS_SCHED_MAX_QUEUE_SIZE 4096
+ 
+diff --git a/src/plugins/dpdk/tghqos/tghqos.c b/src/plugins/dpdk/tghqos/tghqos.c
+index 9f67b967c..632c2bb27 100644
+--- a/src/plugins/dpdk/tghqos/tghqos.c
++++ b/src/plugins/dpdk/tghqos/tghqos.c
+@@ -120,23 +120,13 @@ static tghqos_port_config_t tghqos_port_params_default = {
+     .queue_size =
+         {
+             /* Traffic Class 0 */
+-            {TG_MAX_Q_SIZE_TC0, TG_MAX_Q_SIZE_TC0, TG_MAX_Q_SIZE_TC0,
+-             TG_MAX_Q_SIZE_TC0},
++            {TG_MAX_Q_SIZE_TC0},
+             /* Traffic Class 1 */
+-            {TG_MAX_Q_SIZE_TC1, TG_MAX_Q_SIZE_TC1, TG_MAX_Q_SIZE_TC1,
+-             TG_MAX_Q_SIZE_TC1},
++            {TG_MAX_Q_SIZE_TC1},
+             /* Traffic Class 2 */
+-            {TG_MAX_Q_SIZE_TC2, TG_MAX_Q_SIZE_TC2, TG_MAX_Q_SIZE_TC2,
+-             TG_MAX_Q_SIZE_TC2},
++            {TG_MAX_Q_SIZE_TC2},
+             /* Traffic Class 3 */
+-            {TG_MAX_Q_SIZE_TC3, TG_MAX_Q_SIZE_TC3, TG_MAX_Q_SIZE_TC3,
+-             TG_MAX_Q_SIZE_TC3},
+-
+-            /* TODO: TCs 4-7 currently unused */
+-            {0},
+-            {0},
+-            {0},
+-            {0},
++            {TG_MAX_Q_SIZE_TC3},
+         },
+     .red_params =
+         {
+@@ -183,36 +173,16 @@ static tghqos_port_config_t tghqos_port_params_default = {
+                       .maxp_inv = 10,
+                       .wq_log2 = 9},
+             [3][2] = {.min_th = 0, .max_th = 0, .maxp_inv = 10, .wq_log2 = 9},
+-
+-            /* TODO: TCs 4-7 currently unused */
+-            [4] = {{0}},
+-            [5] = {{0}},
+-            [6] = {{0}},
+-            [7] = {{0}},
+         },
+ };
+ 
+-/**
+- * @brief Check that all parameter values are valid queue sizes: no larger than
+- * TGHQOS_SCHED_MAX_QUEUE_SIZE and a power of 2.
+- */
+-static inline int tghqos_valid_queue_sizes (u32 q0, u32 q1, u32 q2, u32 q3)
+-{
+-  return q0 <= TGHQOS_SCHED_MAX_QUEUE_SIZE && q0 != 0 &&
+-         ((q0 & (q0 - 1)) == 0) && q1 <= TGHQOS_SCHED_MAX_QUEUE_SIZE &&
+-         q1 != 0 && ((q1 & (q1 - 1)) == 0) &&
+-         q2 <= TGHQOS_SCHED_MAX_QUEUE_SIZE && q2 != 0 &&
+-         ((q2 & (q2 - 1)) == 0) && q3 <= TGHQOS_SCHED_MAX_QUEUE_SIZE &&
+-         q3 != 0 && ((q3 & (q3 - 1)) == 0);
+-}
+-
+ /**
+  * @brief Read default configurations from VPP startup.conf file.
+  */
+ static clib_error_t *tghqos_config (vlib_main_t *vm, unformat_input_t *input)
+ {
+   tghqos_main_t *tm = &tghqos_main;
+-  u32 tc, q0, q1, q2, q3;
++  u32 tc, q0;
+   u8 *color_str;
+   u32 min_th, max_th, maxp_inv, wq_log2, color;
+ 
+@@ -238,19 +208,16 @@ static clib_error_t *tghqos_config (vlib_main_t *vm, unformat_input_t *input)
+       else if (unformat (input, "burst-enq %u",
+                          &tm->default_port_config.burst_enq))
+         ;
+-      else if (unformat (input, "tc %u queue-size %u %u %u %u", &tc, &q0, &q1,
+-                         &q2, &q3))
++      else if (unformat (input, "tc %u queue-size %u", &tc, &q0))
+         {
+           if (tc >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
+             return clib_error_return (0, "invalid tc %u", tc);
+-          if (!tghqos_valid_queue_sizes (q0, q1, q2, q3))
+-            return clib_error_return (
+-                0, "invalid queue size for tc %u among %u %u %u %u", tc, q0,
+-                q1, q2, q3);
++          /* Queue size must be no larger than TGHQOS_SCHED_MAX_QUEUE_SIZE
++           * and a power of 2 */
++          if (q0 > TGHQOS_SCHED_MAX_QUEUE_SIZE || q0 == 0 || (q0 & (q0 - 1)))
++            return clib_error_return (0, "invalid queue size for tc %u q0 %u",
++                                      tc, q0);
+           tm->default_port_config.queue_size[tc][0] = q0;
+-          tm->default_port_config.queue_size[tc][1] = q1;
+-          tm->default_port_config.queue_size[tc][2] = q2;
+-          tm->default_port_config.queue_size[tc][3] = q3;
+         }
+       else if (unformat (input,
+                          "red_params tc %u color %s min_th %u max_th %u "
+diff --git a/src/plugins/dpdk/tghqos/tghqos_cli.c b/src/plugins/dpdk/tghqos/tghqos_cli.c
+index efd47d851..ff0c6e607 100644
+--- a/src/plugins/dpdk/tghqos/tghqos_cli.c
++++ b/src/plugins/dpdk/tghqos/tghqos_cli.c
+@@ -119,9 +119,7 @@ static clib_error_t *tghqos_show_if (vlib_main_t *vm, unformat_input_t *input,
+   vlib_cli_output (vm, " Packet queue sizes:");
+   for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
+     {
+-      vlib_cli_output (vm, "   TC%u: Q0 = %u, Q1 = %u, Q2 = %u, Q3 = %u", i,
+-                       config->queue_size[i][0], config->queue_size[i][1],
+-                       config->queue_size[i][2], config->queue_size[i][3]);
++      vlib_cli_output (vm, "   TC%u: Q0 = %u", i, config->queue_size[i][0]);
+     }
+   vlib_cli_output (vm, " Weighted Random Early Detection (WRED):");
+   for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
+@@ -180,19 +178,15 @@ done:
+  *  Firmware transmit ring depth = 4096 segments
+  *  Dequeue burst size = 32 segments
+  *  Number of pipes = 16
+- *  Number of traffic classes = 8
+- *  Number of queues per traffic class = 4
++ *  Number of traffic classes = 4
++ *  Number of queues per traffic class = 1
+  *  Packet queue sizes:
+- *    TC0: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
+- *    TC1: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
+- *    TC2: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
+- *    TC3: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
+- *    TC4: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
+- *    TC5: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
+- *    TC6: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
+- *    TC7: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
++ *    TC0: Q0 = 4096
++ *    TC1: Q0 = 4096
++ *    TC2: Q0 = 4096
++ *    TC3: Q0 = 4096
+  *   Weighted Random Early Detection (WRED):
+- *   TC0 min: G = 3072, Y = 2048, R = 0
++ *    TC0 min: G = 3072, Y = 2048, R = 0
+  *    TC0 max: G = 4096, Y = 3072, R = 0
+  *    TC0 inverted probability: G = 10, Y = 10, R = 10
+  *    TC0 weight: G = 9, Y = 9, R = 9
+@@ -208,22 +202,6 @@ done:
+  *    TC3 max: G = 4096, Y = 3072, R = 0
+  *    TC3 inverted probability: G = 10, Y = 10, R = 10
+  *    TC3 weight: G = 9, Y = 9, R = 9
+- *    TC4 min: G = 0, Y = 0, R = 0
+- *    TC4 max: G = 0, Y = 0, R = 0
+- *    TC4 inverted probability: G = 0, Y = 0, R = 0
+- *    TC4 weight: G = 0, Y = 0, R = 0
+- *    TC5 min: G = 0, Y = 0, R = 0
+- *    TC5 max: G = 0, Y = 0, R = 0
+- *    TC5 inverted probability: G = 0, Y = 0, R = 0
+- *    TC5 weight: G = 0, Y = 0, R = 0
+- *    TC6 min: G = 0, Y = 0, R = 0
+- *    TC6 max: G = 0, Y = 0, R = 0
+- *    TC6 inverted probability: G = 0, Y = 0, R = 0
+- *    TC6 weight: G = 0, Y = 0, R = 0
+- *    TC7 min: G = 0, Y = 0, R = 0
+- *    TC7 max: G = 0, Y = 0, R = 0
+- *    TC7 inverted probability: G = 0, Y = 0, R = 0
+- *    TC7 weight: G = 0, Y = 0, R = 0
+  * @cliexend
+  */
+ VLIB_CLI_COMMAND (cmd_tghqos_show_if, static) = {
+@@ -711,7 +689,7 @@ done:
+  *
+  * - <b>entry <map_val></b> - Mapped value (0-63) to assign traffic class, color, and queue to.
+  *
+- * - <b>tc <tc></b> - Traffic class (0-7) to be used by the provided mapped value.
++ * - <b>tc <tc></b> - Traffic class (0-3) to be used by the provided mapped value.
+  *
+  * - <b>color <queue_id></b> - HQoS color 'G', 'Y', or 'R' to be used by the provided mapped value.
+  *
+-- 
+2.30.2
+

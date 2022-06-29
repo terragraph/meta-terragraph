@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/exabgp
+exec svlogd /var/log/exabgp

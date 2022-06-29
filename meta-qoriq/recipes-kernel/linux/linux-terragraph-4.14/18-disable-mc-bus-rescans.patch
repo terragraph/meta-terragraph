@@ -1,0 +1,74 @@
+From f25afb0d0558370de8449776308dad5080d96c7a Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 20 Nov 2018 23:19:00 -0500
+Subject: [PATCH] Allow to disable fsl-mc bus rescans completely
+
+---
+ drivers/staging/fsl-mc/bus/dprc-driver.c |  7 +++++++
+ drivers/staging/fsl-mc/bus/fsl-mc-bus.c  | 23 +++++++++++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/drivers/staging/fsl-mc/bus/dprc-driver.c b/drivers/staging/fsl-mc/bus/dprc-driver.c
+index 14cb17b71cdc..847b1d478168 100644
+--- a/drivers/staging/fsl-mc/bus/dprc-driver.c
++++ b/drivers/staging/fsl-mc/bus/dprc-driver.c
+@@ -226,6 +226,10 @@ static void dprc_add_new_devices(struct fsl_mc_device *mc_bus_dev,
+  * populated before they can get allocation requests from probe callbacks
+  * of the device drivers for the non-allocatable devices.
+  */
++
++extern bool fsl_mc_disable_rescan;
++
++
+ int dprc_scan_objects(struct fsl_mc_device *mc_bus_dev,
+ 		      const char *driver_override,
+ 		      unsigned int *total_irq_count)
+@@ -237,6 +241,9 @@ int dprc_scan_objects(struct fsl_mc_device *mc_bus_dev,
+ 	struct fsl_mc_obj_desc *child_obj_desc_array = NULL;
+ 	struct fsl_mc_bus *mc_bus = to_fsl_mc_bus(mc_bus_dev);
+ 
++	if (fsl_mc_disable_rescan)
++		return 0;
++
+ 	error = dprc_get_obj_count(mc_bus_dev->mc_io,
+ 				   0,
+ 				   mc_bus_dev->mc_handle,
+diff --git a/drivers/staging/fsl-mc/bus/fsl-mc-bus.c b/drivers/staging/fsl-mc/bus/fsl-mc-bus.c
+index af3ec856db10..b013e2dc5130 100644
+--- a/drivers/staging/fsl-mc/bus/fsl-mc-bus.c
++++ b/drivers/staging/fsl-mc/bus/fsl-mc-bus.c
+@@ -260,8 +260,31 @@ static ssize_t bus_rescan_store(struct bus_type *bus,
+ }
+ static BUS_ATTR(rescan, (S_IWUSR | S_IWGRP), NULL, bus_rescan_store);
+ 
++bool fsl_mc_disable_rescan = false;
++static ssize_t bus_disable_rescan_store(struct bus_type *bus,
++					const char *buf, size_t count)
++{
++	unsigned long val;
++
++	if (kstrtoul(buf, 0, &val) < 0)
++		return -EINVAL;
++
++	fsl_mc_disable_rescan = (val != 0);
++	return count;
++}
++
++static ssize_t bus_disable_rescan_show(struct bus_type *bus,
++				       char *buf)
++{
++
++	return snprintf(buf, PAGE_SIZE, "%d\n", fsl_mc_disable_rescan);
++}
++static BUS_ATTR(disable_rescan, 0644,
++		bus_disable_rescan_show, bus_disable_rescan_store);
++
+ static struct attribute *fsl_mc_bus_attrs[] = {
+ 	&bus_attr_rescan.attr,
++	&bus_attr_disable_rescan.attr,
+ 	NULL,
+ };
+ 
+-- 
+2.12.2
+

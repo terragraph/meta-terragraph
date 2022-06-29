@@ -1,0 +1,42 @@
+From d75050a920a78af74bc32056937fa228043c03d3 Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Fri, 11 Feb 2022 21:32:34 +0000
+Subject: [PATCH] Disable shared library versioning
+
+---
+ thrift/lib/cpp/CMakeLists.txt  | 3 ---
+ thrift/lib/cpp2/CMakeLists.txt | 4 ----
+ 2 files changed, 7 deletions(-)
+
+diff --git a/thrift/lib/cpp/CMakeLists.txt b/thrift/lib/cpp/CMakeLists.txt
+index e04c5c56f..bb57f1e51 100644
+--- a/thrift/lib/cpp/CMakeLists.txt
++++ b/thrift/lib/cpp/CMakeLists.txt
+@@ -137,9 +137,6 @@ endforeach()
+ 
+ if (BUILD_SHARED_LIBS)
+   # all but thrift since it's an interface
+-  set_target_properties(thrift-core concurrency transport async
+-    PROPERTIES VERSION ${PROJECT_VERSION}
+-    )
+ endif()
+ 
+ install(
+diff --git a/thrift/lib/cpp2/CMakeLists.txt b/thrift/lib/cpp2/CMakeLists.txt
+index 32257e1f6..4971dbfe4 100644
+--- a/thrift/lib/cpp2/CMakeLists.txt
++++ b/thrift/lib/cpp2/CMakeLists.txt
+@@ -261,10 +261,6 @@ install(
+ )
+ 
+ if (BUILD_SHARED_LIBS)
+-  set_target_properties(rpcmetadata thriftmetadata thriftfrozen2 thriftprotocol
+-    thriftcpp2 thrifttype
+-    PROPERTIES VERSION ${PROJECT_VERSION}
+-    )
+ endif()
+ 
+ install(
+-- 
+2.30.2
+

@@ -1,0 +1,19 @@
+[Unit]
+Description=Terragraph E2E/NMS HTTP API Service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/sysconfig/tg_services
+EnvironmentFile=-/etc/default/tg_services
+Restart=always
+ExecStart=/bin/sh -c '\
+  if [ -z "$${API_ROOTFS}" ] || [ ! -d "$${API_ROOTFS}" ]; then \
+    echo "API_ROOTFS not set or not found"; \
+    exit 1; \
+  fi; \
+  $${API_ROOTFS}/etc/tg_systemd_config/api_service.start \
+'
+
+[Install]
+WantedBy=default.target

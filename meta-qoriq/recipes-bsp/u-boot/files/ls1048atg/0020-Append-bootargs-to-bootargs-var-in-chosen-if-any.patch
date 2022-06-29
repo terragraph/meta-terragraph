@@ -1,0 +1,50 @@
+From 89a0a11c52517b8fd98c664dcec0727110876cb2 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Thu, 31 May 2018 17:10:02 -0700
+Subject: [PATCH 20/20] Append bootargs to bootargs var in chosen if any
+
+---
+ common/fdt_support.c | 20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/common/fdt_support.c b/common/fdt_support.c
+index d84f5dbade..56d38c4c29 100644
+--- a/common/fdt_support.c
++++ b/common/fdt_support.c
+@@ -276,6 +276,8 @@ int fdt_chosen(void *fdt)
+ 	int   nodeoffset;
+ 	int   err;
+ 	char  *str;		/* used to set string properties */
++	struct fdt_property *prop;
++	int   oldlen;
+ 
+ 	err = fdt_check_header(fdt);
+ 	if (err < 0) {
+@@ -290,8 +292,22 @@ int fdt_chosen(void *fdt)
+ 
+ 	str = env_get("bootargs");
+ 	if (str) {
+-		err = fdt_setprop(fdt, nodeoffset, "bootargs", str,
+-				  strlen(str) + 1);
++		/* if there is already bootargs property in the device tree
++		 * append str to it.
++		 */
++		prop = fdt_get_property(fdt, nodeoffset, "bootargs", &oldlen);
++		if (prop) {
++			/* property length is set to include the null character.
++			 * So appending string won't work, since it appends
++			 * after the length of property.  Trim it by
++			 * 1 and then append str
++			 */
++			err = fdt_setprop(fdt, nodeoffset, "bootargs", prop->data,
++				    oldlen - 1);
++		}
++		if (err >= 0)
++			err = fdt_appendprop_string(fdt, nodeoffset, "bootargs",
++						    str);
+ 		if (err < 0) {
+ 			printf("WARNING: could not set bootargs %s.\n",
+ 			       fdt_strerror(err));
+-- 
+2.17.1
+

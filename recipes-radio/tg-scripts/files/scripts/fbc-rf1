@@ -1,0 +1,36 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# wait_for <file> <string> <timeout>
+
+wait_for() {
+  (timeout "$3" tail -F -n0 "$1" &) | grep -q "$2" && return 0
+  return 1
+}
+
+echo "Stop the existing driver."
+sv stop e2e_minion
+fbstop
+killall driver_if_daemon
+rm -f /tmp/driver_if.log
+
+echo "Starting up the driver."
+/usr/sbin/driver_if_start.sh > /tmp/driver_if.log 2>&1 &
+if ! wait_for /tmp/driver_if.log "DriverIf running" 300
+then
+    echo "fbc-rf1: Timed out while starting driver."
+    exit 1
+fi
+
+echo "Initializing the node."
+if ! r2d2 node_init --config_file /etc/e2e_config/fw_cfg.json | grep -q "NodeInitCmd succeeded"
+then
+    echo "fbc-rf1: r2d2 node init failed."
+    exit 1
+fi
+
+echo "SUCCESS"

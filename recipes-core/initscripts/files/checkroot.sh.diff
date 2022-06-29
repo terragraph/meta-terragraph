@@ -1,0 +1,19 @@
+--- a/checkroot.sh.orig	2018-06-01 19:34:50.211551317 -0700
++++ b/checkroot.sh	2018-06-01 19:37:28.518064148 -0700
+@@ -139,7 +139,15 @@
+ #	is on a ro fs until the remount succeeded. Then clean up old mtabs
+ #	and finally write the new mtab.
+ #
+-mount -n -o remount,$rootmode /
++rootdevice=`cat /proc/cmdline | awk -F "root=" '{print $2}' | cut -d" " -f1`
++roottype=`basename $rootdevice | awk -F '[0-9]' '{print $1}'`
++
++if [ "${roottype}" = "mmcblk" ]; then
++       /sbin/resize2fs "${rootdevice}"
++elif [ "${roottype}" = "ubi" ]; then
++       extramntflags=",chk_data_crc"
++fi
++mount -n -o remount,$rootmode,noatime${extramntflags} /
+ if test "$rootmode" = rw
+ then
+ 	ln -sf /proc/mounts /dev/mtab

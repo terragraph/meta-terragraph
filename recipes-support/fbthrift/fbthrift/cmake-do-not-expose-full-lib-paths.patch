@@ -1,0 +1,62 @@
+diff --git a/thrift/lib/cpp/CMakeLists.txt b/thrift/lib/cpp/CMakeLists.txt
+index 8c00279a8..e9bed781b 100644
+--- a/thrift/lib/cpp/CMakeLists.txt
++++ b/thrift/lib/cpp/CMakeLists.txt
+@@ -43,6 +43,7 @@ target_link_libraries(
+   concurrency
+   PUBLIC
+     Folly::folly
++  PRIVATE
+     ${LIBGFLAGS_LIBRARY}
+     ${GLOG_LIBRARIES}
+ )
+@@ -75,6 +76,7 @@ target_link_libraries(
+     thrift-core
+     rpcmetadata
+     Folly::folly
++  PRIVATE
+     ZLIB::ZLIB
+     ${OPENSSL_LIBRARIES}
+     ${ZSTD_LIBRARIES}
+@@ -96,8 +98,9 @@ target_link_libraries(
+   PUBLIC
+     concurrency
+     transport
+-    ${Boost_LIBRARIES}
+     Folly::folly
++  PRIVATE
++    ${Boost_LIBRARIES}
+     wangle::wangle
+     ${GLOG_LIBRARIES}
+     ${OPENSSL_LIBRARIES}
+@@ -115,7 +118,6 @@ target_link_libraries(
+     thriftprotocol
+     transport
+     Folly::folly
+-    ${GLOG_LIBRARIES}
+ )
+
+ set(THRIFT1_HEADER_DIRS
+diff --git a/thrift/lib/cpp2/CMakeLists.txt b/thrift/lib/cpp2/CMakeLists.txt
+index 32257e1f6..938042a23 100644
+--- a/thrift/lib/cpp2/CMakeLists.txt
++++ b/thrift/lib/cpp2/CMakeLists.txt
+@@ -64,6 +64,7 @@ target_link_libraries(
+     Folly::folly
+     thriftmetadata
+     thriftprotocol
++  PRIVATE
+     ${GLOG_LIBRARIES}
+     ${LIBGFLAGS_LIBRARY}
+ )
+@@ -133,8 +134,9 @@ target_link_libraries(
+     thrift
+     Folly::folly
+     wangle::wangle
+-    ${GLOG_LIBRARIES}
+     thrift-core
++  PRIVATE
++    ${GLOG_LIBRARIES}
+ )
+
+ bypass_source_check("${RocketUpgrade-cpp2-SOURCES}")

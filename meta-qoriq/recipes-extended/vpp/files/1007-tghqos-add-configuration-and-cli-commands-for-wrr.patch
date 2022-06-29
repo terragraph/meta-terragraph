@@ -1,0 +1,347 @@
+From 8973aa52855fb8db40980e0955dffc11ac4c85a6 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 12 Aug 2021 17:04:32 -0700
+Subject: [PATCH] tghqos: add configuration and cli commands for wrr
+
+---
+ src/plugins/dpdk/tghqos/tghqos.c     |  45 +++++-
+ src/plugins/dpdk/tghqos/tghqos_cli.c | 226 ++++++++++++++++++++++++++-
+ 2 files changed, 268 insertions(+), 3 deletions(-)
+
+diff --git a/src/plugins/dpdk/tghqos/tghqos.c b/src/plugins/dpdk/tghqos/tghqos.c
+index 4e1f38572..27f516a92 100644
+--- a/src/plugins/dpdk/tghqos/tghqos.c
++++ b/src/plugins/dpdk/tghqos/tghqos.c
+@@ -192,9 +192,11 @@ static tghqos_port_config_t tghqos_port_params_default = {
+ static clib_error_t *tghqos_config (vlib_main_t *vm, unformat_input_t *input)
+ {
+   tghqos_main_t *tm = &tghqos_main;
+-  u32 tc, q0;
++  u32 tc, q0, prio, weight;
+   u8 *color_str;
+   u32 min_th, max_th, maxp_inv, wq_log2, color;
++  char *sched_str;
++  int i;
+ 
+   clib_memcpy_fast (&tm->config, &tghqos_params_default, sizeof (tm->config));
+   clib_memcpy_fast (&tm->default_port_config, &tghqos_port_params_default,
+@@ -254,6 +256,36 @@ static clib_error_t *tghqos_config (vlib_main_t *vm, unformat_input_t *input)
+           tm->default_port_config.red_params[tc][color].maxp_inv = maxp_inv;
+           tm->default_port_config.red_params[tc][color].wq_log2 = wq_log2;
+         }
++      else if (unformat (input, "scheduling %s", &sched_str))
++        {
++          if (strncmp (sched_str, "strict", 6) == 0)
++            tm->default_port_config.sched_alg = TGHQOS_STRICT;
++          else if (strncmp (sched_str, "wrr", 3) == 0)
++            tm->default_port_config.sched_alg = TGHQOS_WRR;
++          else
++            {
++              vec_free (sched_str);
++              return clib_error_return (0, "invalid scheduling algorithm");
++            }
++          vec_free (sched_str);
++        }
++      else if (unformat (input, "tc %u priority %u weight %u", &tc, &prio,
++                         &weight))
++        {
++          if (tc >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++            return clib_error_return (0, "invalid wrr tc %u", tc);
++          if (prio >= TGHQOS_SCHED_PRIORITY_LEVELS)
++            return clib_error_return (0, "invalid wrr priority %u for tc %u",
++                                      prio, tc);
++          if (weight > TGHQOS_SCHED_MAX_QUEUE_SIZE)
++            return clib_error_return (0, "invalid wrr weight %u for tc %u",
++                                      weight, tc);
++          for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++            {
++              tm->default_port_config.wrr_weights[i][tc] = 0;
++            }
++          tm->default_port_config.wrr_weights[prio][tc] = weight;
++        }
+       else
+         return clib_error_return (0, "unknown input `%U'",
+                                   format_unformat_error, input);
+@@ -302,6 +334,7 @@ clib_error_t *tghqos_port_init (u16 dpdk_port_id, u32 hw_if_index,
+   vlib_thread_registration_t *tr;
+   int i, j;
+   int count;
++  u32 weight_sum;
+   char name[64];
+   tghqos_port_thread_data_t *thread_data;
+ 
+@@ -357,6 +390,16 @@ clib_error_t *tghqos_port_init (u16 dpdk_port_id, u32 hw_if_index,
+                                   "Invalid WRR weights, each TC must have a "
+                                   "non-zero weight in 1 priority level\n");
+     }
++  /* Compute and store weight sums for each priority level for convenience */
++  for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++    {
++      weight_sum = 0;
++      for (j = 0; j < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; j++)
++        {
++          weight_sum += config->wrr_weights[i][j];
++        }
++      port->wrr_weight_sum[i] = weight_sum;
++    }
+ 
+   /* Set up thread data when using hqos threads */
+   if (tm->cpu_count > 0)
+diff --git a/src/plugins/dpdk/tghqos/tghqos_cli.c b/src/plugins/dpdk/tghqos/tghqos_cli.c
+index ff0c6e607..f86bc6613 100644
+--- a/src/plugins/dpdk/tghqos/tghqos_cli.c
++++ b/src/plugins/dpdk/tghqos/tghqos_cli.c
+@@ -70,7 +70,8 @@ static clib_error_t *tghqos_show_if (vlib_main_t *vm, unformat_input_t *input,
+   clib_error_t *error = NULL;
+   u32 hw_if_index = (u32)~0;
+   u16 port_id;
+-  u32 i;
++  u32 i, j;
++  const char *sched_algs[] = {"strict priority", "weighted round robin"};
+ 
+   if (!unformat_user (input, unformat_line_input, line_input))
+     return 0;
+@@ -121,6 +122,18 @@ static clib_error_t *tghqos_show_if (vlib_main_t *vm, unformat_input_t *input,
+     {
+       vlib_cli_output (vm, "   TC%u: Q0 = %u", i, config->queue_size[i][0]);
+     }
++  vlib_cli_output (vm, " Scheduling algorithm: %s",
++                   sched_algs[config->sched_alg]);
++  vlib_cli_output (vm, " Weighted round robin priorities/weights:");
++  for (j = 0; j < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; j++)
++    {
++      for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++        {
++          if (config->wrr_weights[i][j] > 0)
++            vlib_cli_output (vm, "   TC%u Priority %u Weight %u", j, i,
++                             config->wrr_weights[i][j]);
++        }
++    }
+   vlib_cli_output (vm, " Weighted Random Early Detection (WRED):");
+   for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
+     {
+@@ -185,7 +198,13 @@ done:
+  *    TC1: Q0 = 4096
+  *    TC2: Q0 = 4096
+  *    TC3: Q0 = 4096
+- *   Weighted Random Early Detection (WRED):
++ *  Scheduling algorithm: strict priority
++ *  Weighted round robin priorities/weights:
++ *    TC0 Priority 0 Weight 1
++ *    TC1 Priority 1 Weight 1
++ *    TC2 Priority 1 Weight 3
++ *    TC3 Priority 1 Weight 4
++ *  Weighted Random Early Detection (WRED):
+  *    TC0 min: G = 3072, Y = 2048, R = 0
+  *    TC0 max: G = 4096, Y = 3072, R = 0
+  *    TC0 inverted probability: G = 10, Y = 10, R = 10
+@@ -1425,3 +1444,206 @@ VLIB_CLI_COMMAND (cmd_tghqos_set_if_wred, static) = {
+         "min_th <min> max_th <max> maxp_inv <val> wq_log2 <val>",
+     .function = tghqos_set_if_wred,
+ };
++
++static clib_error_t *tghqos_set_if_sched_alg (vlib_main_t *vm,
++                                              unformat_input_t *input,
++                                              vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u16 port_id;
++  char *sched_str;
++  tghqos_sched_alg_t sched_alg = TGHQOS_SCHED_ALG_INVALID;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%s", &sched_str))
++        {
++          if (strncmp (sched_str, "strict", 6) == 0)
++            sched_alg = TGHQOS_STRICT;
++          else if (strncmp (sched_str, "wrr", 3) == 0)
++            sched_alg = TGHQOS_WRR;
++          vec_free (sched_str);
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (sched_alg == TGHQOS_SCHED_ALG_INVALID)
++    {
++      error = clib_error_return (
++          0, "please specify a valid scheduling algorithm (strict or wrr)");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  port->sched_alg = config->sched_alg = sched_alg;
++
++  vlib_cli_output (vm, "Interface %U scheduling algorithm set",
++                   format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index);
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command configures the scheduling algorithm used by an interface.
++ *
++ * @cliexpar
++ * Example of how to set scheduling algorithm:
++ * @cliexstart{tghqos set interface scheduling Wigig0/1/0/0 wrr}
++ *  Interface Wigig0/1/0/0 scheduling algorithm set
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_sched_alg, static) = {
++    .path = "tghqos set interface scheduling",
++    .short_help = "tghqos set interface scheduling <interface> [strict|wrr]",
++    .function = tghqos_set_if_sched_alg,
++};
++
++
++static clib_error_t *tghqos_set_if_wrr (vlib_main_t *vm,
++                                        unformat_input_t *input,
++                                        vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  tghqos_main_t *tm = &tghqos_main;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 hw_if_index = (u32)~0;
++  clib_error_t *error = NULL;
++  u16 port_id;
++  u32 tc_id = (u32)~0, prio = (u32)~0, weight = (u32)~0;
++  u32 weight_sum;
++  int i, j;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_hw_interface,
++                    tm->vnet_main, &hw_if_index))
++        ;
++      else if (unformat (line_input, "tc %d", &tc_id))
++        ;
++      else if (unformat (line_input, "priority %d", &prio))
++        ;
++      else if (unformat (line_input, "weight %d", &weight))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (tc_id >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++    {
++      error = clib_error_return (0, "invalid traffic class");
++      goto done;
++    }
++  if (prio >= TGHQOS_SCHED_PRIORITY_LEVELS)
++    {
++      error = clib_error_return (0, "invalid priority");
++      goto done;
++    }
++
++  if (weight >= TGHQOS_SCHED_MAX_QUEUE_SIZE || weight == 0)
++    {
++      error = clib_error_return (0, "invalid weight");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  rte_spinlock_lock (&port->lock);
++  /* Assume the priorities and TCs are in a valid state prior, so just
++   * set all weights for this TC in other priority levels to 0 and write the
++   * given parameters */
++  for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++    {
++      port->wrr_weights[i][tc_id] = config->wrr_weights[i][tc_id] = 0;
++    }
++  port->wrr_weights[prio][tc_id] = config->wrr_weights[prio][tc_id] = weight;
++
++  /* Recompute and store weight sums for each priority level for convenience */
++  for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++    {
++      weight_sum = 0;
++      for (j = 0; j < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; j++)
++        {
++          weight_sum += config->wrr_weights[i][j];
++        }
++      port->wrr_weight_sum[i] = weight_sum;
++    }
++  rte_spinlock_unlock (&port->lock);
++
++  vlib_cli_output (
++      vm, "Interface %U successfully configured given wrr parameters",
++      format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index);
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command configures the weighted round robin priorities and weights
++ * of an interface for a particular traffic class.
++ *
++ * @cliexpar
++ * Example of how to set wrr parameters:
++ * @cliexstart{tghqos set interface wrr Wigig0/1/0/0 tc 1 priority 1 weight 10}
++ *  Interface Wigig0/1/0/0 successfully configured given wrr parameters
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_wrr, static) = {
++    .path = "tghqos set interface wrr",
++    .short_help =
++        "tghqos set interface wrr <interface> tc <tc_id> priority <priority> "
++        "weight <weight>",
++    .function = tghqos_set_if_wrr,
++};
+-- 
+2.30.2
+

@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/frr_openr_sync
+exec svlogd /var/log/frr_openr_sync

@@ -1,0 +1,315 @@
+From 5ae3cfff68fd818a63ee8f588b662f6f2f54d0bc Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Wed, 22 Apr 2020 15:08:02 -0700
+Subject: [PATCH] Pktgen: Terragraph slowpath and WSEC support
+
+Summary:
+    1) Added code for Pktgen to read/write packets from terragraph slowpath
+    2) Added non-blocking read API for Tx packets as TX/RX are on same
+    thread
+    3) Portless forwarding for special frames like EAPOL
+    4) Enable commandline option enable tg_slowpath to enable slowpath
+    5) TODO - Multi-core support for RX/TX
+    6) TODO  Consume data packets in Pktgen while forwarding special frames to TG
+    slowpath
+---
+ app/cli-functions.c    |  7 ++++--
+ app/lpktgenlib.c       | 36 ++++++++++++++++++++++++++++
+ app/pktgen-cmds.c      | 24 +++++++++++++++++++
+ app/pktgen-cmds.h      |  1 +
+ app/pktgen-stats.c     |  4 +++-
+ app/pktgen.c           | 54 +++++++++++++++++++++++++++++++++++++++++-
+ app/pktgen.h           |  1 +
+ lib/common/pg_compat.h |  2 ++
+ 8 files changed, 125 insertions(+), 4 deletions(-)
+
+diff --git a/app/cli-functions.c b/app/cli-functions.c
+index 823b397..f039b1c 100644
+--- a/app/cli-functions.c
++++ b/app/cli-functions.c
+@@ -902,8 +902,8 @@ theme_cmd(int argc, char **argv)
+ static struct cli_map enable_map[] = {
+ 	{ 10, "enable %P %|" ed_type },
+ 	{ 20, "disable %P %|" ed_type },
+-	{ 30, "enable %|screen|mac_from_arp" },
+-	{ 31, "disable %|screen|mac_from_arp"},
++	{ 30, "enable %|screen|mac_from_arp|tg_slowpath" },
++	{ 31, "disable %|screen|mac_from_arp|tg_slowpath"},
+     { -1, NULL }
+ };
+ 
+@@ -930,6 +930,7 @@ static const char *enable_help[] = {
+ 	"enable|disable <portlist> vxlan    - Send VxLAN packets",
+ 	"enable|disable <portlist> rate     - Enable/Disable Rate Packing on given ports",
+ 	"enable|disable mac_from_arp        - Enable/disable MAC address from ARP packet",
++	"enable|disable tg_slowpath         - Enable/disable Terragraph slowpath forwarding",
+ 	"enable|disable screen              - Enable/disable updating the screen and unlock/lock window",
+ 	"    off                            - screen off shortcut",
+ 	"    on                             - screen on shortcut",
+@@ -1033,6 +1034,8 @@ en_dis_cmd(int argc, char **argv)
+ 
+ 			if (argv[1][0] == 'm')
+ 				enable_mac_from_arp(state);
++			else if (argv[1][0] == 't')
++				enable_terragraph_slowpath(state);
+ 			else
+ 				pktgen_screen(state);
+ 			break;
+diff --git a/app/lpktgenlib.c b/app/lpktgenlib.c
+index 912081a..5e121e2 100644
+--- a/app/lpktgenlib.c
++++ b/app/lpktgenlib.c
+@@ -539,6 +539,40 @@ pktgen_macFromArp(lua_State *L)
+ 	return 0;
+ }
+ 
++/**
++ *
++ * pktgen_terragraph_slowpath  - Enable slowpath forwarding for WSEC purposes
++ *
++ * DESCRIPTION
++ * Enable Terragraph slowpath forwarding for WSEC
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++
++static int
++pktgen_terragraph_slowpath(lua_State *L)
++{
++
++	char *state;
++	uint32_t onOff;
++
++	switch (lua_gettop(L) ) {
++	default: return luaL_error(L,
++				   "tg_slowpath, wrong number of arguments");
++	case 1:
++		break;
++	}
++	state = (char *)luaL_checkstring(L, 1);
++
++	onOff = estate(state);
++
++	enable_terragraph_slowpath(onOff);
++
++	return 0;
++}
++
+ /**
+  *
+  * pktgen_prototype - Set the packet protocol type.
+@@ -3563,6 +3597,7 @@ static const char *lua_help_info[] = {
+ 	"set_mac        - Set the MAC address for a port\n",
+ 	"set_ipaddr     - Set the src and dst IP addresses\n",
+ 	"mac_from_arp   - Configure MAC from ARP packet\n",
++	"tg_slowpath    - Configure terragraph slowpath\n",
+ 	"set_proto      - Set the prototype value\n",
+ 	"set_type       - Set the type value\n",
+ 	"\n",
+@@ -3749,6 +3784,7 @@ static const luaL_Reg pktgenlib[] = {
+ 	{"set_mac",       pktgen_set_mac},		/* Set the MAC address for a port */
+ 	{"set_ipaddr",    pktgen_set_ip_addr},	/* Set the src and dst IP addresses */
+ 	{"mac_from_arp",  pktgen_macFromArp},	/* Configure MAC from ARP packet */
++	{"tg_slowpath",   pktgen_terragraph_slowpath}, /* Configure terragraph slowpath */
+ 	{"set_proto",     pktgen_prototype},	/* Set the prototype value */
+ 	{"set_type",      pktgen_set_type},		/* Set the type value */
+ 
+diff --git a/app/pktgen-cmds.c b/app/pktgen-cmds.c
+index 47eb8c1..0c79473 100644
+--- a/app/pktgen-cmds.c
++++ b/app/pktgen-cmds.c
+@@ -121,6 +121,7 @@ pktgen_script_save(char *path)
+     pktgen_display_get_geometry(&rows, &cols);
+     fprintf(fd, "geometry %dx%d\n", cols, rows);
+     fprintf(fd, "%s mac_from_arp\n\n", (pktgen.flags & MAC_FROM_ARP_FLAG) ? "enable" : "disable");
++    fprintf(fd, "%s tg_slowpath\n\n", (pktgen.flags & TG_SLOWPATH_FLAG) ? "enable" : "disable");
+ 
+     for (i = 0; i < pktgen.nb_ports; i++) {
+         info  = &pktgen.info[i];
+@@ -438,6 +439,8 @@ pktgen_lua_save(char *path)
+     fprintf(fd, "-- geometry %dx%d\n", cols, rows);
+     fprintf(fd, "pktgen.mac_from_arp(\"%s\");\n\n",
+             (pktgen.flags & MAC_FROM_ARP_FLAG) ? "enable" : "disable");
++    fprintf(fd, "pktgen.tg_slowpath(\"%s\");\n\n",
++            (pktgen.flags & TG_SLOWPATH_FLAG) ? "enable" : "disable");
+ 
+     for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
+         info  = &pktgen.info[i];
+@@ -1277,6 +1280,27 @@ enable_mac_from_arp(uint32_t onOff)
+         pktgen.flags &= ~MAC_FROM_ARP_FLAG;
+ }
+ 
++/**
++ *
++ * enable_terragraph_slowpath - Enable or disable terragraph slowpath
++ *
++ * DESCRIPTION
++ * Enable or disable the terragraph slowpath forwarding.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++
++void
++enable_terragraph_slowpath(uint32_t onOff)
++{
++    if (onOff == ENABLE_STATE)
++        pktgen.flags |= TG_SLOWPATH_FLAG;
++    else
++        pktgen.flags &= ~TG_SLOWPATH_FLAG;
++}
++
+ /**
+  *
+  * enable_random - Enable/disable random bitfield mode
+diff --git a/app/pktgen-cmds.h b/app/pktgen-cmds.h
+index e6eba36..b3ff1fa 100644
+--- a/app/pktgen-cmds.h
++++ b/app/pktgen-cmds.h
+@@ -137,6 +137,7 @@ void enable_random(port_info_t *info, uint32_t state);
+ void enable_latency(port_info_t *info, uint32_t state);
+ void enable_garp(port_info_t *info, uint32_t state);
+ void enable_mac_from_arp(uint32_t state);
++void enable_terragraph_slowpath(uint32_t state);
+ void enable_process(port_info_t *info, int state);
+ void enable_capture(port_info_t *info, uint32_t state);
+ #if defined(RTE_LIBRTE_PMD_BOND) || defined(RTE_NET_BOND)
+diff --git a/app/pktgen-stats.c b/app/pktgen-stats.c
+index adeee65..dacc7ab 100644
+--- a/app/pktgen-stats.c
++++ b/app/pktgen-stats.c
+@@ -114,6 +114,7 @@ pktgen_print_static_data(void)
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "MAC Destination");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "    Source");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "PCI Vendor/Addr");
++    scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "TG Slowpath");
+     row++;
+ 
+     /* Get the last location to use for the window starting row. */
+@@ -216,7 +217,8 @@ pktgen_print_static_data(void)
+             snprintf(buff, sizeof(buff), "%04x:%04x/%02x:%02d.%d", 0, 0, 0, 0, 0);
+         pktgen_display_set_color("stats.bdf");
+         scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1, buff);
+-
++        scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1,
++            (pktgen.flags & TG_SLOWPATH_FLAG) ? "Enabled" : "Disabled");
+         display_cnt++;
+     }
+ 
+diff --git a/app/pktgen.c b/app/pktgen.c
+index 918dd28..957edaf 100644
+--- a/app/pktgen.c
++++ b/app/pktgen.c
+@@ -41,6 +41,10 @@
+ /* Allocated the pktgen structure for global use */
+ pktgen_t pktgen;
+ 
++uint16_t read_terra_slowpath_non_blocking(struct rte_mbuf **rx_pkts,
++				const uint16_t nb_pkts, uint16_t poll_period_ms);
++uint16_t write_terra_slowpath(struct rte_mbuf **tx_pkts, uint16_t nb_pkts);
++
+ double next_poisson_time(double rateParameter)
+ {
+     return -logf(1.0f - ((double) random()) / (double) (RAND_MAX)) / rateParameter;
+@@ -1131,6 +1135,34 @@ pktgen_main_transmit(port_info_t *info, uint16_t qid)
+ 
+ 	flags = rte_atomic32_read(&info->port_flags);
+ 
++	/*
++	 * Read packets from Terragraph kernel slowpath and transmit them first
++	 */
++	if (pktgen.flags & TG_SLOWPATH_FLAG) {
++		struct rte_mbuf *m, *mbufs[info->tx_burst];
++		uint16_t j, nb_rx;
++
++		// Use 10ms polling for now
++		nb_rx = read_terra_slowpath_non_blocking(mbufs, info->tx_burst, 10);
++
++		if (nb_rx > 0) {
++			for (j = 0; j < nb_rx; j++) {
++				m = mbufs[j];
++				pktType_e pType = pktgen_packet_type(m);
++				if (pType == PG_ETHER_TYPE_EAP) {
++					uint32_t plen = rte_pktmbuf_pkt_len(m);
++					/*
++					* TODO(ipurush) - Dynamically enable forwarding of pre-auth data packets
++					* like EAPOL to/from TG slowpath without starting ports
++					*/
++					pktgen_log_info("TX: Slowpath Read packet type %x len %d", pType, plen);
++				}
++				pktgen_send_mbuf(m, info->pid, qid);
++			}
++			pktgen_set_q_flags(info, qid, DO_TX_FLUSH);
++		}
++	}
++
+ 	/*
+ 	 * Transmit ARP/Ping packets if needed
+ 	 */
+@@ -1215,7 +1247,27 @@ pktgen_main_receive(port_info_t *info, uint8_t lid,
+ 			pktgen_packet_capture_bulk(pkts_burst, nb_rx, capture);
+ 	}
+ 
+-	rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
++	// Send packets to terragraph slowpath kernel
++
++	/*
++	 * If slowpath config is enabled (required for handling EAPOL frames for WSEC), port 0 is
++	 * reserved for this use. Packets will be sent to Terragraph kernel slowpath. Performance
++	 * will be slower with slowpath. Non-zero ports will terminate packets in pktgen itself (faster)
++	 */
++	if (pktgen.flags & TG_SLOWPATH_FLAG) {
++		for (uint16_t j = 0; j < nb_rx; j++) {
++			struct rte_mbuf *m = pkts_burst[j];
++			pktType_e pType = pktgen_packet_type(m);
++
++			if (pType == PG_ETHER_TYPE_EAP) {
++				uint32_t plen = rte_pktmbuf_pkt_len(m);
++				pktgen_log_info("RX: Slowpath Write packet type %x len %d flags %x", pType, plen);
++			}
++			write_terra_slowpath(&pkts_burst[j], 1);
++		}
++	} else {
++		rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
++	}
+ }
+ 
+ static void
+diff --git a/app/pktgen.h b/app/pktgen.h
+index 92d97c8..8c5d240 100644
+--- a/app/pktgen.h
++++ b/app/pktgen.h
+@@ -362,6 +362,7 @@ enum {						/* Pktgen flags bits */
+ 	STATS_PAGE_FLAG         = (1 << 24),	/**< Display the physical port stats */
+ 	XSTATS_PAGE_FLAG        = (1 << 25),	/**< Display the physical port stats */
+ 	RATE_PAGE_FLAG          = (1 << 26),	/**< Display the Rate Pacing stats */
++	TG_SLOWPATH_FLAG        = (1 << 27),
+ 
+ 	UPDATE_DISPLAY_FLAG     = (1 << 31)
+ };
+diff --git a/lib/common/pg_compat.h b/lib/common/pg_compat.h
+index e28180f..a945809 100644
+--- a/lib/common/pg_compat.h
++++ b/lib/common/pg_compat.h
+@@ -68,6 +68,7 @@ extern "C" {
+ #define PG_ETHER_TYPE_IPv6             RTE_ETHER_TYPE_IPV6
+ #define PG_ETHER_TYPE_VLAN             RTE_ETHER_TYPE_VLAN
+ #define PG_ETHER_TYPE_ARP              RTE_ETHER_TYPE_ARP
++#define PG_ETHER_TYPE_EAP               0x888e
+ #define pg_ether_format_addr           rte_ether_format_addr
+ #define pg_ether_addr_copy             rte_ether_addr_copy
+ 
+@@ -102,6 +103,7 @@ extern "C" {
+ #define PG_JUMBO_ETHER_MTU             RTE_JUMBO_ETHER_MTU
+ #define PG_ETHER_TYPE_VLAN             RTE_ETHER_TYPE_VLAN
+ #define PG_ETHER_TYPE_ARP              RTE_ETHER_TYPE_ARP
++#define PG_ETHER_TYPE_EAP               0x888e
+ #define PG_ETHER_TYPE_IPv4             RTE_ETHER_TYPE_IPV4
+ #define PG_ETHER_TYPE_IPv6             RTE_ETHER_TYPE_IPV6
+ #define pg_ether_format_addr           rte_ether_format_addr
+-- 
+2.30.2
+

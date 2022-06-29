@@ -1,0 +1,24 @@
+# rotate vpp external debug log: unix { log }
+/var/log/vpp/vpp-debug.log {
+    rotate 1
+    copytruncate
+    missingok
+    notifempty
+    compress
+    delaycompress
+    nodateext
+    size 1M
+}
+
+# rotate fw/ucode logs generated when FW_LOGGING_ENABLED="1"
+/var/log/vpp/fw_trace_*.log
+/var/log/vpp/ucode_trace_*.log
+{
+    rotate 2
+    missingok
+    notifempty
+    compress
+    delaycompress
+    nodateext
+    size 2M
+}

@@ -1,0 +1,159 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if gpsd is enabled
+if [ -z "$GPSD_ENABLED" ] || [ "$GPSD_ENABLED" -ne "1" ]; then
+  echo "gpsd is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+if [ -z "${GPSD_DEVICE}" ]; then
+  echo "GPSD_DEVICE is not set"
+  sleep ${DELAY}
+  continue
+fi
+
+# set baud rate
+if [ ! -z "${GPSD_BAUD_RATE}" ]; then
+  if ! stty -F "${GPSD_DEVICE}" "$GPSD_BAUD_RATE"; then
+    echo "Failed to set baud rate on ${GPSD_DEVICE}"
+    sleep ${DELAY}
+    continue
+  fi
+fi
+
+# set raw
+if ! stty -F "${GPSD_DEVICE}" raw -echo; then
+  echo "Failed to set raw on ${GPSD_DEVICE}"
+  sleep ${DELAY}
+  continue
+fi
+
+# module-specific checks
+if [ "$GPSD_GPS_MODULE" = "Telit_SL869_T" ]; then
+  # telit: verify module configuration.
+  # to do this, we need to send a command and receive a (near-immediate) reply.
+  # write all output to a temp file for 1 second.
+  tmpfile=$(mktemp -t gpsdXXXX)
+  cat -v < "${GPSD_DEVICE}" > "${tmpfile}" &
+  pid=$!
+  sleep 1
+  # 201: Output Message Enable
+  # verify that all expected messages are enabled (and only these)
+  echo -ne '$PSTMGETPAR,1201\r\n' > "${GPSD_DEVICE}"
+  sleep 1
+  # 130: CPU Clock Speed
+  # use a faster clock speed to reduce NMEA message latency
+  echo -ne '$PSTMGETPAR,1130\r\n' > "${GPSD_DEVICE}"
+  sleep 1
+  # Get PPS signal data
+  # we want to use a shorter pulse width than the defaults
+  echo -ne '$PSTMPPS,1,7\r\n' > "${GPSD_DEVICE}"
+  sleep 1
+  # Get Telit firmware version
+  # print this for logging purposes
+  echo -ne '$PSTMGETSWVER,255\r\n' > "${GPSD_DEVICE}"
+  sleep 2
+  kill ${pid}
+  wait ${pid} 2>/dev/null
+
+  # function to scan GETPAR output. return values:
+  # (1) if mask doesn't match, change the gps config now.
+  # (2) if $PSTMSETPAR line not found, sleep and try again.
+  scan_getpar_output() {
+    awk -v msg_id="$1" -v expect_mask="$2" -F',' '
+      BEGIN {
+        ret = 2;
+        pattern = "^\\$PSTMSETPAR,1" msg_id ",0x[0-9]+\*.+$";
+      }
+      $0 ~ pattern {
+        s = substr($3, 0, index($3, "*") - 1);
+        print s;
+        ret = int(s) == expect_mask ? 0 : 1;
+        exit;
+      }
+      END { exit ret }
+    ' "${tmpfile}"
+  }
+
+  # enable messages: GGA, GSA, RMC, GSV
+  # expected output: $PSTMSETPAR,1201,0x00080046*5b
+  expect_mask_201="0x80046"
+  current_mask_201=$(scan_getpar_output 201 "$expect_mask_201")
+  ret_201=$?
+
+  # clock speed: 208 MHz
+  # expected output: $PSTMSETPAR,1130,0x30*73
+  expect_mask_130="0x30"
+  current_mask_130=$(scan_getpar_output 130 "$expect_mask_130")
+  ret_130=$?
+
+  # PPS pulse width: 200ms
+  # expected output: $PSTMPPS,1,7,0,0,0,0.200000,0*7f
+  expect_pps_pulse_width="0.200000"
+  grep -q -F "\$PSTMPPS,1,7,0,0,0,$expect_pps_pulse_width,0" "${tmpfile}"
+  ret_pps=$?
+
+  # Telit firmware version
+  # expected output: $GPTXT,<version>
+  telit_fw_ver=$(grep -F "\$GPTXT," "${tmpfile}")
+  telit_fw_ver=${telit_fw_ver#\$GPTXT,}  # chop prefix (message type)
+  telit_fw_ver=${telit_fw_ver%\**}       # chop suffix (*XX checksum)
+  if [ -z "$telit_fw_ver" ]; then
+    echo "Unable to determine Telit firmware version"
+  else
+    echo "$telit_fw_ver"
+    echo "$telit_fw_ver" > /var/log/gpsd/version
+  fi
+
+  rm -f "${tmpfile}"
+
+  # missing reply?
+  if [ "$ret_201" -eq "2" ] || [ "$ret_130" -eq "2" ]; then
+    echo 'Did not receive $PSTMGETPAR reply'
+    sleep ${DELAY}
+    continue
+  fi
+
+  # does any config need to be changed?
+  if [ "$ret_201" -eq "1" ]; then
+    echo "Resetting GPS output message configuration (current mask = $current_mask_201)"
+    # disable all messages
+    echo -ne '$PSTMSETPAR,1201,0xffffffff,2\r\n' > "${GPSD_DEVICE}"
+    # enable selected messages
+    echo -ne "\$PSTMSETPAR,1201,$expect_mask_201,1\r\n" > "${GPSD_DEVICE}"
+  fi
+  if [ "$ret_130" -eq "1" ]; then
+    echo "Resetting GPS CPU clock speed (current mask = $current_mask_130)"
+    echo -ne "\$PSTMSETPAR,1130,$expect_mask_130\r\n" > "${GPSD_DEVICE}"
+  fi
+  if [ "$ret_201" -eq "1" ] || [ "$ret_130" -eq "1" ]; then
+    # save to flash
+    echo -ne '$PSTMSAVEPAR\r\n' > "${GPSD_DEVICE}"
+  fi
+  if [ "$ret_130" -eq "1" ]; then
+    # system reset and reboot (reboot may take ~10 seconds, but start gpsd anyway)
+    echo -ne '$PSTMSRR\r\n' > "${GPSD_DEVICE}"
+  fi
+  if [ "$ret_pps" -eq "1" ]; then
+    # according to documentation, the modified PPS config persists until the
+    # module is restarted (e.g. $PSTMHOT) or reset
+    echo "Setting PPS pulse width to $expect_pps_pulse_width seconds"
+    echo -ne "\$PSTMPPS,2,5,$expect_pps_pulse_width\r\n" > "${GPSD_DEVICE}"
+  fi
+fi
+
+# start gpsd (read-only, no-wait, no-daemon, debug-level=2)
+exec gpsd -bnN -D2 "$GPSD_DEVICE" "$GPSD_PPS_DEVICE" 2>&1
+
+done

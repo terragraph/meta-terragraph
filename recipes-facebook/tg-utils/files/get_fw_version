@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Extract the wireless firmware version string.
+
+# We aren't using /data/firmware/wil6210/wil6436.fw because the version numbers
+# for the RF and IF firmware are different (e.g. RF=10.11.0.92, IF=10.11.4.92).
+# For our purposes here, we don't care if running RF or IF, so always pick RF.
+QCA_FW_FILE=/lib/firmware/wil6436.fw
+
+VERSION_STR=""
+if [ -f "$QCA_FW_FILE" ]; then
+  VERSION_STR="$(/usr/bin/strings $QCA_FW_FILE | grep version | sed -rn 's/.*version:\s*(.*)/\1/p')"
+fi
+
+if [ -z "$VERSION_STR" ]; then
+  exit 1
+fi
+
+echo "$VERSION_STR"
+exit 0

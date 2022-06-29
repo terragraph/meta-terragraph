@@ -1,0 +1,28 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+DRIVER_IF_DAEMON="/usr/sbin/driver_if_start.sh"
+
+while [ : ]; do
+  # load tg config environment variables
+  # shellcheck source=/dev/null
+  . /usr/sbin/config_get_env.sh
+
+  # check if we can even start driver_if_daemon
+  if [ -z "$E2E_ENABLED" ] || [ "$E2E_ENABLED" -ne "0" ]; then
+    echo "E2E is enabled, not starting driver_if_daemon"
+    sleep ${DELAY}
+    continue
+  fi
+
+  if [ ! -x "${DRIVER_IF_DAEMON}" ]; then
+    echo "${DRIVER_IF_DAEMON} does not exist or is not executable"
+    sleep ${DELAY}
+    continue
+  fi
+
+  exec "${DRIVER_IF_DAEMON}" 2>&1
+done

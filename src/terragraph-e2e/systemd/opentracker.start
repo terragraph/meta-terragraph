@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ -z "${E2E_ROOTFS}" ] || [ ! -d "${E2E_ROOTFS}" ]; then
+  echo "E2E_ROOTFS not set or not found"
+  exit 1
+fi
+
+chroot ${E2E_ROOTFS} /usr/bin/opentracker -p 6969 ${OPENTRACKER_ARGS}

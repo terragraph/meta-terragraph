@@ -1,0 +1,40 @@
+From da8938dd8d16df73a8eb3d16f52810d583b7ba21 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Mon, 9 Apr 2018 15:06:17 -0400
+Subject: [PATCH 07/21] Relax check for valid environment in __hwconfig
+
+The function only needs env_get to be functional, so check
+the env_valid flag instead. There is no reason why this function
+should not work if environment is available early, say by being
+directly mapped in SPI.
+---
+ common/hwconfig.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/common/hwconfig.c b/common/hwconfig.c
+index e9e956a322..9fb1746c03 100644
+--- a/common/hwconfig.c
++++ b/common/hwconfig.c
+@@ -11,6 +11,7 @@
+ #ifndef HWCONFIG_TEST
+ #include <config.h>
+ #include <common.h>
++#include <environment.h>
+ #include <exports.h>
+ #include <hwconfig.h>
+ #include <linux/types.h>
+@@ -75,9 +76,9 @@ static const char *__hwconfig(const char *opt, size_t *arglen,
+ 
+ 	/* if we are passed a buffer use it, otherwise try the environment */
+ 	if (!env_hwconfig) {
+-		if (!(gd->flags & GD_FLG_ENV_READY)) {
++		if (gd->env_valid == 0) {
+ 			printf("WARNING: Calling __hwconfig without a buffer "
+-					"and before environment is ready\n");
++					"and before environment is present\n");
+ 			return NULL;
+ 		}
+ 		env_hwconfig = env_get("hwconfig");
+-- 
+2.17.1
+

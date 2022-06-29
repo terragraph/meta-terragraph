@@ -1,0 +1,218 @@
+Add some missing 1588 API operations to `vtss_appl_ts_demo.c`, and switch to
+atomic 32-bit MDIO writes in `vtss_phy_ts_api.c`.
+
+diff --git a/base/phy/ts/vtss_phy_ts_api.c b/base/phy/ts/vtss_phy_ts_api.c
+index 902dc40..cbec7a3 100644
+--- a/base/phy/ts/vtss_phy_ts_api.c
++++ b/base/phy/ts/vtss_phy_ts_api.c
+@@ -1340,7 +1340,7 @@ vtss_rc vtss_phy_ts_write_csr(vtss_state_t *vtss_state,
+     case VTSS_PHY_TYPE_8257:
+     case VTSS_PHY_TYPE_8254:
+     case VTSS_PHY_TYPE_8258: {  /* For 1588 Target add and device ID same, so no separate case*/
+-        vtss_mmd_write_t  mmd_write_func = vtss_state->init_conf.mmd_write;
++        vtss_mmd_write32_t mmd_write_func32 = vtss_state->init_conf.mmd_write32;
+         u16               mmd_addr = 0;
+         u16               reg_addr = 0;
+
+@@ -1362,10 +1362,8 @@ vtss_rc vtss_phy_ts_write_csr(vtss_state_t *vtss_state,
+         } else {
+             /* [15..0] bits Address */
+             reg_addr = biu_addr_map_ptr->mdio_address[actual_blk_id] | (csr_address << 1);
+-            /* Write the Upper 2 Bytes */
+-            VTSS_RC(mmd_write_func(vtss_state, cfg_port, mmd_addr, (reg_addr | 1), reg_value_upper));
+-            /* Write the Lower 2 Bytes */
+-            VTSS_RC(mmd_write_func(vtss_state, cfg_port, mmd_addr, reg_addr, reg_value_lower));
++            /* Do atomic 32-bit write */
++            VTSS_RC(mmd_write_func32(vtss_state, cfg_port, mmd_addr, reg_addr, value32));
+         }
+         break;
+     }
+@@ -23242,4 +23240,3 @@ static vtss_rc vtss_phy_1588_debug_reg_read_private(vtss_state_t *vtss_state, vt
+     return rc;
+ }
+ #endif /* VTSS_OPT_PHY_TIMESTAMP*/
+-
+diff --git a/phy_demo_appl/appl/vtss_appl_ts_demo.c b/phy_demo_appl/appl/vtss_appl_ts_demo.c
+index 2c717b1..9cd4ba5 100755
+--- a/phy_demo_appl/appl/vtss_appl_ts_demo.c
++++ b/phy_demo_appl/appl/vtss_appl_ts_demo.c
+@@ -2739,6 +2739,17 @@ void vtss_appl_ts_demo_menu(vtss_inst_t  inst, vtss_port_no_t  port_no)
+             printf (" sig_set    <port_no> - Set TS Signature Bytes  \n");
+             printf (" run_oos    <port_no> - Run the Tesla OOS Recovery via Direct API Call \n");
+             printf (" x - exit             - Exit to upper level menu\n");
++            printf (" \n");
++            printf (" Custom commands:\n\n");
++            printf (" ts_init      <port_no> - Init timestamp block \n");
++            printf (" ptp_get_arm  <port_no> - Get the PHY PTP timestamp in Secs/NanoSecs, Clear the Save Enable, Arm \n");
++            printf (" ltc_ns_inc   <port_no> - Increment the LTC clock value by 1 nanosecond \n");
++            printf (" ltc_ns_dec   <port_no> - Decrement the LTC clock value by 1 nanosecond \n");
++            printf (" ltc_tod_adj  <port_no> - Subtract nanosecond time-of-day offset from the LTC clock \n");
++            printf (" ltc_tod_res  <port_no> - Get the status of the LTC time adjustment \n");
++            printf (" ltc_freq_get <port_no> - Get the LTC clock frequency adjustment value \n");
++            printf (" ltc_freq_adj <port_no> - Set the LTC clock frequency adjustment value \n");
++            printf (" \n");
+             printf ("> ");
+             rc = scanf("%s", &command[0]);
+
+@@ -3240,6 +3251,161 @@ void vtss_appl_ts_demo_menu(vtss_inst_t  inst, vtss_port_no_t  port_no)
+ #endif
+                 continue;
+ #endif  /* TESLA_ING_TS_ERRFIX */
++            } else if (strcmp(command, "ts_init") == 0) {
++                vtss_phy_ts_init_conf_t conf;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                printf("PHY TS Block Init::vtss_phy_ts_init: Port: %d\n", port_no);
++
++                memset(&conf, 0, sizeof(vtss_phy_ts_init_conf_t));
++                conf.clk_freq	   = VTSS_PHY_TS_CLOCK_FREQ_250M;
++                conf.clk_src	   = VTSS_PHY_TS_CLOCK_SRC_EXTERNAL;
++                conf.rx_ts_pos	   = VTSS_PHY_TS_RX_TIMESTAMP_POS_IN_PTP;
++                conf.rx_ts_len	   = VTSS_PHY_TS_RX_TIMESTAMP_LEN_30BIT;
++                conf.tx_fifo_mode  = VTSS_PHY_TS_FIFO_MODE_NORMAL;
++                conf.tx_ts_len	   = VTSS_PHY_TS_FIFO_TIMESTAMP_LEN_10BYTE;
++                conf.tc_op_mode    = VTSS_PHY_TS_TC_OP_MODE_B;
++                conf.auto_clear_ls = TRUE;
++                conf.macsec_ena    = FALSE;
++                conf.chk_ing_modified = FALSE;
++
++                rc = vtss_phy_ts_init(inst, port_no, &conf);
++                if (rc != VTSS_RC_OK) {
++                    printf("PHY TS Block Init Failed for port: %d\n", port_no);
++                }
++                continue;
++
++           } else if (strcmp(command, "ptp_get_arm") == 0) {
++                vtss_rc  rc;
++                vtss_phy_timestamp_t    ts;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                memset (&ts, 0, sizeof(vtss_phy_timestamp_t));
++
++                rc = vtss_phy_ts_ptptime_get(inst, port_no, &ts);
++                printf ("Port: %d;   PTP Time:Sec_Hi: %d,  Sec_Low: %d;  NanoSecs: %d \n", port_no, ts.seconds.high, ts.seconds.low, ts.nanoseconds);
++
++                printf ("Port: %d;   Arming PTP_Time Trigger \n", port_no);
++                rc = vtss_phy_ts_ptptime_arm(inst, port_no);
++
++                continue;
++
++           } else if (strcmp(command, "ltc_ns_inc") == 0) {
++                vtss_rc  rc;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                printf("LTC::vtss_phy_ts_ptptime_adj1ns:Increment: Port: %d\n", port_no);
++                rc = vtss_phy_ts_ptptime_adj1ns(inst, port_no, TRUE);
++                if (rc != VTSS_RC_OK) {
++                    printf("LTC Clock Increment Failed for port: %d\n", port_no);
++                }
++
++                continue;
++
++           } else if (strcmp(command, "ltc_ns_dec") == 0) {
++                vtss_rc  rc;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                printf("LTC::vtss_phy_ts_ptptime_adj1ns:Decrement: Port: %d\n", port_no);
++                rc = vtss_phy_ts_ptptime_adj1ns(inst, port_no, FALSE);
++                if (rc != VTSS_RC_OK) {
++                    printf("LTC Clock Decrement Failed for port: %d\n", port_no);
++                }
++
++                continue;
++
++           } else if (strcmp(command, "ltc_tod_adj") == 0) {
++                vtss_rc  rc;
++                i32 offset;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                printf ("Port_No: %d, Enter clock time-of-day offset (ns): ", port_no);
++                memset (&value_str[0], 0, sizeof(value_str));
++                scanf("%s", &value_str[0]);
++                offset = atoi(value_str);
++
++                printf ("Port: %d;   Adjusting clock offset by: %d ns \n", port_no, offset);
++                rc = vtss_phy_ts_timeofday_offset_set(inst, port_no, offset);
++                if (rc != VTSS_RC_OK) {
++                    printf("LTC Clock Offset Adjustment Failed for port: %d\n", port_no);
++                }
++
++                continue;
++
++           } else if (strcmp(command, "ltc_tod_res") == 0) {
++                vtss_rc  rc;
++                vtss_phy_ts_todadj_status_t ongoing_adjustment;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                rc = vtss_phy_ts_ongoing_adjustment(inst, port_no, &ongoing_adjustment);
++                if (rc != VTSS_RC_OK) {
++                    printf("vtss_phy_ts_ongoing_adjustment Failed for port: %d\n", port_no);
++                } else {
++                    printf ("Port: %d;   Offset Adjustment Status: %s \n", port_no,
++                            (ongoing_adjustment == VTSS_PHY_TS_TODADJ_INPROGRESS ? "INPROGRESS" :
++                            ongoing_adjustment == VTSS_PHY_TS_TODADJ_DONE ? "DONE" :
++                            ongoing_adjustment == VTSS_PHY_TS_TODADJ_FAIL ? "FAIL" :
++                            "UNKNOWN"));
++                }
++
++                continue;
++
++           } else if (strcmp(command, "ltc_freq_get") == 0) {
++                vtss_rc  rc;
++                vtss_phy_ts_scaled_ppb_t adj = 0;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                rc = vtss_phy_ts_clock_rateadj_get(inst, port_no, &adj);
++                if (rc != VTSS_RC_OK) {
++                    printf("vtss_phy_ts_clock_rateadj_get Failed for port: %d\n", port_no);
++                } else {
++                    printf ("Port: %d;   Clock rate offset (ppb * 2^16): %d \n", port_no, adj);
++                }
++
++                continue;
++
++           } else if (strcmp(command, "ltc_freq_adj") == 0) {
++                vtss_rc  rc;
++                vtss_phy_ts_scaled_ppb_t adj;
++
++                if (get_valid_port_no(&port_no, port_no_str) == FALSE) {
++                    continue;
++                }
++
++                printf ("Port_No: %d, Enter clock rate offset (ppb * 2^16): ", port_no);
++                memset (&value_str[0], 0, sizeof(value_str));
++                scanf("%s", &value_str[0]);
++                adj = atol(value_str);
++
++                printf ("Port: %d;   Setting clock rate offset to: %d \n", port_no, adj);
++                rc = vtss_phy_ts_clock_rateadj_set(inst, port_no, &adj);
++                if (rc != VTSS_RC_OK) {
++                    printf("vtss_phy_ts_clock_rateadj_set Failed for port: %d\n", port_no);
++                }
++
++                continue;
++
+             } else {
+                 continue;
+             }

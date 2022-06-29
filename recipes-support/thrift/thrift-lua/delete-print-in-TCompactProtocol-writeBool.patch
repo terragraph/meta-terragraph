@@ -1,0 +1,16 @@
+Delete a stray "print".
+
+Merged in THRIFT-5286.
+
+Upstream-Status: Accepted
+
+--- a/lib/lua/TCompactProtocol.lua
++++ b/lib/lua/TCompactProtocol.lua
+@@ -176,7 +176,6 @@
+   if bool then
+     value = TCompactType.COMPACT_BOOLEAN_TRUE
+   end
+-  print(value,self.booleanFieldPending,self.booleanFieldId)
+   if self.booleanFieldPending then
+     self:writeFieldBeginInternal(self.booleanFieldName, TType.BOOL, self.booleanFieldId, value)
+     self.booleanFieldPending = false

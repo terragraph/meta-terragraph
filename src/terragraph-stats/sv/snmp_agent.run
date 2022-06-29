@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if SNMP is enabled
+if [ -z "$SNMP_ENABLED" ] || [ "$SNMP_ENABLED" -ne "1" ]; then
+  echo "SNMP is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+RUN_SNMP_AGENT="/usr/sbin/snmp_agent"
+
+exec $RUN_SNMP_AGENT -logtostderr 2>&1
+
+done

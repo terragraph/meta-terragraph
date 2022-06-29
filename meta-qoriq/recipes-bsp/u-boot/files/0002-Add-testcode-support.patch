@@ -1,0 +1,202 @@
+From 7652978430d70edc7c75d0369748fce18b3e6c5c Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Tue, 14 Nov 2017 18:13:35 -0800
+Subject: [PATCH 02/21] Add testcode support
+
+---
+ cmd/Makefile       |   4 ++
+ cmd/cmd_fallback.c | 140 +++++++++++++++++++++++++++++++++++++++++++++
+ common/board_r.c   |  15 +++++
+ 3 files changed, 159 insertions(+)
+ create mode 100644 cmd/cmd_fallback.c
+
+diff --git a/cmd/Makefile b/cmd/Makefile
+index 3487c80455..a957dbdfa4 100644
+--- a/cmd/Makefile
++++ b/cmd/Makefile
+@@ -153,6 +153,10 @@ obj-$(CONFIG_CMD_GPT) += gpt.o
+ obj-$(CONFIG_CMD_ETHSW) += ethsw.o
+ obj-$(CONFIG_CMD_AXI) += axi.o
+ 
++ifndef CONFIG_SECURE_BOOT
++obj-$(CONFIG_TERRAGRAPH) += cmd_fallback.o
++endif
++
+ # Power
+ obj-$(CONFIG_CMD_PMIC) += pmic.o
+ obj-$(CONFIG_CMD_REGULATOR) += regulator.o
+diff --git a/cmd/cmd_fallback.c b/cmd/cmd_fallback.c
+new file mode 100644
+index 0000000000..34fc4a4121
+--- /dev/null
++++ b/cmd/cmd_fallback.c
+@@ -0,0 +1,140 @@
++/*
++ *  Copyright (c) 2016, Facebook Inc.
++ *  All rights reserved.
++ */
++
++/* TG - don't change this order of inclusion of these header
++ * files. Causing weired failures if not
++ */
++#include <common.h>
++#include <command.h>
++
++static int nullErr(const char *var)
++{
++	if (env_get(var) == NULL) {
++		printf("%s is NULL\n", var);
++		return 1;
++	}
++	return 0;
++}
++
++static int bad_saved_environment(void)
++{
++	return nullErr("tg_rootfs_mtd") || nullErr("tg_mtd_a")
++		|| nullErr("tg_mtd_b") || nullErr("tg_mtd_recovery");
++}
++
++static int do_find_mtd_boot_order(cmd_tbl_t *cmdtb, int flag, int argc, char * const argv[])
++{
++	char *mtd_a = env_get("tg_mtd_a");
++	char *mtd_b = env_get("tg_mtd_b");
++	char *mtd_c = env_get("tg_mtd_recovery");
++	char *testcode_mtd = env_get("tg_testcode");
++	char *primary_mtd = env_get("tg_rootfs_mtd");
++	char *mtd_1, *mtd_2, *mtd_3;
++
++	if (bad_saved_environment())
++		return 1;
++
++	/*
++	 * Find out the mtd devices order we will boot from.
++	 *
++	 * If no testcode
++	 *    mtd_1 = primary_mtd, mtd_2 = secondary_mtd
++	 * If testcode
++	 *    mtd_1 = testcode_mtd, mtd_2 = the other mtd
++	 *
++	 * Recovery mtd is 3rd choice in both cases
++	 *
++	 */
++	if (testcode_mtd == NULL) { /* not testcoding */
++		mtd_1 = primary_mtd;
++		mtd_2 = (strcmp(primary_mtd, mtd_a) == 0) ? mtd_b : mtd_a;
++	}
++	else { /* testcoding */
++		mtd_1 = testcode_mtd;
++		mtd_2 = (strcmp(testcode_mtd, mtd_a) == 0) ? mtd_b : mtd_a;
++	}
++	mtd_3 = mtd_c;
++
++	env_set("tg_mtd_1", mtd_1);
++	env_set("tg_mtd_2", mtd_2);
++	env_set("tg_mtd_3", mtd_3);
++	return 0;
++}
++
++U_BOOT_CMD(tgFindMtdBootOrder, 1, 1, do_find_mtd_boot_order, "", "");
++
++
++/*
++	Why do we clear tg_boot_fallback here when we are testcoding?
++
++		(1) To ensure that in linux, we can always distinguish
++		    between the testcode and the fallback bootup states:
++
++		    if (active_mtd != rootfs_mtd) {
++		       if (defined(tg_boot_fallback))
++		          // fallen back
++		       else
++		          // testcoding
++		    }
++
++		(2) To clarify the meaning of tg_boot_fallback:
++		    "Unit has fallen back since the last upgrade (attempt).
++
++		    Detail: Normally tg_boot_fallback marks fallbacks from the last
++		    *successful* upgrade, but it is possible for a flaky unit to fall
++		    back all the way from the testcode partition to the recovery partition.
++		    In this unusual case, tg_boot_fallback marks the fallback from the
++		    the last testcode attempt.
++*/
++static int do_prepare_to_boot (cmd_tbl_t *cmdtb, int flag, int argc, char * const argv[])
++{
++	const char *primary_mtd = env_get("tg_rootfs_mtd");
++	const char *fallback = env_get("tg_boot_fallback");
++	const char *testcode_mtd = env_get("tg_testcode");
++	const char *active_mtd = env_get("tg_active_mtd");
++	const char *recovery_mtd = env_get("tg_mtd_recovery");
++
++	if (bad_saved_environment() || nullErr("tg_active_mtd"))
++		return 1;
++
++	printf("Preparing to boot from %s \n", active_mtd);
++
++	printf("tg_active_mtd : %s \n", active_mtd);
++	printf("tg_rootfs_mtd : %s \n", primary_mtd);
++	printf("tg_testcode   : %s \n", (testcode_mtd ? testcode_mtd : "NULL"));
++
++	if (testcode_mtd != NULL) {
++		/* testcode is one time thing */
++		env_set("tg_testcode", NULL);
++		/* see note above about why we clear tg_boot_fallback here */
++		env_set("tg_boot_fallback", NULL);
++		env_save();
++		goto done;
++	}
++	if (strcmp(active_mtd, primary_mtd) == 0)
++		goto done;
++
++	/* ok something failed
++	 * Set tg_boot_fallback to 1 if booting from alternate partition
++	 * and to 2 if booting from recovery
++	 */
++	if (strcmp(active_mtd, recovery_mtd) == 0) {
++		/* booting from recovery partition */
++		if (!fallback || (strcmp(fallback, "2") != 0)) {
++			env_set("tg_boot_fallback", "2");
++			env_save();
++		}
++	} else {
++		/* booting from alternate partition */
++		if (!fallback) {
++			env_set("tg_boot_fallback", "1");
++			env_save();
++		}
++	}
++done:
++	return 0;
++}
++
++U_BOOT_CMD(tgPrepareToBoot, 1, 1, do_prepare_to_boot, "", "");
+diff --git a/common/board_r.c b/common/board_r.c
+index 03e2e6042c..963ea3b73c 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -467,6 +467,21 @@ static int initr_env(void)
+ 	env_set_addr("fdtcontroladdr", gd->fdt_blob);
+ #endif
+ 
++#ifdef CONFIG_TERRAGRAPH
++	if (env_get("tg_env_init") == NULL) {
++		/* If tg_env_init is not set, reinit terragaph boot environment
++		 */
++		if (himport_r(&env_htab, CONFIG_EXTRA_ENV_SETTINGS,
++			      sizeof(CONFIG_EXTRA_ENV_SETTINGS),
++			      '\0', H_NOCLEAR, 0, 0, NULL) == 0)
++			fprintf(stderr, "Environment import failed: errno = %d\n", errno);
++#ifndef CONFIG_SECURE_BOOT
++		printf("Recreating terragraph uboot environment. \n");
++		env_save();
++#endif
++	}
++#endif
++
+ 	/* Initialize from environment */
+ 	load_addr = env_get_ulong("loadaddr", 16, load_addr);
+ 
+-- 
+2.17.1
+

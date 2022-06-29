@@ -1,0 +1,13 @@
+#!/bin/sh
+
+case "$1" in
+  start)
+        /usr/bin/fw_brd_update.sh &> /tmp/fw_brd_update.log
+        ;;
+  *)
+        echo "Usage: fw_brd_update.sh { start }" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

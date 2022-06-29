@@ -1,0 +1,12 @@
+#!/bin/sh
+
+mkdir -p /var/log/gpsd
+
+# gpsd prints each RMC message received, which will quickly fill up space
+# limit "current" size to 200KB (from 1MB) and max rotated logs to 1 (from 10)
+cat <<EOF >/var/log/gpsd/config
+s200000
+n1
+EOF
+
+exec svlogd /var/log/gpsd

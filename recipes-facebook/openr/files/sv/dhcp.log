@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/dhcp
+exec svlogd /var/log/dhcp

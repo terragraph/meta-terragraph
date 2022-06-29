@@ -1,0 +1,61 @@
+From 55f940767dc40b1baaa7e276f67ed6332b242ab5 Mon Sep 17 00:00:00 2001
+From: kelvinfann <kelvinfann@devvm3083.ftw3.facebook.com>
+Date: Wed, 9 Oct 2019 13:54:46 -0700
+Subject: [PATCH] Bumping pktgen.capture array len to avoid segfault
+
+---
+ app/pktgen-capture.c  | 4 ++--
+ app/pktgen-port-cfg.c | 2 +-
+ app/pktgen.h          | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/app/pktgen-capture.c b/app/pktgen-capture.c
+index 4ab94f0..4618813 100644
+--- a/app/pktgen-capture.c
++++ b/app/pktgen-capture.c
+@@ -177,14 +177,14 @@ found_rx_lid:
+ 		}
+ 
+ 		int sid;
+-		for (sid = 0; sid < RTE_MAX_NUMA_NODES; ++sid) {
++		for (sid = 0; sid < RTE_MAX_LCORE; ++sid) {
+ 			cap = &pktgen.capture[sid];
+ 			if (cap->mz && (cap->port == info->pid))
+ 				break;
+ 		}
+ 
+ 		/* This should never happen. */
+-		if (sid == RTE_MAX_NUMA_NODES) {
++		if (sid == RTE_MAX_LCORE) {
+ 			pktgen_log_error("Could not find socket for port %d",
+ 					 info->pid);
+ 			return;
+diff --git a/app/pktgen-port-cfg.c b/app/pktgen-port-cfg.c
+index 548ebee..02da211 100644
+--- a/app/pktgen-port-cfg.c
++++ b/app/pktgen-port-cfg.c
+@@ -509,7 +509,7 @@ pktgen_config_ports(void)
+ 	/* Clear the log information by putting a blank line */
+ 	pktgen_log_info("");
+ 
+-	/* Setup the packet capture per port if needed. */
++	/* Setup the packet capture per all possible socket ids for the CPU */
+ 	for (sid = 0; sid < coremap_cnt(pktgen.core_info, pktgen.core_cnt, 0); sid++)
+ 		pktgen_packet_capture_init(&pktgen.capture[sid], sid);
+ }
+diff --git a/app/pktgen.h b/app/pktgen.h
+index 7c61fc8..c3bc07a 100644
+--- a/app/pktgen.h
++++ b/app/pktgen.h
+@@ -327,7 +327,7 @@ typedef struct pktgen_s {
+ 	int32_t argc;	/**< Number of arguments */
+ 	char *argv[64];	/**< Argument list */
+ 
+-	capture_t capture[RTE_MAX_NUMA_NODES];	/**< Packet capture, 1 struct per socket */
++	capture_t capture[RTE_MAX_LCORE];	/**< Packet capture, 1 struct per socket */
+ 	uint8_t is_gui_running;
+ 	volatile uint8_t timer_running;
+ } pktgen_t;
+-- 
+2.30.2
+

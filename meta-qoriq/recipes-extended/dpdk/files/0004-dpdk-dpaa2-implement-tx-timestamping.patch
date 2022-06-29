@@ -1,0 +1,69 @@
+From 0625f51af8a3b509e69b8b34e858d0aa45f53dab Mon Sep 17 00:00:00 2001
+From: Bob Copeland <bobcopeland@fb.com>
+Date: Thu, 6 Jun 2019 10:57:44 -0700
+Subject: [PATCH] dpdk: dpaa2: implement tx timestamping
+
+Enable setting a timestamp in the frame annotation if the
+PTP offload flag is set on a frame.  In this case the
+mbuf timestamp dynfield is copied to the frame annotation and
+appropriate flags are set in the frame descriptor to cause
+the hardware to update the PTP correction fields on frame
+transmission.
+---
+ drivers/net/dpaa2/base/dpaa2_hw_dpni_annot.h |  2 ++
+ drivers/net/dpaa2/dpaa2_rxtx.c               | 19 +++++++++++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/drivers/net/dpaa2/base/dpaa2_hw_dpni_annot.h b/drivers/net/dpaa2/base/dpaa2_hw_dpni_annot.h
+index 7e5e499b6a..cc2f8f9871 100644
+--- a/drivers/net/dpaa2/base/dpaa2_hw_dpni_annot.h
++++ b/drivers/net/dpaa2/base/dpaa2_hw_dpni_annot.h
+@@ -26,6 +26,8 @@ extern "C" {
+ #define DPAA2_FD_FRC_FASWOV	0x0800
+ #define DPAA2_FD_FRC_FAICFDV	0x0400
+ 
++#define DPAA2_FD_FRC_ID_WRIOP	0x20000000
++
+ /* Annotation bits in FD CTRL */
+ #define DPAA2_FD_CTRL_ASAL	0x00020000      /* ASAL = 128 */
+ #define DPAA2_FD_CTRL_PTA	0x00800000
+diff --git a/drivers/net/dpaa2/dpaa2_rxtx.c b/drivers/net/dpaa2/dpaa2_rxtx.c
+index 59ca01726b..acbdc7139b 100644
+--- a/drivers/net/dpaa2/dpaa2_rxtx.c
++++ b/drivers/net/dpaa2/dpaa2_rxtx.c
+@@ -39,6 +39,24 @@ dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
+ 		dpaa2_timestamp_dynfield_offset, rte_mbuf_timestamp_t *);
+ }
+ 
++static inline void __rte_hot
++dpaa2_update_fa_timestamp(struct rte_mbuf *mbuf, struct qbman_fd *fd)
++{
++	struct dpaa2_annot_hdr *annotation = (struct dpaa2_annot_hdr *)
++		((size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)) +
++		 DPAA2_FD_PTA_SIZE);
++
++	if (!(mbuf->ol_flags & PKT_TX_IEEE1588_TMST))
++		return;
++
++	// set FAS and outgoing TS in frame annotation
++	BIT_SET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP);
++	annotation->word2 = *dpaa2_timestamp_dynfield(mbuf);
++
++	// set FAS as valid in FRC for wriop
++	DPAA2_SET_FD_FRC(fd, DPAA2_FD_FRC_FASV | DPAA2_FD_FRC_ID_WRIOP);
++}
++
+ #define DPAA2_MBUF_TO_CONTIG_FD(_mbuf, _fd, _bpid)  do { \
+ 	DPAA2_SET_FD_ADDR(_fd, DPAA2_MBUF_VADDR_TO_IOVA(_mbuf)); \
+ 	DPAA2_SET_FD_LEN(_fd, _mbuf->data_len); \
+@@ -47,6 +65,7 @@ dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
+ 	DPAA2_SET_FD_FRC(_fd, 0);		\
+ 	DPAA2_RESET_FD_CTRL(_fd);		\
+ 	DPAA2_RESET_FD_FLC(_fd);		\
++	dpaa2_update_fa_timestamp(_mbuf, _fd);	\
+ } while (0)
+ 
+ static inline void __rte_hot
+-- 
+2.30.2
+

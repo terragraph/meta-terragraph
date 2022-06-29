@@ -1,0 +1,48 @@
+From 544734551b926701fc3b7c5c2afb5354d543baa9 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Mon, 3 Feb 2020 14:48:23 -0800
+Subject: [PATCH] Support setting ToS field in IPv6 packets
+
+---
+ app/pktgen-ipv6.c  | 2 +-
+ app/pktgen-stats.c | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/app/pktgen-ipv6.c b/app/pktgen-ipv6.c
+index 802fae2..8aa2fc3 100644
+--- a/app/pktgen-ipv6.c
++++ b/app/pktgen-ipv6.c
+@@ -34,7 +34,7 @@ pktgen_ipv6_ctor(pkt_seq_t *pkt, void *hdr)
+ 	/* IPv6 Header constructor */
+ 	memset(ip, 0, sizeof(struct pg_ipv6_hdr));
+ 
+-	ip->vtc_flow = htonl(IPv6_VERSION << 28);
++	ip->vtc_flow = htonl(IPv6_VERSION << 28) + htonl(pkt->tos << 20);
+ 	ip->vtc_flow |= htonl(pkt->traffic_class << RTE_IPV6_HDR_TC_SHIFT);
+ 	tlen = pkt->pktSize - (pkt->ether_hdr_size + sizeof(struct pg_ipv6_hdr));
+ 
+diff --git a/app/pktgen-stats.c b/app/pktgen-stats.c
+index 61d5f23..adeee65 100644
+--- a/app/pktgen-stats.c
++++ b/app/pktgen-stats.c
+@@ -107,7 +107,7 @@ pktgen_print_static_data(void)
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "Pkt Size/Tx Burst");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "TTL/Port Src/Dest");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "Pkt Type:VLAN ID");
+-    scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "802.1p CoS/DSCP/IPP");
++    scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "802.1p CoS/DSCP/RAW");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "VxLAN Flg/Grp/vid");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "IP  Destination");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "    Source");
+@@ -165,7 +165,7 @@ pktgen_print_static_data(void)
+                  pkt->vlanid);
+         scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1, buff);
+ 
+-        snprintf(buff, sizeof(buff), "%3d/%3d/%3d", pkt->cos, pkt->tos >> 2, pkt->tos >> 5);
++        snprintf(buff, sizeof(buff), "%3d/%3d/0x%2x",  pkt->cos, pkt->tos >> 2, pkt->tos);
+         scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1, buff);
+ 
+         snprintf(buff, sizeof(buff), "%04x/%5d/%5d", pkt->vni_flags, pkt->group_id, pkt->vxlan_id);
+-- 
+2.30.2
+

@@ -1,0 +1,18 @@
+#!/bin/sh
+
+exec 2>&1
+
+while :; do
+
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  if [ "$LED_AGENT_ENABLED" = "1" ]; then
+    break
+  fi
+
+  echo "ERROR: LED_AGENT_ENABLED must be set in order to auto start led-agent"
+  sleep 10
+done
+
+exec /usr/sbin/led-agent

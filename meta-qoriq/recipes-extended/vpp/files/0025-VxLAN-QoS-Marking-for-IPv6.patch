@@ -1,0 +1,45 @@
+From 2b6924ee62003cdee50c63065e9eeb21d23886a4 Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Tue, 8 Sep 2020 17:29:03 -0700
+Subject: [PATCH] VxLAN QoS Marking for IPv6
+
+Copy inner IPv6 header traffic class to outer IPv6 header for VxLAN tunnels.
+---
+ src/vnet/vxlan/encap.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/vnet/vxlan/encap.c b/src/vnet/vxlan/encap.c
+index 787758a94..1a52b249d 100644
+--- a/src/vnet/vxlan/encap.c
++++ b/src/vnet/vxlan/encap.c
+@@ -267,6 +267,15 @@ vxlan_encap_inline (vlib_main_t * vm,
+ 	      ip6_0->payload_length = payload_l0;
+ 	      ip6_1->payload_length = payload_l1;
+ 
++	      ip6_header_t *inner_ip6_0 = underlay0 +
++	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
++	      ip6_header_t *inner_ip6_1 = underlay1 +
++	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
++	      ip6_set_traffic_class_network_order(ip6_0,
++	        ip6_traffic_class_network_order (inner_ip6_0));
++	      ip6_set_traffic_class_network_order(ip6_1,
++	        ip6_traffic_class_network_order (inner_ip6_1));
++
+ 	      l3_0 = (u8 *) ip6_0;
+ 	      l3_1 = (u8 *) ip6_1;
+ 	      udp0 = &hdr0->udp;
+@@ -446,6 +455,11 @@ vxlan_encap_inline (vlib_main_t * vm,
+ 	      ip6_0 = &hdr->ip6;
+ 	      ip6_0->payload_length = payload_l0;
+ 
++	      ip6_header_t *inner_ip6 = underlay0 +
++	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
++	      ip6_set_traffic_class_network_order(ip6_0,
++	        ip6_traffic_class_network_order (inner_ip6));
++
+ 	      l3_0 = (u8 *) ip6_0;
+ 	      udp0 = &hdr->udp;
+ 	    }
+-- 
+2.30.2
+

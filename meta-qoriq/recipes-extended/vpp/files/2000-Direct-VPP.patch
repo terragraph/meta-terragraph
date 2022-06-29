@@ -1,0 +1,2235 @@
+From 2492f362eb06cbdd986eb6438c7387a59bcabea2 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Wed, 10 Jun 2020 03:19:09 -0700
+Subject: [PATCH] Add direct vpp devices
+
+---
+ src/vnet/CMakeLists.txt            |  16 +
+ src/vnet/devices/dvpp/buffer.c     | 256 +++++++++
+ src/vnet/devices/dvpp/cli.c        | 197 +++++++
+ src/vnet/devices/dvpp/dvpp.c       | 862 +++++++++++++++++++++++++++++
+ src/vnet/devices/dvpp/dvpp.h       |  73 +++
+ src/vnet/devices/dvpp/dvpp_sched.c | 219 ++++++++
+ src/vnet/devices/dvpp/dvpp_sched.h |  84 +++
+ src/vnet/devices/dvpp/interface.h  | 165 ++++++
+ src/vnet/devices/dvpp/pagemap.c    | 276 +++++++++
+ 9 files changed, 2148 insertions(+)
+ create mode 100644 src/vnet/devices/dvpp/buffer.c
+ create mode 100644 src/vnet/devices/dvpp/cli.c
+ create mode 100644 src/vnet/devices/dvpp/dvpp.c
+ create mode 100644 src/vnet/devices/dvpp/dvpp.h
+ create mode 100644 src/vnet/devices/dvpp/dvpp_sched.c
+ create mode 100644 src/vnet/devices/dvpp/dvpp_sched.h
+ create mode 100644 src/vnet/devices/dvpp/interface.h
+ create mode 100644 src/vnet/devices/dvpp/pagemap.c
+
+diff --git a/src/vnet/CMakeLists.txt b/src/vnet/CMakeLists.txt
+index 353bd3f7a..8bcb53b24 100644
+--- a/src/vnet/CMakeLists.txt
++++ b/src/vnet/CMakeLists.txt
+@@ -1102,6 +1102,22 @@ list(APPEND VNET_HEADERS
+ 
+ list(APPEND VNET_API_FILES devices/af_packet/af_packet.api)
+ 
++option(NO_DIRECT_VPP "blah" OFF) #OFF by default
++
++list(APPEND VNET_SOURCES
++  devices/dvpp/dvpp.c
++  devices/dvpp/buffer.c
++  devices/dvpp/pagemap.c
++  devices/dvpp/dvpp_sched.c
++  devices/dvpp/cli.c
++)
++
++list(APPEND VNET_HEADERS
++  devices/dvpp/dvpp.h
++  devices/dvpp/dvpp_sched.h
++  devices/dvpp/interface.h
++)
++
+ ##############################################################################
+ # NETMAP interface
+ ##############################################################################
+diff --git a/src/vnet/devices/dvpp/buffer.c b/src/vnet/devices/dvpp/buffer.c
+new file mode 100644
+index 000000000..ed64f61b1
+--- /dev/null
++++ b/src/vnet/devices/dvpp/buffer.c
+@@ -0,0 +1,256 @@
++#include <vlib/vlib.h>
++#include <vlib/unix/unix.h>
++#include <vnet/ethernet/ethernet.h>
++#include <sys/ioctl.h>
++
++#include "dvpp.h"
++
++clib_error_t *dvpp_buffer_pool_create (vlib_main_t *vm, unsigned num_mbufs,
++                                       unsigned socket_id)
++{
++
++  return 0;
++}
++
++clib_error_t *dvpp_buffer_init (vlib_main_t *vm, int fd)
++{
++  clib_error_t *error = 0;
++  vlib_physmem_map_t *pm;
++  u8 *name;
++  vlib_buffer_main_t *bm = &buffer_main;
++
++  name = format (0, "dvpp_mbuf_pool", 0);
++
++  /* TODO: fix vlib_physmem_shared_map_create so as we can pass
++   * the file descriptor */
++  if ((error = vlib_physmem_shared_map_create (
++           vm, (char *)name, dvpp_main.mem_size, 0 /* log2_page_size */,
++           0 /* numa */, &dvpp_main.map_index /*, fd*/)))
++    {
++
++      u8 *s = format (0, "%U%c", format_clib_error, error, 0);
++      vlib_log_err (dvpp_main.logger, "%s: fail to create map fd %d %s\n",
++                    __FUNCTION__, fd, s);
++
++      vec_free (name);
++      vec_free (s);
++      return error;
++    }
++
++  pm = vlib_physmem_get_map (vm, dvpp_main.map_index);
++  if (!pm)
++    return clib_error_return (0, "failed to create %s", name);
++
++  vec_free (name);
++
++  dvpp_main.vlib_pool_id =
++      vlib_buffer_register_physmem_map (vm, dvpp_main.map_index);
++
++#if 0
++	dvpp_main.mem = mmap(0, dvpp_main.mem_size,
++    PROT_READ | PROT_WRITE, MAP_SHARED, dvpp_main.fd , 0);
++	if (dvpp_main.mem == MAP_FAILED) {
++		 vlib_log_err (dvpp_main.logger, "%s: cannot mmap %s\n", strerror(errno));
++		goto fail;
++	}
++#endif
++
++  return 0;
++}
++
++static_always_inline void recycle_or_free (vlib_main_t *vm,
++                                           vlib_buffer_main_t *bm, u32 bi,
++                                           vlib_buffer_t *b)
++{
++  /* TODO: implement */
++}
++
++static_always_inline void dvpp_buffer_free_inline (vlib_main_t *vm,
++                                                   u32 *buffers, u32 n_buffers,
++                                                   u32 follow_buffer_next)
++{
++
++  /* TODO: follow buffer chain : follow_buffer_next */
++  vlib_buffer_main_t *bm = &buffer_main;
++  vlib_buffer_t *b;
++  struct dvpp_vector_sync sync;
++  u32 thread_index = vlib_get_thread_index ();
++  int ret, i = 0, frame = 0, n_frames = n_buffers / DVPP_VLEN;
++  u32 simple_mask =
++      (VLIB_BUFFER_NON_DEFAULT_FREELIST | VLIB_BUFFER_NEXT_PRESENT);
++  u32 *bi = buffers, *vector;
++  u32 (*cb) (vlib_main_t * vm, u32 * buffers, u32 n_buffers,
++             u32 follow_buffer_next);
++
++  cb = bm->buffer_free_callback;
++
++  if (PREDICT_FALSE (cb != 0))
++    n_buffers = (*cb) (vm, buffers, n_buffers, follow_buffer_next);
++
++  if (!n_buffers)
++    return;
++
++  sync.code = DVPP_VECTOR_SYNC_FREE;
++  sync.port = 0;
++  sync.pipe = 0;
++  sync.thread = vlib_get_thread_index ();
++  vector = dvpp_main.maps->maps[sync.port].tx_vector[sync.thread];
++
++  for (frame = 0; frame < n_frames; frame++)
++    {
++      sync.size = DVPP_VLEN;
++      for (i = 0; i < DVPP_VLEN; i++)
++        {
++          b = vlib_get_buffer (vm, *bi) VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b);
++          vector[i] = *bi;
++          bi++;
++        }
++      ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++      if (ret < 0)
++        {
++          vlib_log_err (dvpp_main.logger,
++                        "%s: cannot free buffers ret %d num %u\n",
++                        __FUNCTION__, ret, DVPP_VLEN);
++        }
++    }
++
++  sync.size = n_buffers & (DVPP_VLEN - 1);
++  if (sync.size)
++    {
++      for (i = 0; i < sync.size; i++)
++        {
++          b = vlib_get_buffer (vm, *bi) VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b);
++          vector[i] = *bi;
++          bi++;
++        }
++      ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++      if (ret < 0)
++        {
++          vlib_log_err (dvpp_main.logger,
++                        "%s: cannot free buffers ret %d num %u errno %d\n",
++                        __FUNCTION__, ret, sync.size, errno);
++        }
++    }
++}
++
++void dvpp_buffer_free (vlib_main_t *vm, u32 *buffers, u32 n_buffers)
++{
++  dvpp_buffer_free_inline (vm, buffers, n_buffers, /* follow_buffer_next */
++                           1);
++}
++
++void dvpp_buffer_free_no_next (vlib_main_t *vm, u32 *buffers, u32 n_buffers)
++{
++  dvpp_buffer_free_inline (vm, buffers, n_buffers, /* follow_buffer_next */
++                           0);
++}
++
++int dbgcnt = 0;
++int dbgrate = 0;
++uword dvpp_buffer_fill_free_list (vlib_main_t *vm, vlib_buffer_free_list_t *fl,
++                                  uword min_free_buffers)
++{
++  int ret;
++  struct dvpp_vector_sync sync;
++  vlib_buffer_t bt;
++  vlib_buffer_main_t *bm = &buffer_main;
++  u32 *bi;
++  u32 *vector;
++  uword n_left, first;
++  word n_alloc;
++
++  if (min_free_buffers == 0)
++    return 0;
++
++  n_alloc = (min_free_buffers + 7) & ~7;
++
++  sync.code = DVPP_VECTOR_SYNC_ALLOCATE;
++  sync.port = 0; // ? should this be per port?
++  sync.thread = vlib_get_thread_index ();
++  sync.size = n_alloc;
++
++  ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++
++  if (ret < 0)
++    {
++
++      vlib_log_err ("%s: ioctl %x err %d, %s\n", __FUNCTION__,
++                    DVPP_IOCTL_VECTOR_SYNC, ret, strerror (errno));
++
++      return 0;
++    }
++
++  clib_memset (&bt, 0, sizeof (vlib_buffer_t));
++  vlib_buffer_init_for_free_list (&bt, fl);
++
++  bt.buffer_pool_index = dvpp_main.vlib_pool_id;
++  first = vec_len (fl->buffers);
++  vec_resize_aligned (fl->buffers, n_alloc, CLIB_CACHE_LINE_BYTES);
++  vector = dvpp_main.maps->maps[0].rx_vector[sync.thread];
++  n_left = n_alloc = ret;
++  bi = fl->buffers + first;
++
++  ASSERT (n_left % 8 == 0); // TODO: can happen that allocation size if less
++                            // than asked
++
++  while (n_left >= 8)
++    {
++      if (PREDICT_FALSE (n_left < 24))
++
++        goto no_prefetch;
++
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[16]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[17]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[18]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[19]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[20]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[21]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[22]), STORE);
++      vlib_prefetch_buffer_header (vlib_get_buffer (vm, vector[23]), STORE);
++
++    no_prefetch:
++      // vlib_get_buffer_indices_with_offset (vm, (void **) mb, bi, 8,
++      //				   0);
++      {
++        int i;
++        for (i = 0; i < 8; i++)
++          bi[i] = vector[i];
++      }
++      clib_memcpy64_x4 (vlib_get_buffer (vm, vector[0]),
++                        vlib_get_buffer (vm, vector[1]),
++                        vlib_get_buffer (vm, vector[2]),
++                        vlib_get_buffer (vm, vector[3]), &bt);
++      clib_memcpy64_x4 (vlib_get_buffer (vm, vector[4]),
++                        vlib_get_buffer (vm, vector[5]),
++                        vlib_get_buffer (vm, vector[6]),
++                        vlib_get_buffer (vm, vector[7]), &bt);
++
++      n_left -= 8;
++      vector += 8;
++      bi += 8;
++    }
++
++  if (fl->buffer_init_function)
++    fl->buffer_init_function (vm, fl, fl->buffers + first, n_alloc);
++
++  fl->n_alloc += n_alloc;
++
++  return ret;
++}
++
++static void
++dvpp_buffer_delete_free_list (vlib_main_t *vm,
++                              vlib_buffer_free_list_index_t free_list_index)
++{
++}
++
++#if 0
++/* *INDENT-OFF* */
++VLIB_BUFFER_REGISTER_CALLBACKS (dvpp, static) = {
++  .vlib_buffer_fill_free_list_cb = &dvpp_buffer_fill_free_list,
++  .vlib_buffer_free_cb = &dvpp_buffer_free,
++  .vlib_buffer_free_no_next_cb = &dvpp_buffer_free_no_next,
++  .vlib_buffer_delete_free_list_cb = &dvpp_buffer_delete_free_list,
++};
++/* *INDENT-ON* */
++#endif
+diff --git a/src/vnet/devices/dvpp/cli.c b/src/vnet/devices/dvpp/cli.c
+new file mode 100644
+index 000000000..ddaf2bb07
+--- /dev/null
++++ b/src/vnet/devices/dvpp/cli.c
+@@ -0,0 +1,197 @@
++#include <stdint.h>
++#include <net/if.h>
++#include <sys/ioctl.h>
++
++#include <vlib/vlib.h>
++#include <vlib/unix/unix.h>
++#include <vnet/ethernet/ethernet.h>
++
++#include "dvpp.h"
++
++static clib_error_t *show_rings_command_fn (vlib_main_t *vm,
++                                            unformat_input_t *input,
++                                            vlib_cli_command_t *cmd)
++{
++  dvpp_main_t *dvpp = &dvpp_main;
++  int i, j;
++  char buffer[1024];
++  int l;
++
++  for (i = 0; i < DVPP_NUM_PORT; i++)
++    {
++      vlib_cli_output (vm, "\nport %u:\n   avail:\n", i);
++      l = 0;
++      for (j = 0; j < DVPP_NUM_PIPE_PER_PORT; j++)
++        {
++          u32 avail = dvpp_main.maps->maps[i].tx_avail[j];
++          l += sprintf (buffer + l, "%6u ", avail);
++        }
++      vlib_cli_output (vm, "%s\n", buffer);
++
++      vlib_cli_output (vm, "   queued:\n");
++      l = 0;
++      for (j = 0; j < DVPP_NUM_PIPE_PER_PORT; j++)
++        {
++          u32 queued = vnet_sched_port_queue_size (vm, i, j, 0);
++          l += sprintf (buffer + l, "%6u ", queued);
++        }
++      vlib_cli_output (vm, "%s\n", buffer);
++    }
++
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (show_rings_command, static) = {
++    .path = "dvpp show rings",
++    .short_help = "dvpp show rings",
++    .function = show_rings_command_fn,
++};
++/* *INDENT-ON* */
++
++static clib_error_t *show_stats_command_fn (vlib_main_t *vm,
++                                            unformat_input_t *input,
++                                            vlib_cli_command_t *cmd)
++{
++  clib_error_t *error = NULL;
++  dvpp_main_t *dvpp = &dvpp_main;
++  int verbose = 0;
++  int i, j;
++
++  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (input, "verbose"))
++        {
++          verbose = 1;
++        }
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, input);
++          goto done;
++        }
++    }
++
++  for (i = 0; i < DVPP_NUM_PORT; i++)
++    {
++      vlib_cli_output (vm, "port %u:\n", i);
++      for (j = 0; j < DVPP_NUM_PIPE_PER_PORT; j++)
++        {
++          u64 num_pkt_read = dvpp->pipe_stats[i][j].num_pkt_read;
++          u64 num_pkt_written = dvpp->pipe_stats[i][j].num_pkt_written;
++          u64 num_pkt_queued = dvpp->pipe_stats[i][j].num_pkt_queued;
++          u64 num_pkt_dropped = dvpp->pipe_stats[i][j].num_pkt_dropped;
++          u64 num_dequeue_call = dvpp->pipe_stats[i][j].num_dequeue_call;
++          u64 num_dequeue_pkts = dvpp->pipe_stats[i][j].num_dequeue_pkts;
++          u64 num_bad_dequeue = dvpp->pipe_stats[i][j].num_bad_dequeue;
++          if (1 || num_pkt_read || num_pkt_written || num_pkt_queued ||
++              num_pkt_dropped || num_dequeue_call || num_dequeue_pkts ||
++              num_bad_dequeue)
++            {
++              vlib_cli_output (
++                  vm,
++                  "     pipe %2u read %12u written %12u"
++                  " queued %12u dropped %12llu dequeue_call %12llu "
++                  "dequeue_pkts %12llu bad_dequeues %12llu\n",
++                  j, num_pkt_read, num_pkt_written, num_pkt_queued,
++                  num_pkt_dropped, num_dequeue_call, num_dequeue_pkts,
++                  num_bad_dequeue);
++            }
++        }
++    }
++
++done:
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (show_stats_command, static) = {
++    .path = "dvpp show stats",
++    .short_help = "dvpp show stats",
++    .function = show_stats_command_fn,
++};
++/* *INDENT-ON* */
++
++static u64 last_perf_show = 0;
++static clib_error_t *show_perf_command_fn (vlib_main_t *vm,
++                                           unformat_input_t *input,
++                                           vlib_cli_command_t *cmd)
++{
++  dvpp_main_t *dvpp = &dvpp_main;
++  clib_error_t *error = NULL;
++
++  int i;
++  u64 now = clib_cpu_time_now ();
++  u64 diff = now - last_perf_show;
++  last_perf_show = now;
++
++  vlib_cli_output (vm, " Diff: %12llu nano\n", 40 * diff);
++  for (i = 0; i < 7; i++)
++    {
++      vlib_cli_output (vm, "intv %u:   %12llu\n", i, dvpp->time[i] * 40);
++      dvpp->time[i] = 0;
++    }
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (show_perf_command, static) = {
++    .path = "dvpp show perf",
++    .short_help = "dvpp show perf",
++    .function = show_perf_command_fn,
++};
++/* *INDENT-ON* */
++
++extern u32 log_count;
++
++static clib_error_t *set_log_command_fn (vlib_main_t *vm,
++                                         unformat_input_t *input,
++                                         vlib_cli_command_t *cmd)
++{
++  clib_error_t *error = NULL;
++  dvpp_main_t *dvpp = &dvpp_main;
++  int verbose = 0;
++  int i, j;
++
++  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (input, "verbose"))
++        {
++          verbose = 1;
++        }
++      else if (unformat (input, "off"))
++        {
++          verbose = 0;
++        }
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, input);
++          goto done;
++        }
++    }
++
++  vlib_cli_output (vm, "set log verbose mode %u\n", verbose);
++
++  dvpp->input_verbose = verbose;
++
++done:
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (set_log_command, static) = {
++    .path = "dvpp log",
++    .short_help = "set verbose",
++    .function = set_log_command_fn,
++};
++/* *INDENT-ON* */
++
++clib_error_t *dvpp_cli_init (vlib_main_t *vm)
++{
++  return 0;
++}
++
++VLIB_INIT_FUNCTION (dvpp_cli_init);
+diff --git a/src/vnet/devices/dvpp/dvpp.c b/src/vnet/devices/dvpp/dvpp.c
+new file mode 100644
+index 000000000..096ce07b2
+--- /dev/null
++++ b/src/vnet/devices/dvpp/dvpp.c
+@@ -0,0 +1,862 @@
++
++#define _GNU_SOURCE
++#include <pthread.h>
++#include <sched.h>
++
++#include <sys/ioctl.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <linux/if_ether.h>
++#include <poll.h>
++
++#include <vppinfra/cpu.h>
++
++#include <vnet/ethernet/ethernet.h>
++#include <vnet/ip/ip6.h>
++#include <vnet/ip/ip4.h>
++#include <vnet/ip/ip6_neighbor.h>
++
++#include "dvpp_sched.h"
++#include "dvpp.h"
++
++#define DVPP_EVENT_NETWORK_STATE 1
++
++dvpp_main_t dvpp_main = {};
++struct dvpp_port_list port_list = {};
++
++#define DVPP_BURST_SIZE 128
++
++int dvpp_create_port (vlib_main_t *vm, struct dvpp_port *port, u32 port_id);
++
++static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
++                           vlib_frame_t *f);
++VLIB_REGISTER_NODE (dvpp_process_node, static) = {
++    .function = dvpp_process,
++    .type = VLIB_NODE_TYPE_PROCESS,
++    .name = "dvpp-process",
++    .process_log2_n_stack_bytes = 17,
++};
++
++static u32 dvpp_eth_flag_change (vnet_main_t *vnm, vnet_hw_interface_t *hi,
++                                 u32 flags)
++{
++  return 0;
++}
++
++static void dvpp_tx_trace_buffer (vlib_main_t *vm, vlib_node_runtime_t *node,
++                                  u16 port_id, u16 pipe_id,
++                                  vlib_buffer_t *buffer)
++{
++  dvpp_tx_trace_t *t0;
++
++  t0 = vlib_add_trace (vm, node, buffer, sizeof (t0[0]));
++  t0->port_id = port_id;
++  t0->pipe_id = pipe_id;
++  t0->buffer_index = vlib_get_buffer_index (vm, buffer);
++  clib_memcpy_fast (&t0->buffer, buffer,
++                    sizeof (buffer[0]) - sizeof (buffer->pre_data));
++  clib_memcpy_fast (t0->buffer.pre_data, vlib_buffer_get_current (buffer),
++                    sizeof (t0->buffer.pre_data));
++  clib_memcpy_fast (&t0->data, vlib_buffer_get_current (buffer),
++                    sizeof (t0->data));
++}
++
++int dvpp_create_if (vlib_main_t *vm, u8 *hw_addr_set, u32 port, u32 pipe)
++{
++  vnet_sw_interface_t *sw;
++  vnet_hw_interface_t *hw;
++  clib_error_t *error;
++  vnet_main_t *vnm = vnet_get_main ();
++  u32 hw_if_index;
++  // uword if_index;
++
++  error = ethernet_register_interface (
++      vnm, dvpp_device_class.index, port * DVPP_NUM_PIPE_PER_PORT + pipe,
++      hw_addr_set, &hw_if_index, dvpp_eth_flag_change);
++  if (error)
++    {
++      return -1;
++    }
++
++  sw = vnet_get_hw_sw_interface (vnm, hw_if_index);
++  hw = vnet_get_hw_interface (vnm, hw_if_index);
++
++  vlib_log_debug (dvpp_main.logger,
++                  "%s: registered if hwif %u swidx %u hw %p\n", __FUNCTION__,
++                  hw_if_index, sw->sw_if_index, hw);
++
++  vnet_hw_interface_set_input_node (vnm, hw_if_index, dvpp_input_node.index);
++
++  vnet_hw_interface_assign_rx_thread (vnm, hw_if_index, 0 /* queue */,
++                                      2 /* worker */);
++
++  vnet_hw_interface_set_flags (vnm, hw_if_index,
++                               VNET_HW_INTERFACE_FLAG_FULL_DUPLEX);
++
++  /* not sure this is necessary */
++  vnet_hw_interface_set_rx_mode (vnm, hw_if_index, 0,
++                                 VNET_HW_INTERFACE_RX_MODE_POLLING);
++
++  dvpp_main.sw_if_index[port][pipe] = sw->sw_if_index;
++  dvpp_main.hw_if_index[port][pipe] = hw_if_index;
++  return 0;
++}
++
++static clib_error_t *dvpp_interface_admin_up_down (vnet_main_t *vnm,
++                                                   u32 hw_if_index, u32 flags)
++{
++  vnet_hw_interface_flags_t hw_flags;
++  vnet_hw_interface_t *hw = vnet_get_hw_interface (vnm, hw_if_index);
++  hw_flags = hw->flags;
++  if (flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP)
++    {
++      hw_flags |= VNET_HW_INTERFACE_FLAG_LINK_UP;
++    }
++  else
++    {
++      hw_flags &= ~VNET_HW_INTERFACE_FLAG_LINK_UP;
++    }
++  vnet_hw_interface_set_flags (vnm, hw_if_index, hw_flags);
++  return 0;
++}
++
++int dvpp_register_physmap (vlib_physmem_map_t *pm)
++{
++  struct dvpp_register_map map = {};
++  int ret, i;
++  vlib_log_notice (dvpp_main.logger, "%s: base %p n_pages %u pgsize %d\n",
++                   __FUNCTION__, pm->base, pm->n_pages, getpagesize ());
++
++  map.virt = pm->base;
++  map.n_pages = pm->n_pages;
++  for (i = 0; i < pm->n_pages; i++)
++    {
++      map.pa[i] = (void *)dvpp_mem_virt2phy (pm->base + i * 2 * 1024 * 1024);
++    }
++
++  ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_REGISTER_MAP, &map);
++  if (ret < 0)
++    {
++      vlib_log_err (dvpp_main.logger,
++                    "%s: Error registering phys map %d, %s...", __FUNCTION__,
++                    ret, strerror (errno));
++    }
++
++  return ret;
++}
++
++static void *dvpp_control (void *p)
++{
++  vlib_main_t *vm = p;
++  int ret;
++  struct pollfd pfd;
++  /* yield, so as to make sure the DVPP process has finished initializing */
++  usleep (10000);
++
++  while (1)
++    {
++      if (dvpp_main.dvpp_fd <= 0 || dvpp_main.started == 0)
++        {
++          /* DVPP is disabled */
++          break;
++        }
++      pfd.fd = dvpp_main.dvpp_fd;
++      pfd.events = POLLNVAL | POLLIN;
++      pfd.revents = 0;
++
++      /* Wait forever */
++      ret = poll (&pfd, 1, -1);
++      if (ret < 0)
++        goto fail;
++      if (pfd.revents & POLLNVAL)
++        goto fail;
++
++      vlib_process_signal_event (vm, dvpp_process_node.index,
++                                 DVPP_EVENT_NETWORK_STATE, 0);
++      sleep (1);
++    }
++
++  vlib_log_debug (dvpp_main.logger, "%s : exiting\n", __FUNCTION__);
++
++fail:
++  if (dvpp_main.dvpp_fd > 0)
++    {
++      close (dvpp_main.dvpp_fd);
++    }
++  return NULL;
++}
++
++clib_error_t *dvpp_fini (struct vlib_main_t *vm)
++{
++  if (dvpp_main.dvpp_fd > 0)
++    {
++      close (dvpp_main.dvpp_fd);
++    }
++  dvpp_main.dvpp_fd = -1;
++  return NULL;
++}
++
++clib_error_t *dvpp_init (struct vlib_main_t *vm)
++{
++  dvpp_main.logger = vlib_log_register_class ("DVPP", 0);
++
++#if 0
++  / * TODO: handle allocation of DVPP own buffer pool through config */
++  error = dvpp_buffer_init(vm, dvpp_main.dvpp_fd);
++  if (error) {
++    goto fail;
++  }
++#endif
++
++  return 0;
++}
++
++int dvpp_create_port (vlib_main_t *vm, struct dvpp_port *port, u32 port_id)
++{
++  int pipe;
++  u8 *a = port->addr;
++  vlib_log_debug (dvpp_main.logger,
++                  "%s(): port %u enable %u %02x:%02x:%02x:%02x:%02x:%02x\n",
++                  __func__, port_id, port->enable, a[0], a[1], a[2], a[3],
++                  a[4], a[5]);
++  for (pipe = 0; pipe < DVPP_NUM_PIPE_PER_PORT; pipe++)
++    {
++      dvpp_create_if (vm, port->addr, port_id, pipe);
++
++      enable_ip6_interface (vm, dvpp_main.sw_if_index[port_id][pipe]);
++      /* Disable router advertisements */
++      ip6_neighbor_ra_config (
++          vm, dvpp_main.sw_if_index[port_id][pipe],
++          /*suppress*/ 1, /*managed*/ 0, /*other*/ 0,
++          /*suppress_ll_option*/ 0, /*send_unicast*/ 0, /*cease*/ 0,
++          /*use_lifetime*/ 0, /*ra_lifetime*/ 0,
++          /*ra_initial_count*/ 0, /*ra_initial_interval*/ 0,
++          /*ra_max_interval*/ 0, /*ra_min_interval*/ 0, /*is_no*/ 0);
++      ip4_sw_interface_enable_disable (dvpp_main.sw_if_index[port_id][pipe],
++                                       1);
++    }
++  return 0;
++}
++
++/*
++ * DVPP control thread :
++ *      polls direct-vpp module, for Link State events
++ */
++static int dvpp_create_control_thread (vlib_main_t *vm)
++{
++  cpu_set_t cpuset;
++  int ret = pthread_create (&dvpp_main.control_thread, NULL, dvpp_control, vm);
++  if (ret < 0)
++    {
++      vlib_log_err (dvpp_main.logger, "%s: fail to create control thread\n",
++                    __FUNCTION__);
++      goto fail;
++    }
++  ret = pthread_setname_np (dvpp_main.control_thread, "dvpp_control");
++  if (ret < 0)
++    {
++      vlib_log_err (dvpp_main.logger, "%s: fail to name control thread\n",
++                    __FUNCTION__);
++      goto fail;
++    }
++
++  CPU_ZERO (&cpuset);
++  CPU_SET (sched_getcpu (), &cpuset);
++  ret = pthread_setaffinity_np (dvpp_main.control_thread, sizeof (cpuset),
++                                &cpuset);
++  if (ret != 0)
++    {
++      vlib_log_err ("%s: Unable to set poller thread affinity: %s\n",
++                    __FUNCTION__, strerror (errno));
++      goto fail;
++    }
++fail:
++  return ret;
++}
++
++static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
++                           vlib_frame_t *f)
++{
++  vnet_main_t *vnm = vnet_get_main ();
++  vlib_physmem_map_t *pm = 0;
++  u32 map_index = 0;
++  int port, pipe;
++  uword event_type, *event_data = 0;
++  struct dvpp_port_list cur_port_list;
++  int ret;
++
++  vlib_log_err (dvpp_main.logger, "%s: cdvpp_process\n", __FUNCTION__);
++  dvpp_main.dvpp_fd = open ("/dev/dvpp-cmd", O_CLOEXEC | O_RDWR);
++  if (dvpp_main.dvpp_fd < 0)
++    {
++      vlib_log_notice (dvpp_main.logger, "%s: cannot open dvpp-cmd %d, %s\n",
++                       __FUNCTION__, dvpp_main.dvpp_fd, strerror (errno));
++      return 0;
++    }
++
++  ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_GET_PORTS, &port_list);
++  if (ret)
++    {
++      vlib_log_err (dvpp_main.logger, "%s: cannot get ports %d fd %d, %s\n", __FUNCTION__, ret,
++                    dvpp_main.dvpp_fd, strerror (errno));
++      goto fail;
++    }
++
++  dvpp_main.mem_size = port_list.mem_size;
++
++  /* Wait for the main physmem map to have been created */
++  while (1)
++    {
++      pm = vlib_physmem_get_map (vm, map_index);
++      if (pm == 0)
++        {
++          vlib_process_wait_for_event_or_clock (vm, 1.0);
++        }
++      else
++        {
++          break;
++        }
++    }
++
++  dvpp_register_physmap (pm);
++
++  dvpp_main.maps = (struct dvpp_port_maps *)mmap (
++      0, sizeof (*dvpp_main.maps), PROT_READ | PROT_WRITE, MAP_SHARED,
++      dvpp_main.dvpp_fd, 0);
++  if (dvpp_main.maps == MAP_FAILED)
++    {
++      vlib_log_err (dvpp_main.logger, "%s: cannot map port list size %lu, errno %d %s\n",
++                    __FUNCTION__, sizeof (*dvpp_main.maps), errno,
++                    strerror (errno));
++      goto fail;
++    }
++
++  /* Create vpp-terraX interfaces, and enable interfaces that may already
++   * exist. */
++  for (port = 0; port < DVPP_NUM_PORT; port++)
++    {
++      if (port_list.ports[port].enable == 0)
++        {
++          continue;
++        }
++      dvpp_create_port (vm, &port_list.ports[port], port);
++
++      for (pipe = 0; pipe < DVPP_NUM_PIPE_PER_PORT; pipe++)
++        {
++          if (port_list.ports[port].pipes[pipe].enable)
++            {
++              dvpp_interface_admin_up_down (vnm,
++                                            dvpp_main.hw_if_index[port][pipe],
++                                            VNET_SW_INTERFACE_FLAG_ADMIN_UP);
++            }
++        }
++    }
++
++  if (dvpp_create_control_thread (vm))
++    {
++      goto fail;
++    }
++
++  dvpp_main.started = 1;
++  while (1)
++    {
++      vlib_process_wait_for_event_or_clock (vm, 1e9);
++      event_type = vlib_process_get_events (vm, &event_data);
++      switch (event_type)
++        {
++        case DVPP_EVENT_NETWORK_STATE:
++          ret =
++              ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_GET_PORTS, &cur_port_list);
++          if (ret)
++            {
++              vlib_log_err (dvpp_main.logger, "%s: cannot get ports %d\n", __FUNCTION__, ret);
++              goto fail;
++            }
++
++          for (port = 0; port < DVPP_NUM_PORT; port++)
++            {
++              if (cur_port_list.ports[port].enable &&
++                  !port_list.ports[port].enable)
++                {
++                  dvpp_create_port (vm, &port_list.ports[port], port);
++                }
++              /*
++               * Port is disabled, which can happen in case of FW or driver
++               * error...
++               */
++              if (cur_port_list.ports[port].enable == 0)
++                continue;
++              for (pipe = 0; pipe < DVPP_NUM_PIPE_PER_PORT; pipe++)
++                {
++                  if (cur_port_list.ports[port].pipes[pipe].enable !=
++                      port_list.ports[port].pipes[pipe].enable)
++                    {
++                      u32 flag = cur_port_list.ports[port].pipes[pipe].enable
++                                     ? VNET_SW_INTERFACE_FLAG_ADMIN_UP
++                                     : 0;
++                      dvpp_interface_admin_up_down (
++                          vnm, dvpp_main.hw_if_index[port][pipe], flag);
++                    }
++                }
++            }
++          port_list = cur_port_list;
++          break;
++        default:
++          break;
++        }
++    }
++fail:
++  dvpp_main.started = 0;
++  return 0;
++}
++
++u8 *format_dvpp_rx_trace (u8 *s, va_list *va)
++{
++  CLIB_UNUSED (vlib_main_t * vm) = va_arg (*va, vlib_main_t *);
++  CLIB_UNUSED (vlib_node_t * node) = va_arg (*va, vlib_node_t *);
++  CLIB_UNUSED (vnet_main_t * vnm) = vnet_get_main ();
++  dvpp_rx_trace_t *t = va_arg (*va, dvpp_rx_trace_t *);
++  format_function_t *f;
++  f = node->format_buffer;
++  if (!f)
++    f = format_hex_bytes;
++  u32 indent = format_get_indent (s);
++
++  vnet_sw_interface_t *sw = vnet_get_sw_interface (vnm, t->sw_if_index);
++  s = format (s, "%U swidx %u", format_vnet_sw_interface_name, vnm, sw,
++              t->sw_if_index);
++
++  s = format (s, "\n%Ubuffer 0x%x: %U", format_white_space, indent,
++              t->buffer_index, format_vnet_buffer, &t->buffer);
++
++  s = format (s, "\n%U%U", format_white_space, indent, f,
++              vlib_buffer_get_current (&t->buffer), t->buffer.current_length);
++
++  return s;
++}
++
++u32 log_count = 0;
++int alloc = 0;
++VLIB_NODE_FN (dvpp_input_node)
++(vlib_main_t *vm, vlib_node_runtime_t *node, vlib_frame_t *f)
++{
++  u32 buffer_idx, port;
++  int i, ret, count;
++  struct dvpp_vector_sync sync;
++  volatile u32 *cache;
++
++  uword n_rx_packets = 0;
++  vlib_buffer_t *b;
++  u32 next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
++  u32 n_left_to_next, n_trace;
++  u32 *to_next = 0;
++  u64 t1, t2, t3, t4, t5, t6, t10, t11, t12, t13;
++
++  if (dvpp_main.started == 0)
++    return 0;
++
++  if (dvpp_main.maps == 0)
++    return 0;
++
++  vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
++
++  for (i = 0; i < DVPP_NUM_PORT; i++)
++    {
++      port = (i + dvpp_main.port_rr) & (DVPP_NUM_PORT - 1);
++
++      sync.code = DVPP_VECTOR_SYNC_RECEIVE;
++      sync.port = port;
++      sync.thread = vlib_get_thread_index ();
++      sync.size =
++          n_left_to_next > DVPP_BURST_SIZE ? DVPP_BURST_SIZE : n_left_to_next;
++      sync.pipe = 0; // Unused for Rx
++      sync.flow = 0; // Unused for Rx
++
++      t1 = clib_cpu_time_now ();
++      cache = (volatile u32 *)&dvpp_main.maps->cache_level[sync.thread];
++      /* check cache level */
++      if (alloc == 0 && (*cache < DVPP_THRESHOLD_LOW))
++        {
++
++          u32 num_alloc = vlib_buffer_alloc (
++              vm, dvpp_main.maps->maps[port].alloc_vector[sync.thread], 128);
++
++          sync.alloc_size = num_alloc;
++        }
++      else
++        {
++          sync.alloc_size = 0;
++        }
++      t2 = clib_cpu_time_now ();
++      ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++      t3 = clib_cpu_time_now ();
++      if (ret > 0)
++        {
++          u32 *buffers_out = to_next;
++          count = 0;
++          while (count < ret)
++            {
++              dvpp_desc_t *rxb =
++                  dvpp_main.maps->maps[port].rx_vector[sync.thread] + count;
++              buffer_idx = rxb->seg.lo;
++              b = vlib_get_buffer (vm, buffer_idx);
++
++              if (b == 0 || rxb->seg.len == 0)
++                {
++                  count++;
++                  vlib_log_debug (
++                      dvpp_main.logger,
++                      "%s: rx error buffer_idx port %u index %d b %p "
++                      "zero len cnt %u ret %u rxblen %u desc %lu data %lu\n",
++                      __FUNCTION__, port, buffer_idx, b, count, ret,
++                      rxb->seg.len, rxb->seg.desc, rxb->data);
++                  /* TODO: this is a serious error, should terminate
++                   * or notify that driver is errored.
++                   */
++                  continue;
++                }
++              b->current_length = rxb->seg.len;
++              b->current_data = rxb->seg.offset - sizeof (vlib_buffer_t);
++
++              if (dvpp_main.input_verbose && ((log_count++ & 0xffff) == 0))
++                {
++                  u8 *s = 0;
++                  vnet_main_t *vnm = vnet_get_main ();
++                  u32 sw_idx =
++                      dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read;
++                  s = format (0, "%u%c", format_vnet_sw_interface_name, vnm,
++                              sw_idx, 0);
++                  char *a = (char *)b->data + b->current_data;
++                  vlib_log_notice (
++                      dvpp_main.logger,
++                      "%s: %s rx %lu buffer_idx %d b %p data %p len %u "
++                      "left %u next_index %u rxoffset %u current_data %d "
++                      "pipe %u "
++                      " desc %lx %lx "
++                      " flags %x swidx %u a %p [%02x %02x] "
++                      "%02x:%02x:%02x:%02x:%02x:%02x "
++                      " %02x:%02x:%02x:%02x:%02x:%02x %02x%02x %02x %02x "
++                      "%02x %02x %02x %02x\n",
++                      __FUNCTION__, s,
++                      dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read,
++                      buffer_idx, b, b->data, b->current_length,
++                      n_left_to_next, next_index, rxb->seg.offset,
++                      b->current_data, rxb->pipe_id, rxb->seg.desc, rxb->data,
++                      b->flags, dvpp_main.sw_if_index[port][rxb->pipe_id], a,
++                      *(a - 2), *(a - 1), a[0], a[1], a[2], a[3], a[4], a[5],
++                      a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13],
++                      a[14], a[15], a[16], a[17], a[18], a[19]);
++                  vec_free (s);
++                }
++
++              dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read++;
++              vnet_buffer (b)->sw_if_index[VLIB_RX] =
++                  dvpp_main.sw_if_index[port][rxb->pipe_id];
++              vnet_buffer (b)->sw_if_index[VLIB_TX] = ~0;
++
++              n_rx_packets++;
++              buffers_out[0] = buffer_idx;
++              buffers_out += 1;
++              n_left_to_next--;
++              count++;
++            }
++        }
++      else
++        {
++          if (ret < 0 && errno != ENODEV)
++            {
++              vlib_log_notice (dvpp_main.logger,
++                               "%s: Error Reading packets, ret %d, %s\n",
++                               __FUNCTION__, ret, strerror (errno));
++            }
++        }
++
++      /* packet trace if enabled */
++      if (PREDICT_FALSE ((n_trace = vlib_get_trace_count (vm, node))))
++        {
++          vlib_buffer_t *b0;
++
++          u32 *buffers = to_next;
++
++          u32 n_left = n_rx_packets;
++
++          while (n_trace && n_left)
++            {
++              b0 = vlib_get_buffer (vm, buffers[0]);
++
++              vlib_trace_buffer (vm, node, next_index, b0,
++                                 /* follow_chain */ 0);
++
++              dvpp_rx_trace_t *t0 =
++                  vlib_add_trace (vm, node, b0, sizeof t0[0]);
++
++              t0->buffer_index = vlib_get_buffer_index (vm, b0);
++              t0->sw_if_index = vnet_buffer (b0)->sw_if_index[VLIB_RX];
++              clib_memcpy_fast (&t0->buffer, b0, sizeof b0[0] + 256);
++              n_trace--;
++              n_left--;
++              buffers++;
++            }
++          vlib_set_trace_count (vm, node, n_trace);
++        }
++
++      t4 = clib_cpu_time_now ();
++
++      cache = (volatile u32 *)&dvpp_main.maps->release_count[sync.thread];
++      if (*cache > 0)
++        {
++          vlib_buffer_free (
++              vm, dvpp_main.maps->maps[port].release_vector[sync.thread],
++              *cache);
++        }
++      t5 = clib_cpu_time_now ();
++
++      // handle transmit
++      for (i = 0; i < DVPP_NUM_PIPE_PER_PORT; i++)
++        {
++          dvpp_desc_t *vector =
++              dvpp_main.maps->maps[sync.port].tx_vector[sync.thread];
++
++          int n;
++          u32 n_pkts = dvpp_main.maps->maps[port].tx_avail[i];
++          if (n_pkts == 0)
++            continue;
++          if (n_pkts > DVPP_BURST_SIZE)
++            n_pkts = DVPP_BURST_SIZE;
++
++          t10 = clib_cpu_time_now ();
++
++          n = vnet_sched_port_dequeue (vm, port, i, 0, vector, n_pkts);
++          t11 = clib_cpu_time_now ();
++          dvpp_main.time[5] += t11 - t10;
++          dvpp_main.pipe_stats[port][i].num_dequeue_call++;
++          if (n >= 0)
++            {
++              n_pkts = n;
++              dvpp_main.pipe_stats[port][i].num_dequeue_pkts += n_pkts;
++            }
++          else
++            {
++              n_pkts = 0;
++              dvpp_main.pipe_stats[port][i].num_bad_dequeue++;
++            }
++          if (n_pkts > 0)
++            {
++
++              struct dvpp_vector_sync sync;
++
++              sync.code = DVPP_VECTOR_SYNC_TRANSMIT;
++              sync.port = port;
++              sync.pipe = i;
++              sync.flow = 0; // unused
++              sync.thread = vlib_get_thread_index ();
++              sync.size = n_pkts;
++
++              t12 = clib_cpu_time_now ();
++              ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++              t13 = clib_cpu_time_now ();
++              if (ret < 0)
++                {
++                  vlib_log_warn (dvpp_main.logger, "%s: Fail to transmit %d packets, ret %d\n",
++                                 __FUNCTION__, n_pkts, ret);
++                }
++              dvpp_main.time[6] += t13 - t12;
++            }
++        }
++
++      t6 = clib_cpu_time_now ();
++
++      dvpp_main.time[0] += t2 - t1;
++      dvpp_main.time[1] += t3 - t2;
++      dvpp_main.time[2] += t4 - t3;
++      dvpp_main.time[3] += t5 - t4;
++      dvpp_main.time[4] += t6 - t5;
++
++      dvpp_main.port_rr = (port + 1) & (DVPP_NUM_PORT - 1);
++
++      if (n_left_to_next == 0)
++        break;
++    }
++  vlib_put_next_frame (vm, node, next_index, n_left_to_next);
++
++  return n_rx_packets;
++}
++
++static char *dvpp_input_error_strings[] = {
++    "NO_ERRORS",
++};
++
++#if 0
++static uword
++dvpp_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
++		    vlib_frame_t * frame)
++{
++  u32 n_rx_packets = 0;
++  u32 buffer_idx, read;
++  vnet_device_input_runtime_t *rt = (void *) node->runtime_data;
++  vnet_device_and_queue_t *dq;
++  vlib_buffer_t *b;
++  foreach_device_and_queue (dq, rt->devices_and_queues)
++  {
++
++    if (dvpp_main.rx_ring[dq->dev_instance][0] & DVPP_RX_RING_STOP) {
++      dvpp_main.rx_ring[dq->dev_instance][0] = 0; // start the ring
++      dvpp_main.rx_ring_read[dq->dev_instance] = 0;
++    }
++
++    read = dvpp_main.rx_ring_read[dq->dev_instance];
++    buffer_idx = dvpp_main.rx_ring[dq->dev_instance][read];
++    if (buffer_idx & DVPP_RX_RING_VALID) {
++
++        // take the buffer
++
++    }
++
++    //af_packet_if_t *apif;
++    //apif = vec_elt_at_index (apm->interfaces, dq->dev_instance);
++    //if (apif->is_admin_up)
++    //  n_rx_packets += af_packet_device_input_fn (vm, node, frame, apif);
++  }
++
++  return n_rx_packets;
++}
++#endif
++
++VLIB_REGISTER_NODE (dvpp_input_node) = {
++    .type = VLIB_NODE_TYPE_INPUT,
++    .name = "dvpp-input",
++    .sibling_of = "device-input",
++
++    /* Will be enabled if/when hardware is detected. */
++    .state = VLIB_NODE_STATE_DISABLED,
++    .format_buffer = format_ethernet_header_with_length,
++    .format_trace = format_dvpp_rx_trace,
++
++    .n_errors = 1,
++    .error_strings = dvpp_input_error_strings,
++};
++
++// VLIB_NODE_FUNCTION_MULTIARCH (dvpp_input_node, dvpp_input_fn)
++
++static uword dvpp_interface_tx (vlib_main_t *vm, vlib_node_runtime_t *node,
++                                vlib_frame_t *frame)
++{
++  u32 n_left_from, n_left, n_tx_pkt, *from;
++  u32 dev_instance = ~0;
++  u32 port, peer, flow;
++  vlib_buffer_t *b[4];
++
++  // vlib_buffer_t * b;
++  // vnet_main_t *vnm = vnet_get_main ();
++  vnet_interface_output_runtime_t *rd = (void *)node->runtime_data;
++
++  if (dvpp_main.started == 0)
++    {
++      // Need to free the buffers
++      return 0;
++    }
++
++  // vnet_hw_interface_t *hw;
++  n_left_from = frame->n_vectors;
++  from = vlib_frame_vector_args (frame);
++
++  if (rd)
++    {
++      dev_instance = rd->dev_instance;
++      peer = dev_instance % DVPP_NUM_PIPE_PER_PORT;
++      port = dev_instance / DVPP_NUM_PIPE_PER_PORT;
++      flow = 0; // TODO need to look at TOS field
++    }
++  else
++    {
++      vlib_log_err (dvpp_main.logger, "%s: and no device\n", __FUNCTION__);
++      return 0;
++    }
++
++  n_left = n_left_from;
++
++  while (n_left >= 8)
++    {
++      b[0] = vlib_get_buffer (vm, from[0]);
++
++      if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE))
++        {
++          if (b[0]->flags & VLIB_BUFFER_IS_TRACED)
++            dvpp_tx_trace_buffer (vm, node, port, peer, b[0]);
++        }
++      from++;
++      n_left--;
++    }
++
++  from = vlib_frame_vector_args (frame);
++
++  if (0)
++    {
++      n_tx_pkt = 0; // dvpp_do_tx (vm, port, peer, from, n_left_from);
++    }
++  else
++    {
++      /* TODO: look at the packets TOS and separate them into per TOS buffers
++       *      or mark pipe_id into the buffer and pass as one shot to sched
++       *       engine
++       */
++      n_tx_pkt = vnet_sched_port_enqueue_locked (vm, port, peer, flow, from,
++                                                 n_left_from);
++
++      dvpp_main.pipe_stats[port][peer].num_pkt_queued += n_tx_pkt;
++
++      if (n_tx_pkt < n_left_from)
++        {
++          vlib_buffer_free (vm, from + n_tx_pkt, n_left_from - n_tx_pkt);
++          dvpp_main.pipe_stats[port][peer].num_pkt_dropped +=
++              n_left_from - n_tx_pkt;
++        }
++    }
++
++  return n_tx_pkt;
++}
++
++static u8 *format_dvpp_name (u8 *s, va_list *args)
++{
++  u32 dev_instance = va_arg (*args, u32);
++  return format (s, "vpp-terra%d", dev_instance);
++}
++
++static u8 *format_dvpp_tx_trace (u8 *s, va_list *va)
++{
++  CLIB_UNUSED (vlib_main_t * vm) = va_arg (*va, vlib_main_t *);
++  CLIB_UNUSED (vlib_node_t * node) = va_arg (*va, vlib_node_t *);
++  CLIB_UNUSED (vnet_main_t * vnm) = vnet_get_main ();
++
++  dvpp_tx_trace_t *t = va_arg (*va, dvpp_tx_trace_t *);
++  u32 sw_if_index = dvpp_main.sw_if_index[t->port_id][t->pipe_id];
++  vnet_sw_interface_t *sw = vnet_get_sw_interface (vnm, sw_if_index);
++
++  u32 indent = format_get_indent (s);
++
++  s = format (s, "%U port %d pipe %u", format_vnet_sw_interface_name, vnm, sw,
++              t->port_id, t->pipe_id);
++
++  s = format (s, "\n%Ubuffer 0x%x: %U", format_white_space, indent,
++              t->buffer_index, format_vnet_buffer, &t->buffer);
++
++  s = format (s, "\n%U%U", format_white_space, indent,
++              format_ethernet_header_with_length, t->buffer.pre_data,
++              sizeof (t->buffer.pre_data));
++  return s;
++}
++
++/* *INDENT-OFF* */
++VNET_DEVICE_CLASS (dvpp_device_class) = {
++    .name = "dvpp",
++    .tx_function = dvpp_interface_tx,
++    .format_device_name = format_dvpp_name,
++    .admin_up_down_function = dvpp_interface_admin_up_down,
++    .format_tx_trace = format_dvpp_tx_trace,
++};
++VLIB_DEVICE_TX_FUNCTION_MULTIARCH (dvpp_device_class, dvpp_interface_tx)
++
++VLIB_INIT_FUNCTION (dvpp_init);
++VLIB_MAIN_LOOP_EXIT_FUNCTION (dvpp_fini);
++
++/* *INDENT-ON* */
+diff --git a/src/vnet/devices/dvpp/dvpp.h b/src/vnet/devices/dvpp/dvpp.h
+new file mode 100644
+index 000000000..24d11f9d4
+--- /dev/null
++++ b/src/vnet/devices/dvpp/dvpp.h
+@@ -0,0 +1,73 @@
++#ifndef included_dvpp_h
++#define included_dvpp_h
++
++#include "interface.h"
++
++typedef struct {
++    u32 num_pkt_read;
++} dvpp_port_stat_t;
++
++typedef struct {
++    u64 num_pkt_read;
++    u64 num_pkt_written;
++    u64 num_pkt_dropped;
++    u64 num_pkt_queued;
++    u64 num_dequeue_call;
++    u64 num_dequeue_pkts;
++    u64 num_bad_dequeue;
++} dvpp_pipe_stat_t;
++
++typedef struct {
++  int dvpp_fd;
++  vlib_log_class_t logger;
++  u32 vlib_pool_id;
++  u32 map_index;
++  void *mem;
++  u32 mem_size;
++  u32 started;
++  u32 input_verbose;
++  u32 sw_if_index[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
++  u32 hw_if_index[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
++  struct dvpp_port_maps *maps;
++  u32 port_rr; //round robin through ports
++  dvpp_port_stat_t port_stats[DVPP_NUM_PORT];
++  dvpp_pipe_stat_t pipe_stats[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
++  u64 time[8];
++  pthread_t control_thread;
++} dvpp_main_t;
++
++extern dvpp_main_t dvpp_main;
++
++extern vnet_device_class_t dvpp_device_class;
++extern vlib_node_registration_t dvpp_input_node;
++
++extern int sched_getcpu(void);
++extern int dvpp_get_memfd();
++extern int dvpp_register_physmap(vlib_physmem_map_t *pm);
++
++extern clib_error_t * dvpp_buffer_init (vlib_main_t * vm, int fd);
++
++
++extern uint64_t dvpp_mem_virt2phy(const void *virtaddr);
++
++typedef struct
++{
++  u32 sw_if_index;
++  u32 buffer_index;
++  vlib_buffer_t buffer;
++  u8 data[256];			/* First 256 data bytes, used for hexdump */
++} dvpp_rx_trace_t;
++
++typedef struct
++{
++  u32 buffer_index;
++  u16 device_index;
++  u16 pipe_id;
++  u16 port_id;
++  /* Copy of VLIB buffer; packet data stored in pre_data. */
++  vlib_buffer_t buffer;
++  u8 data[256];			/* First 256 data bytes, used for hexdump */
++} dvpp_tx_trace_t;
++
++
++#endif
+diff --git a/src/vnet/devices/dvpp/dvpp_sched.c b/src/vnet/devices/dvpp/dvpp_sched.c
+new file mode 100644
+index 000000000..34ce74813
+--- /dev/null
++++ b/src/vnet/devices/dvpp/dvpp_sched.c
+@@ -0,0 +1,219 @@
++#include <vnet/vnet.h>
++#include <vlib/buffer.h>
++
++#include "dvpp_sched.h"
++
++vnet_sched_main_t vnet_sched_main;
++
++clib_error_t *vnet_sched_port_init (vlib_main_t *vm)
++{
++  vnet_sched_buffer_ring_t *r;
++  for (int i = 0; i < VNET_SCHED_NUM_PORTS; i++)
++    {
++      for (int j = 0; j < VNET_SCHED_PIPES_PER_PORT; j++)
++        {
++          for (int k = 0; k < VNET_SCHED_FLOWS_PER_PIPE; k++)
++            {
++              r = &vnet_sched_main.ports[i].pipes[j].flows[k];
++              r->enq = r->deq = 0;
++              memset (r->ring, 0xff, sizeof (r->ring));
++              r->dump = 10;
++            }
++        }
++      vnet_sched_main.ports[i].state = 1;
++      clib_spinlock_init (&vnet_sched_main.ports[i].lock);
++    }
++  return 0;
++}
++
++VLIB_INIT_FUNCTION (vnet_sched_port_init);
++
++int vnet_sched_port_enqueue_buf_locked (vlib_main_t *vm, u32 port_id,
++                                        u32 pipe_id, u32 flow_id,
++                                        vlib_buffer_t *b)
++{
++  u32 index = vlib_get_buffer_index (vm, b);
++  return vnet_sched_port_enqueue_locked (vm, port_id, pipe_id, flow_id, &index,
++                                         1);
++}
++
++int vnet_sched_port_enqueue_locked (vlib_main_t *vm, u32 port_id, u32 pipe_id,
++                                    u32 flow_id, u32 *indexes, u32 n_buffers)
++{
++  ASSERT (flow_id < VNET_SCHED_FLOWS_PER_PIPE);
++  ASSERT (pipe_id < VNET_SCHED_PIPES_PER_PORT);
++  ASSERT (port_id < VNET_SCHED_NUM_PORTS);
++
++  vnet_sched_port_t *port = &vnet_sched_main.ports[port_id];
++  vnet_sched_buffer_ring_t *ring = &port->pipes[pipe_id].flows[flow_id];
++  vlib_buffer_t *b;
++
++  int ret = 0;
++  clib_spinlock_lock (&port->lock);
++  u16 qlen = ring->enq - ring->deq;
++  u16 to_next = (VNET_SCHED_QUEUE_SIZE - 1) - qlen;
++  if (to_next > n_buffers)
++    to_next = n_buffers;
++
++  while (to_next)
++    {
++      dvpp_desc_t desc = {};
++      if (*indexes == ~0)
++        {
++          break;
++        }
++      b = vlib_get_buffer (vm, *indexes);
++      /* build descriptor */
++      desc.seg.index = *indexes;
++      desc.seg.len = b->current_length;
++      desc.seg.offset = 256 + b->current_data;
++      desc.seg.eop = 1;
++      /* copy */
++      ring->ring[ring->enq & (VNET_SCHED_QUEUE_SIZE - 1)] = desc;
++      ring->enq++;
++      ret++;
++      indexes++;
++      to_next--;
++    }
++  clib_spinlock_unlock (&port->lock);
++
++  return ret;
++}
++
++int dump = 0;
++int vnet_sched_port_dequeue (vlib_main_t *vm, u32 port_id, u32 pipe_id,
++                             u32 flow_id, dvpp_desc_t *desc, int n_pkts)
++{
++  ASSERT (flow_id < VNET_SCHED_FLOWS_PER_PIPE);
++  ASSERT (pipe_id < VNET_SCHED_PIPES_PER_PORT);
++  ASSERT (port_id < VNET_SCHED_NUM_PORTS);
++
++  vnet_sched_port_t *port = &vnet_sched_main.ports[port_id];
++
++  vnet_sched_buffer_ring_t *ring = &port->pipes[pipe_id].flows[flow_id];
++
++  int copy = 0;
++  u32 idx;
++  // clib_spinlock_lock (&port->lock);
++
++  u16 qlen = ring->enq - ring->deq;
++  int num = qlen < n_pkts ? qlen : n_pkts;
++
++  while (copy < num)
++    {
++      int d = (ring->deq + copy) & (VNET_SCHED_QUEUE_SIZE - 1);
++      idx = ring->ring[d].seg.index;
++      if (idx == ~0)
++        {
++          // copy = -1;
++          ring->retries++;
++          break; // caller to retry
++        }
++      desc[copy] = ring->ring[d];
++      ring->ring[d].seg.index = ~0;
++      copy++;
++    }
++
++  if (copy > 0)
++    {
++      // MWB
++      _wmb ();
++      ring->deq += copy;
++    }
++
++  return copy;
++}
++
++u16 vnet_sched_port_queue_size (vlib_main_t *vm, u32 port_id, u32 pipe_id,
++                                u32 flow_id)
++{
++  ASSERT (flow_id < VNET_SCHED_FLOWS_PER_PIPE);
++  ASSERT (pipe_id < VNET_SCHED_PIPES_PER_PORT);
++  ASSERT (port_id < VNET_SCHED_NUM_PORTS);
++  vnet_sched_port_t *port = &vnet_sched_main.ports[port_id];
++  vnet_sched_buffer_ring_t *ring = &port->pipes[pipe_id].flows[flow_id];
++
++  return ring->enq - ring->deq;
++}
++
++static clib_error_t *show_rings_command_fn (vlib_main_t *vm,
++                                            unformat_input_t *input,
++                                            vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++
++  u32 port_id = 0, pipe_id = 0, flow_id = 0;
++  char buffer[140];
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "port %u", &port_id))
++        ;
++      else if (unformat (line_input, "pipe %u", &pipe_id))
++        ;
++      else if (unformat (line_input, "flow %u", &flow_id))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  vnet_sched_port_t *port = &vnet_sched_main.ports[port_id];
++  clib_spinlock_lock (&port->lock);
++  vnet_sched_buffer_ring_t *ring = &port->pipes[pipe_id].flows[flow_id];
++  ring->dump = 0;
++
++  vlib_cli_output (
++      vm,
++      " port %u pipe %u flow %u enq %u 0x%x deq %u 0x%x len %u retries %u\n",
++      port_id, pipe_id, flow_id, ring->enq,
++      ring->enq & (VNET_SCHED_QUEUE_SIZE - 1), ring->deq,
++      ring->deq & (VNET_SCHED_QUEUE_SIZE - 1), ring->enq - ring->deq,
++      ring->retries);
++  for (int i = 0; i < VNET_SCHED_QUEUE_SIZE; i++)
++    {
++      char c;
++      int enq = ring->enq & (VNET_SCHED_QUEUE_SIZE - 1);
++      int deq = ring->deq & (VNET_SCHED_QUEUE_SIZE - 1);
++      if (i == enq && i == deq)
++        {
++          c = ring->ring[i].seg.index == ~0 ? 'B' : 'b';
++        }
++      else if (i == enq)
++        {
++          c = ring->ring[i].seg.index == ~0 ? 'E' : 'e';
++        }
++      else if (i == deq)
++        {
++          c = ring->ring[i].seg.index == ~0 ? 'D' : 'd';
++        }
++      else
++        {
++          c = ring->ring[i].seg.index == ~0 ? 'x' : '_';
++        }
++
++      buffer[i & 127] = c;
++      if (i & ((i & 127) == 127))
++        {
++          buffer[(i & 127) + 1] = 0;
++          vlib_cli_output (vm, "%s\n", buffer);
++        }
++    }
++  clib_spinlock_unlock (&port->lock);
++done:
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (show_rings_command, static) = {
++    .path = "vnet show ring",
++    .short_help = "vnet show ring",
++    .function = show_rings_command_fn,
++};
++/* *INDENT-ON* */
+diff --git a/src/vnet/devices/dvpp/dvpp_sched.h b/src/vnet/devices/dvpp/dvpp_sched.h
+new file mode 100644
+index 000000000..6a92f1dca
+--- /dev/null
++++ b/src/vnet/devices/dvpp/dvpp_sched.h
+@@ -0,0 +1,84 @@
++
++
++/*
++ * QOS aware packet scheduler, implementing RED drop.
++ *
++ * The scheduler can be used so as to send packets across CPUs,
++ * in this case it is a separate mechanism from the typical VPP frame queues.
++ *
++ * Advantage of this scheduler, versus frame queues:
++ *   - this scheduler is more optimized than the frame queu mechanism
++ *   - this scheduler can queue packets on per flow basis, according to such
++ * fields as the IP ToS, hence it avoids head of line blocking and as well, and
++ *     does not drop blindly
++ *   - this scheduler implements congestion control and drop based on Random
++ * Early Detect policies
++ *
++ */
++
++#ifndef included_dvpp_sched_h
++#define included_dvpp_sched_h
++
++#include "interface.h"
++
++#define VNET_SCHED_PIPES_PER_PORT 16
++#define VNET_SCHED_FLOWS_PER_PIPE 16
++#define VNET_SCHED_QUEUES_PER_PORT \
++  (VNET_SCHED_PIPES_PER_PORT * VNET_SCHED_FLOWS_PER_PIPE)
++
++#define VNET_SCHED_QUEUE_SIZE 2048
++
++#define VNET_SCHED_NUM_PORTS 4
++
++#define VNET_SCHED 1
++
++#if defined(__aarch64__)
++
++#define dsb(opt) asm volatile("dsb " #opt : : : "memory")
++#define dmb(opt) asm volatile("dmb " #opt : : : "memory")
++
++#define _wmb() dsb (st)
++#else
++#define _wmb()
++#endif
++
++typedef struct
++{
++  u16 deq;
++  u16 enq;
++  dvpp_desc_t ring[VNET_SCHED_QUEUE_SIZE];
++  u32 retries;
++  u32 dump;
++} vnet_sched_buffer_ring_t;
++
++typedef struct
++{
++  u8 state;
++  vnet_sched_buffer_ring_t flows[VNET_SCHED_FLOWS_PER_PIPE];
++} vnet_sched_pipe_t;
++
++typedef struct
++{
++  u8 state;
++  clib_spinlock_t lock; // TODO: check if locking per pipe is faster
++  vnet_sched_pipe_t pipes[VNET_SCHED_PIPES_PER_PORT];
++} vnet_sched_port_t;
++
++typedef struct
++{
++  vnet_sched_port_t ports[VNET_SCHED_NUM_PORTS];
++} vnet_sched_main_t;
++
++extern vnet_sched_port_t *vnet_sched_port_config (vlib_main_t *vm);
++extern int vnet_sched_port_enqueue_buf_locked (vlib_main_t *vm, u32 port_id,
++                                               u32 pipe_id, u32 flow_id,
++                                               vlib_buffer_t *b);
++extern int vnet_sched_port_enqueue_locked (vlib_main_t *vm, u32 port_id,
++                                           u32 pipe_id, u32 flow_id,
++                                           u32 *indexes, u32 n_buffers);
++extern int vnet_sched_port_dequeue (vlib_main_t *vm, u32 port_id, u32 pipe_id,
++                                    u32 flow_id, dvpp_desc_t *desc,
++                                    int n_pkts);
++extern u16 vnet_sched_port_queue_size (vlib_main_t *vm, u32 port_id,
++                                       u32 pipe_id, u32 flow_id);
++#endif /* included_dvpp_sched_h */
+diff --git a/src/vnet/devices/dvpp/interface.h b/src/vnet/devices/dvpp/interface.h
+new file mode 100644
+index 000000000..27c546f91
+--- /dev/null
++++ b/src/vnet/devices/dvpp/interface.h
+@@ -0,0 +1,165 @@
++#ifndef included_interface_h
++#define included_interface_h
++
++#ifdef HAS_DVPP_MODULE_HEADER
++/* Used for regular build, when the kernel module is available
++ * and exports the interface headers. */
++
++#include <kernel-module-direct-vpp/dvpp_descriptor.h>
++#include <kernel-module-direct-vpp/direct_vpp.h>
++#else
++
++/* Used for native build only, when the kernel module isn't available. */
++
++/* seg.lo to byte offset shift - match 64Bytes cache line */
++#define DVPP_LO_SHIFT 6
++/* Matches with VPP, vlib_buffer_t */
++#define DVPP_DATA_HEADROOM 256
++
++typedef struct
++{
++  union
++  {
++    struct
++    {
++      union
++      {
++        struct
++        {
++          /* (1<<24) * 64Bytes = 1GB of packet memory */
++          u32 lo : 24;
++          u32 hi : 4;
++          u32 flags : 4;
++        } __attribute__ ((packed));
++        u32 index;
++      };
++      u16 len : 14;
++      u16 eop : 1;
++      u16 special : 1;
++      u16 offset : 14;
++      u16 mflags : 2;
++    } __attribute__ ((packed));
++    u64 desc;
++  };
++} segment_desc_t;
++
++typedef struct
++{
++  segment_desc_t seg;
++  union
++  {
++    struct
++    {
++      u8 pipe_id;
++      u8 flow_id;
++      u16 tmp1;
++      u32 next;
++    } __attribute__ ((packed));
++    u64 data;
++  };
++} dvpp_desc_t __attribute__ ((packed));
++
++static inline void dvpp_desc_clear (dvpp_desc_t *desc)
++{
++  desc->seg.desc = 0;
++  desc->data = 0;
++}
++
++#define DVPP_NUM_PORT 4
++#define DVPP_NUM_PIPE_PER_PORT 16
++#define DVPP_NUM_THREADS 4
++#define DVPP_ETH_ALEN 6
++#define DVPP_VLEN 256
++#define DVPP_ALLOC_VLEN 1024
++
++#define DVPP_BUF_SIZE 4096
++#define DVPP_NB_BUFFERS 32768
++#define DVPP_RX_RING_SIZE 4096
++#define DVPP_MAX_NB_BLOCK 128
++
++#define DVPP_THRESHOLD_HIGH (8 * 1024)
++#define DVPP_THRESHOLD_LOW (4 * 1024)
++
++#define DVPP_RX_RING_STOP 0x80000000
++#define DVPP_RX_RING_VALID 0x40000000
++
++#define DVPP_VECTOR_SYNC_ALLOCATE 0
++#define DVPP_VECTOR_SYNC_FREE 1
++#define DVPP_VECTOR_SYNC_TRANSMIT 2
++#define DVPP_VECTOR_SYNC_RECEIVE 3
++#define DVPP_VECTOR_SYNC_TRANSMIT_LEGACY 4
++
++struct dvpp_vector_sync
++{
++  u16 size;
++  u16 code;
++  u8 thread;
++  u8 port;
++  u8 pipe;
++  u8 flow;
++  u16 alloc_size;
++} __attribute__ ((packed));
++
++struct dvpp_pipe
++{
++  unsigned int enable;
++  u8 addr[DVPP_ETH_ALEN];
++} __attribute__ ((packed));
++
++struct dvpp_port
++{
++  unsigned int enable;
++  unsigned int pci;
++  void *context;
++  u8 addr[DVPP_ETH_ALEN];
++  struct dvpp_pipe pipes[DVPP_NUM_PIPE_PER_PORT];
++} __attribute__ ((packed));
++
++struct dvpp_port_list
++{
++  u32 nb_ports;
++  u32 pipes_per_port;
++  u32 mem_size;
++  u32 buf_size;
++  struct dvpp_port ports[DVPP_NUM_PORT];
++} __attribute__ ((packed));
++
++struct dvpp_port_map
++{
++  dvpp_desc_t rx_vector[DVPP_NUM_THREADS][DVPP_VLEN];
++  dvpp_desc_t tx_vector[DVPP_NUM_THREADS][DVPP_VLEN];
++  u32 alloc_vector[DVPP_NUM_THREADS][DVPP_ALLOC_VLEN];
++  u32 release_vector[DVPP_NUM_THREADS][DVPP_VLEN];
++  /*  No need per thread, for a given port it is
++      accessed only from one core */
++  u32 tx_avail[DVPP_NUM_PIPE_PER_PORT];
++} __attribute__ ((packed));
++
++struct dvpp_port_maps
++{
++  union
++  {
++    struct
++    {
++      struct dvpp_port_map maps[DVPP_NUM_PORT];
++      u32 cache_level[DVPP_NUM_THREADS];
++      u32 release_count[DVPP_NUM_THREADS];
++    };
++    u8 data[2 * 1024 * 1024];
++  };
++} __attribute__ ((packed));
++
++struct dvpp_register_map
++{
++  void *virt;
++  u32 n_pages;
++  void *pa[DVPP_MAX_NB_BLOCK];
++} __attribute__ ((packed));
++
++#define DVPP_TYPE 'v'
++#define DVPP_IOCTL_GET_PORTS _IOWR (DVPP_TYPE, 1, struct dvpp_port_list)
++#define DVPP_IOCTL_VECTOR_SYNC _IOWR (DVPP_TYPE, 2, struct dvpp_vector_sync)
++#define DVPP_IOCTL_REGISTER_MAP _IOWR (DVPP_TYPE, 3, struct dvpp_register_map)
++
++#endif
++#endif
+diff --git a/src/vnet/devices/dvpp/pagemap.c b/src/vnet/devices/dvpp/pagemap.c
+new file mode 100644
+index 000000000..35a75471e
+--- /dev/null
++++ b/src/vnet/devices/dvpp/pagemap.c
+@@ -0,0 +1,276 @@
++#include <errno.h>
++#include <fcntl.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <sys/types.h>
++#include <unistd.h>
++#include <string.h>
++
++/* pagemap.c code is there for debug only */
++
++typedef struct
++{
++  uint64_t pfn : 55;
++  unsigned int soft_dirty : 1;
++  unsigned int file_page : 1;
++  unsigned int swapped : 1;
++  unsigned int present : 1;
++} PagemapEntry;
++
++/* Parse the pagemap entry for the given virtual address.
++ *
++ * @param[out] entry      the parsed entry
++ * @param[in]  pagemap_fd file descriptor to an open /proc/pid/pagemap file
++ * @param[in]  vaddr      virtual address to get entry for
++ * @return 0 for success, 1 for failure
++ */
++int pagemap_get_entry (PagemapEntry *entry, int pagemap_fd, uintptr_t vaddr)
++{
++  size_t nread;
++  ssize_t ret;
++  uint64_t data;
++
++  nread = 0;
++  while (nread < sizeof (data))
++    {
++      ret = pread (pagemap_fd, &data, sizeof (data) - nread,
++                   (vaddr / sysconf (_SC_PAGE_SIZE)) * sizeof (data) + nread);
++      nread += ret;
++      if (ret <= 0)
++        {
++          return 1;
++        }
++    }
++  entry->pfn = data & (((uint64_t)1 << 55) - 1);
++  entry->soft_dirty = (data >> 55) & 1;
++  entry->file_page = (data >> 61) & 1;
++  entry->swapped = (data >> 62) & 1;
++  entry->present = (data >> 63) & 1;
++  return 0;
++}
++
++/* Convert the given virtual address to physical using /proc/PID/pagemap.
++ *
++ * @param[out] paddr physical address
++ * @param[in]  pid   process to convert for
++ * @param[in] vaddr virtual address to get entry for
++ * @return 0 for success, 1 for failure
++ */
++int virt_to_phys_user (uintptr_t *paddr, pid_t pid, uintptr_t vaddr)
++{
++  char pagemap_file[BUFSIZ];
++  int pagemap_fd;
++
++  snprintf (pagemap_file, sizeof (pagemap_file), "/proc/%ju/pagemap",
++            (uintmax_t)pid);
++  pagemap_fd = open (pagemap_file, O_RDONLY);
++  if (pagemap_fd < 0)
++    {
++      return 1;
++    }
++  PagemapEntry entry;
++  if (pagemap_get_entry (&entry, pagemap_fd, vaddr))
++    {
++      return 1;
++    }
++  close (pagemap_fd);
++  *paddr = (entry.pfn * sysconf (_SC_PAGE_SIZE)) +
++           (vaddr % sysconf (_SC_PAGE_SIZE));
++  return 0;
++}
++
++int read_page_map (int argc, char **argv)
++{
++  char buffer[BUFSIZ];
++  char maps_file[BUFSIZ];
++  char pagemap_file[BUFSIZ];
++  int maps_fd;
++  int offset = 0;
++  int pagemap_fd;
++  pid_t pid;
++
++  if (argc < 2)
++    {
++      printf ("Usage: %s pid\n", argv[0]);
++      return EXIT_FAILURE;
++    }
++  pid = strtoull (argv[1], NULL, 0);
++  snprintf (maps_file, sizeof (maps_file), "/proc/%ju/maps", (uintmax_t)pid);
++  snprintf (pagemap_file, sizeof (pagemap_file), "/proc/%ju/pagemap",
++            (uintmax_t)pid);
++  maps_fd = open (maps_file, O_RDONLY);
++  if (maps_fd < 0)
++    {
++      perror ("open maps");
++      return EXIT_FAILURE;
++    }
++  pagemap_fd = open (pagemap_file, O_RDONLY);
++  if (pagemap_fd < 0)
++    {
++      perror ("open pagemap");
++      return EXIT_FAILURE;
++    }
++  printf ("addr pfn soft-dirty file/shared swapped present library\n");
++  for (;;)
++    {
++      ssize_t length = read (maps_fd, buffer + offset, sizeof buffer - offset);
++      if (length <= 0)
++        break;
++      length += offset;
++      for (size_t i = offset; i < (size_t)length; i++)
++        {
++          uintptr_t low = 0, high = 0;
++          if (buffer[i] == '\n' && i)
++            {
++              const char *lib_name;
++              size_t y;
++              /* Parse a line from maps. Each line contains a range that
++               * contains many pages. */
++              {
++                size_t x = i - 1;
++                while (x && buffer[x] != '\n')
++                  x--;
++                if (buffer[x] == '\n')
++                  x++;
++                while (buffer[x] != '-' && x < sizeof buffer)
++                  {
++                    char c = buffer[x++];
++                    low *= 16;
++                    if (c >= '0' && c <= '9')
++                      {
++                        low += c - '0';
++                      }
++                    else if (c >= 'a' && c <= 'f')
++                      {
++                        low += c - 'a' + 10;
++                      }
++                    else
++                      {
++                        break;
++                      }
++                  }
++                while (buffer[x] != '-' && x < sizeof buffer)
++                  x++;
++                if (buffer[x] == '-')
++                  x++;
++                while (buffer[x] != ' ' && x < sizeof buffer)
++                  {
++                    char c = buffer[x++];
++                    high *= 16;
++                    if (c >= '0' && c <= '9')
++                      {
++                        high += c - '0';
++                      }
++                    else if (c >= 'a' && c <= 'f')
++                      {
++                        high += c - 'a' + 10;
++                      }
++                    else
++                      {
++                        break;
++                      }
++                  }
++                lib_name = 0;
++                for (int field = 0; field < 4; field++)
++                  {
++                    x++;
++                    while (buffer[x] != ' ' && x < sizeof buffer)
++                      x++;
++                  }
++                while (buffer[x] == ' ' && x < sizeof buffer)
++                  x++;
++                y = x;
++                while (buffer[y] != '\n' && y < sizeof buffer)
++                  y++;
++                buffer[y] = 0;
++                lib_name = buffer + x;
++              }
++              /* Get info about all pages in this page range with pagemap. */
++              {
++                PagemapEntry entry;
++                for (uintptr_t addr = low; addr < high;
++                     addr += sysconf (_SC_PAGE_SIZE))
++                  {
++                    /* TODO always fails for the last page (vsyscall), why?
++                     * pread returns 0. */
++                    if (!pagemap_get_entry (&entry, pagemap_fd, addr))
++                      {
++                        printf ("%jx %jx %u %u %u %u %s\n", (uintmax_t)addr,
++                                (uintmax_t)entry.pfn, entry.soft_dirty,
++                                entry.file_page, entry.swapped, entry.present,
++                                lib_name);
++                      }
++                  }
++              }
++              buffer[y] = '\n';
++            }
++        }
++    }
++  close (maps_fd);
++  close (pagemap_fd);
++  return EXIT_SUCCESS;
++}
++
++#define PFN_MASK_SIZE 8
++
++/*
++ * Get physical address of any mapped virtual address in the current process.
++ */
++uint64_t dvpp_mem_virt2phy (const void *virtaddr)
++{
++  int fd, retval;
++  uint64_t page, physaddr;
++  unsigned long virt_pfn;
++  int page_size;
++  off_t offset;
++
++  /* standard page size */
++  page_size = getpagesize ();
++
++  fd = open ("/proc/self/pagemap", O_RDONLY);
++  if (fd < 0)
++    {
++      printf ("%s(): cannot open /proc/self/pagemap: %s\n", __func__,
++              strerror (errno));
++      return -1;
++    }
++
++  virt_pfn = (unsigned long)virtaddr / page_size;
++  offset = sizeof (uint64_t) * virt_pfn;
++  if (lseek (fd, offset, SEEK_SET) == (off_t)-1)
++    {
++      printf ("%s():  seek error in /proc/self/pagemap: %s\n", __func__,
++              strerror (errno));
++      close (fd);
++      return -1;
++    }
++
++  retval = read (fd, &page, PFN_MASK_SIZE);
++  close (fd);
++  if (retval < 0)
++    {
++      printf ("%s():  cannot read /proc/self/pagemap: %s\n", __func__,
++              strerror (errno));
++      return ~0;
++    }
++  else if (retval != PFN_MASK_SIZE)
++    {
++      printf ("%s(): read %d bytes from /proc/self/pagemap "
++              "but expected %d:\n",
++              __func__, retval, PFN_MASK_SIZE);
++      return -1;
++    }
++
++  /*
++   * the pfn (page frame number) are bits 0-54 (see
++   * pagemap.txt in linux Documentation)
++   */
++  if ((page & 0x7fffffffffffffULL) == 0)
++    return -1;
++
++  physaddr = ((page & 0x7fffffffffffffULL) * page_size) +
++             ((unsigned long)virtaddr % page_size);
++
++  return physaddr;
++}
+-- 
+2.24.1
+

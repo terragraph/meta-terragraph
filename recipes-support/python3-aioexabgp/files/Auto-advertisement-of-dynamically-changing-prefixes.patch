@@ -1,0 +1,198 @@
+From 9fd661ee68630b9dea60cddf2cc5e690f3126a44 Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Mon, 2 Nov 2020 13:33:24 -0800
+Subject: [PATCH] Auto-advertisement of dynamically changing prefixes
+
+Summary:
+Query RIB about current prefixes (which can vary dynamically)
+and advertise/withdraw appropriately.
+---
+ aioexabgp/announcer/__init__.py    | 45 ++++++++++++++++++++++--------
+ aioexabgp/announcer/fibs.py        |  6 ++--
+ aioexabgp/announcer/healthcheck.py |  5 +++-
+ 3 files changed, 41 insertions(+), 15 deletions(-)
+
+diff --git a/aioexabgp/announcer/__init__.py b/aioexabgp/announcer/__init__.py
+index e3af437..010f7f4 100644
+--- a/aioexabgp/announcer/__init__.py
++++ b/aioexabgp/announcer/__init__.py
+@@ -20,7 +20,7 @@ from typing import Awaitable, Dict, List, Optional, Set, Sequence, TextIO, Union
+ 
+ from aioexabgp.exabgpparser import ExaBGPParser
+ from .fibs import FibPrefix, prefix_consumer
+-from .healthcheck import HealthChecker
++from .healthcheck import HealthChecker, PingChecker
+ 
+ IPNetwork = Union[IPv4Network, IPv6Network]
+ IPAddress = Union[IPv4Address, IPv6Address]
+@@ -32,12 +32,16 @@ class Announcer:
+         self,
+         config: Dict,
+         advertise_prefixes: Dict[IPNetwork, List[HealthChecker]],
++        prefix_checker: HealthChecker,
+         *,
+         executor: Optional[Union[ProcessPoolExecutor, ThreadPoolExecutor]] = None,
+         print_timeout: float = 5.0,
+         dry_run: bool = False,
+     ) -> None:
+-        self.advertise_prefixes = advertise_prefixes
++        self.advertise_static_prefixes = advertise_prefixes
++        self.advertise_dynamic_prefixes : Dict[IPNetwork, List[HealthChecker]] = {}
++        self.last_advertised_dynamic_prefixes : Dict[IPNetwork, List[HealthChecker]] = {}
++        self.prefix_checker = prefix_checker
+         self.config = config
+         self.dry_run = dry_run
+         self.learn_fibs = config["learn"].get("fibs", [])
+@@ -109,7 +113,7 @@ class Announcer:
+         if not bgp_prefixes:
+             return bgp_prefixes
+ 
+-        current_advertise_networks = set(self.advertise_prefixes.keys())
++        current_advertise_networks = set(self.advertise_static_prefixes.keys())
+         default_prefix = ip_network("::/0")
+         valid_redist_networks: Set[FibPrefix] = set()
+ 
+@@ -181,8 +185,8 @@ class Announcer:
+         return success
+ 
+     async def withdraw_all_routes(self) -> int:
+-        """ Withdraw all routes in self.advertise_prefixes """
+-        all_prefixes = sorted(self.advertise_prefixes.keys())
++        """ Withdraw all routes in self.advertise_static_prefixes """
++        all_prefixes = sorted(self.advertise_static_prefixes.keys())
+         if not all_prefixes:
+             return 0
+ 
+@@ -196,7 +200,7 @@ class Announcer:
+         return successful_count
+ 
+     async def coordinator(self) -> None:
+-        LOG.info(f"Monitoring and announcing {len(self.advertise_prefixes)} prefixes")
++        LOG.info(f"Monitoring and announcing {len(self.advertise_static_prefixes)} static prefixes")
+         route_coros = [self.advertise()]
+         if self.learn_fibs:
+             LOG.info(f"Will program learned routes to {' '.join(self.learn_fibs)} FIBs")
+@@ -211,24 +215,30 @@ class Announcer:
+             self._cleanup_executor()
+             raise
+ 
++    async def update_dynamic_advertise_prefixes(self) -> None:
++        self.advertise_dynamic_prefixes = await self.prefix_checker.get_current_prefixes()
++
+     async def advertise(self) -> None:
+         while True:
+             interval = self.config["advertise"]["interval"]
+             start_time = time()
+ 
+             healthcheck_coros: List[Awaitable] = []
+-            for prefix, checks in self.advertise_prefixes.items():
+-                LOG.debug(f"Scheduling health check(s) for {prefix}")
++            healthcheck_coros.append(self.update_dynamic_advertise_prefixes())
++
++            for prefix, checks in self.advertise_static_prefixes.items():
+                 for check in checks:
+                     healthcheck_coros.append(check.check())
+ 
+             # TODO: Create consumer worker pool
+             healthcheck_results = await asyncio.gather(*healthcheck_coros)
+ 
+-            start_at = 0
++            start_at = 1
+             advertise_routes: List[IPNetwork] = []
+             withdraw_routes: List[IPNetwork] = []
+-            for prefix, checks in self.advertise_prefixes.items():
++
++            # Advertise or withdraw static routes
++            for prefix, checks in self.advertise_static_prefixes.items():
+                 end_results = start_at + len(checks)
+                 my_results = healthcheck_results[start_at:end_results]
+ 
+@@ -241,6 +251,17 @@ class Announcer:
+ 
+                 start_at += 1
+ 
++            # Update or withdraw dynamic routes by comparing with the last advertised routes.
++            withdraw_prefixes = set(self.last_advertised_dynamic_prefixes.keys()).difference(set(self.advertise_dynamic_prefixes.keys()))
++
++            for prefix in self.advertise_dynamic_prefixes.keys():
++                LOG.debug(f" Advertising dynamic route {prefix}")
++                advertise_routes.append(prefix)
++
++            for prefix in withdraw_prefixes:
++                LOG.debug(f" Withdrawing dynamic route {prefix}")
++                withdraw_routes.append(prefix)
++
+             if advertise_routes:
+                 if not await self.add_routes(advertise_routes):
+                     LOG.error(f"Failed to announce {advertise_routes}")
+@@ -253,12 +274,14 @@ class Announcer:
+                 if not advertise_routes:
+                     self.healthy_prefixes = set()
+ 
++            self.last_advertised_dynamic_prefixes = self.advertise_dynamic_prefixes
++
+             run_time = time() - start_time
+             sleep_time = interval - run_time
+             if sleep_time < 0:
+                 LOG.debug(f"Sleep time was negative: {sleep_time}s. Setting to 0")
+                 sleep_time = 0
+-            LOG.info(f"Route checks complete. Sleeping for {sleep_time}s")
++            LOG.debug(f"Route checks complete. Sleeping for {sleep_time}s")
+             await asyncio.sleep(sleep_time)
+ 
+     async def learn(self) -> None:
+diff --git a/aioexabgp/announcer/fibs.py b/aioexabgp/announcer/fibs.py
+index 704df52..4cc5804 100644
+--- a/aioexabgp/announcer/fibs.py
++++ b/aioexabgp/announcer/fibs.py
+@@ -225,7 +225,7 @@ def _update_learnt_routes(  # noqa: C901
+             for key in list(BGP_LEARNT_PREFIXES.keys()):
+                 del BGP_LEARNT_PREFIXES[key]
+             LOG.info(
+-                "[update_learnt_rotues] Resettting BGP Learnt Prefixes due to "
++                "[update_learnt_rotues] Resetting BGP Learnt Prefixes due to "
+                 + "REMOVE_ALL_ROUTES being received"
+             )
+         else:
+@@ -251,13 +251,13 @@ async def prefix_consumer(
+ ) -> None:
+     """ Watch the queue for FibPrefix and apply the FibOperation to all FIBs """
+     fibs = {f: get_fib(f, config) for f in fib_names}
+-    LOG.debug(f"prefix_consumer got {len(fibs)} FIBS")
++    LOG.debug(f"prefix_consumer got {fibs} FIBS")
+ 
+     while True:
+         LOG.debug("[prefix_consumer] Waiting for FIB prefix to consume")
+         try:
+             fib_operations = await prefix_queue.get()
+-            LOG.info(
++            LOG.debug(
+                 f"[prefix_consumer] Prefix Queue has {prefix_queue.qsize()} tasks queued"
+             )
+             await fib_operation_runner(fibs, fib_operations, dry_run)
+diff --git a/aioexabgp/announcer/healthcheck.py b/aioexabgp/announcer/healthcheck.py
+index 86073dd..29aebdd 100644
+--- a/aioexabgp/announcer/healthcheck.py
++++ b/aioexabgp/announcer/healthcheck.py
+@@ -3,7 +3,7 @@
+ import logging
+ from ipaddress import IPv4Network, IPv6Network, ip_address, ip_network
+ from platform import system
+-from typing import Dict, List, Union
++from typing import Any, Dict, List, Union
+ 
+ from aioexabgp.utils import run_cmd
+ 
+@@ -24,6 +24,9 @@ class HealthChecker:
+     async def check(self) -> bool:
+         raise NotImplementedError("Implement in subclass")
+ 
++    async def get_current_prefixes(self) -> Dict[IPNetwork, List[Any]]:
++        raise NotImplementedError("Implement in subclass")
++
+ 
+ class PingChecker(HealthChecker):
+     """ Send ICMP/ICMPv6 Pings to check reachability
+-- 
+2.24.1
+

@@ -1,0 +1,11 @@
+[Unit]
+Description=DPDK / VPP hugetlbfs mount
+
+[Mount]
+What=hugetlbfs
+Where=/mnt/hugetlbfs
+Type=hugetlbfs
+Options=defaults
+
+[Install]
+WantedBy=multi-user.target

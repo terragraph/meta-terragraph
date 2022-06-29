@@ -1,0 +1,271 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Exit codes for testcode status request
+#   0 - not testcoding and no pending testcode request
+#   1 - testcoding (testcode image is running now)
+#   2 - testcode request is pending (will testcode on next reboot)
+#   3 - testcoding and testcode request is also pending (unexpected state)
+#   other non-zero - error
+#
+# Exit codes for commit partition that is being testcoded
+#    0  - ok or nothing to commit
+#    non-zero - error
+#
+# Exit codes for remove pending testcode request
+#    0  - ok or no pending testcode request
+#   non-zero - error
+#
+# Exit codes for create testcode request
+#    0  - ok
+#    1  - already testcoding
+#    2  - fw_setenv failed
+#   other non-zero - error
+#
+# Exit codes for swap primary and secondary boot partitions
+#   0  - ok
+#   1  - already testcoding or requesting testcode
+#   2  - fw_setenv failed
+#
+# Exit codes for get TG image version in secondary boot partition
+#   0  - ok
+#   1  - booted from recovery
+#   2  - fw_setenv failed
+
+# Get value from key=value
+getVal()
+{
+	fw_printenv "$1" 2>/dev/null | cut -d '=' -f 2
+}
+
+printPartitionState()
+{
+	echo "Active           : $prefix$active_mtd"
+	echo "Primary          : $prefix$primary_mtd"
+	echo "Recovery         : $prefix$recovery_mtd"
+	if [ "$active_mtd" = "$primary_mtd" ] || [ -n "$boot_fallback" ]; then
+		echo "Testcoding       : no"
+	else
+		echo "Testcoding       : yes"
+	fi
+	if [ -z "$testcode_mtd" ]; then
+		echo "Testcode request : no"
+	else
+		echo "Testcode request : yes ($prefix$testcode_mtd)"
+	fi
+
+	if [ -z "$boot_fallback" ]; then
+		echo "Fallback         : none"
+	else
+		echo "Fallback         : $boot_fallback"
+	fi
+
+	# Describe the active partition in plain(er) English
+	if [ x"${testcoding}" != x ]; then
+		echo "Booted from the testcode partition: $prefix$active_mtd"
+	elif [ "$active_mtd" = "$recovery_mtd" ]; then
+		echo "Booted from the recovery partition: $prefix$active_mtd"
+	elif [ "$active_mtd" = "$primary_mtd" ]; then
+		echo "Booted from the primary boot partition: $prefix$active_mtd"
+	else
+		echo "Booted from the secondary boot partition: $prefix$active_mtd"
+	fi
+}
+
+if [ -n "$1" ] && [ "$1" != "c" ] && [ "$1" != "r" ] && [ "$1" != "t" ] && \
+   [ "$1" != "v" ] && [ "$1" != "x" ]; then
+	echo "Usage: testcode [c|r|t|v|x]"
+	echo
+	echo "  c - Commit the partition that is being testcoded."
+	echo "  r - Remove pending testcode request."
+	echo "  t - Create a testcode request for the next inactive boot partition."
+	echo "      This is the partition that would be flashed by the upgrader."
+	echo "      Fails if already testcoding. Reboot manually to start testcoding."
+	echo "      *** WARNING ***"
+	echo "      If the testcode image does not connect to the e2e-controller"
+	echo "      then the watchdog will reboot in a few minutes to revert."
+	echo "      Delay the *reboot* by disabling the watchdog within"
+	echo "      a few minutes of testcode startup. Avoid the *revert*"
+	echo "      by manually committing the testcoding image within a few minutes."
+	echo "  v - Get the TG version of the secondary boot image."
+	echo "      Slow, especially when the secondary partition has no TG image."
+	echo "      Does not validate the secondary TG image."
+	echo "  x - Swap the roles of the primary and the secondary boot partitions."
+	echo "      Takes effect on the next restart."
+	echo
+	echo "  Without options, show testcode and partition status."
+	exit 10
+fi
+
+if grep -q 'rootfstype=ubifs' /proc/cmdline ; then
+	readonly active_mtd=$(sed -E 's/.*ubi.mtd=([^, ]+).*/\1/' /proc/cmdline)
+	prefix=mtd
+fi
+if  grep -q 'rootfstype=ext4' /proc/cmdline ; then
+	readonly active_mtd=$(sed -E 's:.*root=/dev/mmcblk0p([0-9]+).*:\1:g' /proc/cmdline)
+	prefix=mmcblk0p
+fi
+
+readonly primary_mtd=$(getVal tg_rootfs_mtd)
+readonly testcode_mtd=$(getVal tg_testcode)
+readonly recovery_mtd=$(getVal tg_mtd_recovery)
+readonly boot_fallback=$(getVal tg_boot_fallback)
+readonly tg_mtd_a=$(getVal tg_mtd_a)
+readonly tg_mtd_b=$(getVal tg_mtd_b)
+
+if [ -z "$active_mtd" ]; then
+	echo "Can't find active partition"
+	exit 11
+fi
+
+if [ -z "$primary_mtd" ]; then
+	echo "Can't find primary partition"
+	exit 12
+fi
+
+if [ -z "$recovery_mtd" ]; then
+	echo "Can't find recovery partition"
+	exit 13
+fi
+
+if [ -z "$tg_mtd_a" ]; then
+	echo "tg_mtd_a is undefined"
+	exit 14
+fi
+
+if [ -z "$tg_mtd_b" ]; then
+	echo "tg_mtd_b is undefined"
+	exit 15
+fi
+
+# secondary_mtd is deliberately undefined when booted from recovery mtd
+if [ "$active_mtd" = "$tg_mtd_a" ]; then
+	secondary_mtd="$tg_mtd_b"
+elif [ "$active_mtd" = "$tg_mtd_b" ]; then
+	secondary_mtd="$tg_mtd_a"
+fi
+
+# Assume no testcode and no testcode request
+testcodeStatus=0
+
+if [ "$active_mtd" != "$primary_mtd" ] && [ -z "$boot_fallback" ]; then
+	testcoding=1
+	testcodeStatus=1
+fi
+
+if [ -n "$testcode_mtd" ]; then
+	testcodeStatus=$((testcodeStatus + 2))
+fi
+
+# Report testcode status only
+if [ $# -eq 0 ]; then
+	printPartitionState
+	exit $testcodeStatus
+fi
+
+# Commit
+if [ "$1" = "c" ]; then
+	if [ x"${testcoding}" = x ]; then
+		echo "Not testcoding. Nothing to commit."
+		# Nothing to commit.
+		exit 0
+	else
+		echo "Setting the primary partition to $prefix$active_mtd"
+		fw_setenv tg_rootfs_mtd "$active_mtd"
+		if [ $? -ne 0 ]; then
+			# Commit failed: fw_setenv failed.
+			echo "Failed"
+			exit 1
+		fi
+	fi
+	# Commit successful
+	echo "Done"
+	exit 0
+fi
+
+# Remove pending testcode request
+if [ "$1" = "r" ]; then
+	if [ -z "$testcode_mtd" ]; then
+		echo "No pending testcode request to remove"
+	else
+		echo "Removing pending testcode request"
+		fw_setenv tg_testcode
+		if  [ $? -ne 0 ]; then
+			# Failed to remove pending testcode request
+			echo "Failed"
+			exit 1
+		fi
+		echo "Done"
+	fi
+
+	# Pending testcode has been removed
+	exit 0
+fi
+
+# Create testcode request for the boot partition that
+# would be flashed by the upgrader. See find_ubi_partition_to_flash() in
+# preamble.template
+if [ "$1" = "t" ]; then
+	if [ -n "${testcoding}" ]; then
+		echo "Failed. Already testcoding."
+		exit 1
+	fi
+	if [ "$active_mtd" = "$tg_mtd_a" ]; then
+		next_mtd="$tg_mtd_b"
+	else
+		# includes the special case: active_mtd=recovery_mtd
+		next_mtd="$tg_mtd_a"
+	fi
+	echo "Creating testcode request for /dev/$prefix$next_mtd"
+	fw_setenv tg_testcode "$next_mtd"
+	if [ $? -ne 0 ]; then
+		echo "Failed"
+		exit 2
+	fi
+	echo "Done"
+	exit 0
+fi
+
+if [ "$1" = "v" ]; then
+	if [ $testcodeStatus -eq 1 ] || [ $testcodeStatus -eq 3 ] || \
+			[ "$active_mtd" = "$recovery_mtd" ] || [ -z "$secondary_mtd" ]; then
+		echo "Refusing to look for TG version string in the secondary partition when"
+		echo "testcoding or booted from the recovery partition."
+		echo "\"Secondary partition\" is a vague/undefined concept in this state."
+		exit 1
+	fi
+	echo "TG version in secondary boot partition (/dev/$prefix$secondary_mtd)"
+	strings "/dev/$prefix$secondary_mtd" | grep -m 1 '^[^=]* Terragraph Release RELEASE_M.*:[0-9][0-9]$'
+	if [ $? -ne 0 ]; then
+		echo "Failed. Unable to find TG version string in /dev/$prefix$secondary_mtd"
+		exit 2
+	fi
+	exit 0
+fi
+
+if [ "$1" = "x" ]; then
+	if [ $testcodeStatus -ne 0 ] || [ "$active_mtd" = "$recovery_mtd" ] || \
+			[ -z "$secondary_mtd" ]; then
+		echo "Refusing to swap primary and secondary partitions when testcode"
+		echo "request is pending, testcoding, or booted from the recovery partition."
+		echo "\"Secondary partition\" is a vague/undefined concept in this state."
+		exit 1
+	fi
+	echo "Swapping the roles of the primary (/dev/$prefix$active_mtd) and"
+	echo "the secondary (/dev/$prefix$secondary_mtd) boot partitions."
+	fw_setenv tg_rootfs_mtd "$secondary_mtd"
+	if [ $? -ne 0 ]; then
+		echo "Failed"
+		exit 2
+	fi
+	echo "Done"
+	echo "Reboot now to activate the new primary image!"
+	exit 0
+fi
+
+echo "Unknown option: $1"
+exit 99

@@ -1,0 +1,49 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+TG_NODE_INFO_FILE=/var/run/node_info
+# load node info file
+if [ -f "$TG_NODE_INFO_FILE" ]; then
+  . $TG_NODE_INFO_FILE
+fi
+
+# Find the right bus_id whose mac address we desire.
+# If no arg given or a single wlan mac exists return MAC_0
+if [ $# -lt 1 ] || [ "$NUM_WLAN_MACS" -le 1 ]; then
+	if [ -n "$TG_TEST_WLAN_MACADDR" ]; then
+		echo "$TG_TEST_WLAN_MACADDR"
+	else
+		echo "$MAC_0"
+	fi
+	exit 0
+fi
+
+bus_id=$1
+
+# Use TG_TEST_WLAN_MACADDR if bus_id matches the provided TG_TEST_WLAN_BUSID
+# If TG_TEST_WLAN_BUSID is not provided, match against BUS_0
+if [ -n "$TG_TEST_WLAN_MACADDR" ]; then
+	if [ -n "$TG_TEST_WLAN_BUSID" ] && [ "$bus_id" = "$TG_TEST_WLAN_BUSID" ]; then
+		echo "$TG_TEST_WLAN_MACADDR"
+		exit 0
+	elif [ -z "$TG_TEST_WLAN_BUSID" ] && [ "$bus_id" = "$BUS_0" ]; then
+		echo "$TG_TEST_WLAN_MACADDR"
+		exit 0
+	fi
+fi
+
+i=0
+while [ $i -lt "$NUM_WLAN_MACS" ]; do
+	mac="$(eval echo \$MAC_${i})"
+	bus="$(eval echo \$BUS_${i})"
+	if [ -n "$bus" ] && [ -n "$mac" ] &&  [ "$bus" = "$bus_id" ]; then
+		echo "$mac"
+		exit 0
+	fi
+	i=$((i + 1))
+done
+exit 1

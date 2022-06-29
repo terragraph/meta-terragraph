@@ -1,0 +1,2599 @@
+From e48f31bd9c18ce4da14d9249d338cd4c1af55dff Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 2 Sep 2021 17:50:18 -0700
+Subject: [PATCH] Revert "deprecate tapcli"
+
+This reverts commit 1aaf0e343b25cc72fea4e1f1a23f83e82b6457cb.
+---
+ src/vat/api_format.c      |  360 +++++++++
+ src/vnet/CMakeLists.txt   |    5 +
+ src/vnet/unix/tap.api     |  121 +++
+ src/vnet/unix/tap_api.c   |  282 +++++++
+ src/vnet/unix/tapcli.c    | 1551 +++++++++++++++++++++++++++++++++++++
+ src/vnet/unix/tapcli.h    |   62 ++
+ src/vnet/vnet_all_api_h.h |    1 +
+ src/vpp/api/custom_dump.c |   70 ++
+ src/vpp/api/vpe.api       |    1 +
+ 9 files changed, 2453 insertions(+)
+ create mode 100644 src/vnet/unix/tap.api
+ create mode 100644 src/vnet/unix/tap_api.c
+ create mode 100644 src/vnet/unix/tapcli.c
+ create mode 100644 src/vnet/unix/tapcli.h
+
+diff --git a/src/vat/api_format.c b/src/vat/api_format.c
+index 3f4d74f65..eab1df746 100644
+--- a/src/vat/api_format.c
++++ b/src/vat/api_format.c
+@@ -1721,6 +1721,108 @@ static void vl_api_bridge_flags_reply_t_handler_json
+   vam->result_ready = 1;
+ }
+ 
++static void vl_api_tap_connect_reply_t_handler
++  (vl_api_tap_connect_reply_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  i32 retval = ntohl (mp->retval);
++  if (vam->async_mode)
++    {
++      vam->async_errors += (retval < 0);
++    }
++  else
++    {
++      vam->retval = retval;
++      vam->sw_if_index = ntohl (mp->sw_if_index);
++      vam->result_ready = 1;
++    }
++
++}
++
++static void vl_api_tap_connect_reply_t_handler_json
++  (vl_api_tap_connect_reply_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  vat_json_node_t node;
++
++  vat_json_init_object (&node);
++  vat_json_object_add_int (&node, "retval", ntohl (mp->retval));
++  vat_json_object_add_uint (&node, "sw_if_index", ntohl (mp->sw_if_index));
++
++  vat_json_print (vam->ofp, &node);
++  vat_json_free (&node);
++
++  vam->retval = ntohl (mp->retval);
++  vam->result_ready = 1;
++
++}
++
++static void
++vl_api_tap_modify_reply_t_handler (vl_api_tap_modify_reply_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  i32 retval = ntohl (mp->retval);
++  if (vam->async_mode)
++    {
++      vam->async_errors += (retval < 0);
++    }
++  else
++    {
++      vam->retval = retval;
++      vam->sw_if_index = ntohl (mp->sw_if_index);
++      vam->result_ready = 1;
++    }
++}
++
++static void vl_api_tap_modify_reply_t_handler_json
++  (vl_api_tap_modify_reply_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  vat_json_node_t node;
++
++  vat_json_init_object (&node);
++  vat_json_object_add_int (&node, "retval", ntohl (mp->retval));
++  vat_json_object_add_uint (&node, "sw_if_index", ntohl (mp->sw_if_index));
++
++  vat_json_print (vam->ofp, &node);
++  vat_json_free (&node);
++
++  vam->retval = ntohl (mp->retval);
++  vam->result_ready = 1;
++}
++
++static void
++vl_api_tap_delete_reply_t_handler (vl_api_tap_delete_reply_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  i32 retval = ntohl (mp->retval);
++  if (vam->async_mode)
++    {
++      vam->async_errors += (retval < 0);
++    }
++  else
++    {
++      vam->retval = retval;
++      vam->result_ready = 1;
++    }
++}
++
++static void vl_api_tap_delete_reply_t_handler_json
++  (vl_api_tap_delete_reply_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  vat_json_node_t node;
++
++  vat_json_init_object (&node);
++  vat_json_object_add_int (&node, "retval", ntohl (mp->retval));
++
++  vat_json_print (vam->ofp, &node);
++  vat_json_free (&node);
++
++  vam->retval = ntohl (mp->retval);
++  vam->result_ready = 1;
++}
++
+ static void
+ vl_api_tap_create_v2_reply_t_handler (vl_api_tap_create_v2_reply_t * mp)
+ {
+@@ -3362,6 +3464,10 @@ _(L2FIB_FLUSH_INT_REPLY, l2fib_flush_int_reply)                         \
+ _(L2FIB_FLUSH_BD_REPLY, l2fib_flush_bd_reply)                           \
+ _(L2_FLAGS_REPLY, l2_flags_reply)                                       \
+ _(BRIDGE_FLAGS_REPLY, bridge_flags_reply)                               \
++_(TAP_CONNECT_REPLY, tap_connect_reply)					\
++_(TAP_MODIFY_REPLY, tap_modify_reply)					\
++_(TAP_DELETE_REPLY, tap_delete_reply)					\
++_(SW_INTERFACE_TAP_DETAILS, sw_interface_tap_details)                   \
+ _(TAP_CREATE_V2_REPLY, tap_create_v2_reply)				\
+ _(TAP_DELETE_V2_REPLY, tap_delete_v2_reply)				\
+ _(SW_INTERFACE_TAP_V2_DETAILS, sw_interface_tap_v2_details)             \
+@@ -3509,6 +3615,206 @@ _(OUTPUT_ACL_SET_INTERFACE_REPLY, output_acl_set_interface_reply)       \
+ _(QOS_RECORD_ENABLE_DISABLE_REPLY, qos_record_enable_disable_reply)		\
+ _(FLOW_ADD_REPLY, flow_add_reply)   \
+ 
++static int
++api_tap_connect (vat_main_t * vam)
++{
++  unformat_input_t *i = vam->input;
++  vl_api_tap_connect_t *mp;
++  u8 mac_address[6];
++  u8 random_mac = 1;
++  u8 name_set = 0;
++  u8 *tap_name;
++  u8 *tag = 0;
++  ip4_address_t ip4_address;
++  u32 ip4_mask_width;
++  int ip4_address_set = 0;
++  ip6_address_t ip6_address;
++  u32 ip6_mask_width;
++  int ip6_address_set = 0;
++  int ret;
++
++  clib_memset (mac_address, 0, sizeof (mac_address));
++
++  /* Parse args required to build the message */
++  while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (i, "mac %U", unformat_ethernet_address, mac_address))
++	{
++	  random_mac = 0;
++	}
++      else if (unformat (i, "random-mac"))
++	random_mac = 1;
++      else if (unformat (i, "tapname %s", &tap_name))
++	name_set = 1;
++      else if (unformat (i, "tag %s", &tag))
++	;
++      else if (unformat (i, "address %U/%d",
++			 unformat_ip4_address, &ip4_address, &ip4_mask_width))
++	ip4_address_set = 1;
++      else if (unformat (i, "address %U/%d",
++			 unformat_ip6_address, &ip6_address, &ip6_mask_width))
++	ip6_address_set = 1;
++      else
++	break;
++    }
++
++  if (name_set == 0)
++    {
++      errmsg ("missing tap name");
++      return -99;
++    }
++  if (vec_len (tap_name) > 63)
++    {
++      errmsg ("tap name too long");
++      return -99;
++    }
++  vec_add1 (tap_name, 0);
++
++  if (vec_len (tag) > 63)
++    {
++      errmsg ("tag too long");
++      return -99;
++    }
++
++  /* Construct the API message */
++  M (TAP_CONNECT, mp);
++
++  mp->use_random_mac = random_mac;
++  clib_memcpy (mp->mac_address, mac_address, 6);
++  clib_memcpy (mp->tap_name, tap_name, vec_len (tap_name));
++  if (tag)
++    clib_memcpy (mp->tag, tag, vec_len (tag));
++
++  if (ip4_address_set)
++    {
++      mp->ip4_address_set = 1;
++      clib_memcpy (mp->ip4_address, &ip4_address, sizeof (mp->ip4_address));
++      mp->ip4_mask_width = ip4_mask_width;
++    }
++  if (ip6_address_set)
++    {
++      mp->ip6_address_set = 1;
++      clib_memcpy (mp->ip6_address, &ip6_address, sizeof (mp->ip6_address));
++      mp->ip6_mask_width = ip6_mask_width;
++    }
++
++  vec_free (tap_name);
++  vec_free (tag);
++
++  /* send it... */
++  S (mp);
++
++  /* Wait for a reply... */
++  W (ret);
++  return ret;
++}
++
++static int
++api_tap_modify (vat_main_t * vam)
++{
++  unformat_input_t *i = vam->input;
++  vl_api_tap_modify_t *mp;
++  u8 mac_address[6];
++  u8 random_mac = 1;
++  u8 name_set = 0;
++  u8 *tap_name;
++  u32 sw_if_index = ~0;
++  u8 sw_if_index_set = 0;
++  int ret;
++
++  clib_memset (mac_address, 0, sizeof (mac_address));
++
++  /* Parse args required to build the message */
++  while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (i, "%U", api_unformat_sw_if_index, vam, &sw_if_index))
++	sw_if_index_set = 1;
++      else if (unformat (i, "sw_if_index %d", &sw_if_index))
++	sw_if_index_set = 1;
++      else if (unformat (i, "mac %U", unformat_ethernet_address, mac_address))
++	{
++	  random_mac = 0;
++	}
++      else if (unformat (i, "random-mac"))
++	random_mac = 1;
++      else if (unformat (i, "tapname %s", &tap_name))
++	name_set = 1;
++      else
++	break;
++    }
++
++  if (sw_if_index_set == 0)
++    {
++      errmsg ("missing vpp interface name");
++      return -99;
++    }
++  if (name_set == 0)
++    {
++      errmsg ("missing tap name");
++      return -99;
++    }
++  if (vec_len (tap_name) > 63)
++    {
++      errmsg ("tap name too long");
++    }
++  vec_add1 (tap_name, 0);
++
++  /* Construct the API message */
++  M (TAP_MODIFY, mp);
++
++  mp->use_random_mac = random_mac;
++  mp->sw_if_index = ntohl (sw_if_index);
++  clib_memcpy (mp->mac_address, mac_address, 6);
++  clib_memcpy (mp->tap_name, tap_name, vec_len (tap_name));
++  vec_free (tap_name);
++
++  /* send it... */
++  S (mp);
++
++  /* Wait for a reply... */
++  W (ret);
++  return ret;
++}
++
++static int
++api_tap_delete (vat_main_t * vam)
++{
++  unformat_input_t *i = vam->input;
++  vl_api_tap_delete_t *mp;
++  u32 sw_if_index = ~0;
++  u8 sw_if_index_set = 0;
++  int ret;
++
++  /* Parse args required to build the message */
++  while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (i, "%U", api_unformat_sw_if_index, vam, &sw_if_index))
++	sw_if_index_set = 1;
++      else if (unformat (i, "sw_if_index %d", &sw_if_index))
++	sw_if_index_set = 1;
++      else
++	break;
++    }
++
++  if (sw_if_index_set == 0)
++    {
++      errmsg ("missing vpp interface name");
++      return -99;
++    }
++
++  /* Construct the API message */
++  M (TAP_DELETE, mp);
++
++  mp->sw_if_index = ntohl (sw_if_index);
++
++  /* send it... */
++  S (mp);
++
++  /* Wait for a reply... */
++  W (ret);
++  return ret;
++}
++
+ #define foreach_standalone_reply_msg					\
+ _(SW_INTERFACE_EVENT, sw_interface_event)
+ 
+@@ -4632,6 +4938,53 @@ api_sw_interface_set_l2_bridge (vat_main_t * vam)
+   return ret;
+ }
+ 
++static void vl_api_sw_interface_tap_details_t_handler
++  (vl_api_sw_interface_tap_details_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++
++  print (vam->ofp, "%-16s %d",
++	 mp->dev_name, clib_net_to_host_u32 (mp->sw_if_index));
++}
++
++static void vl_api_sw_interface_tap_details_t_handler_json
++  (vl_api_sw_interface_tap_details_t * mp)
++{
++  vat_main_t *vam = &vat_main;
++  vat_json_node_t *node = NULL;
++
++  if (VAT_JSON_ARRAY != vam->json_tree.type)
++    {
++      ASSERT (VAT_JSON_NONE == vam->json_tree.type);
++      vat_json_init_array (&vam->json_tree);
++    }
++  node = vat_json_array_add (&vam->json_tree);
++
++  vat_json_init_object (node);
++  vat_json_object_add_uint (node, "sw_if_index", ntohl (mp->sw_if_index));
++  vat_json_object_add_string_copy (node, "dev_name", mp->dev_name);
++}
++
++static int
++api_sw_interface_tap_dump (vat_main_t * vam)
++{
++  vl_api_sw_interface_tap_dump_t *mp;
++  vl_api_control_ping_t *mp_ping;
++  int ret;
++
++  print (vam->ofp, "\n%-16s %s", "dev_name", "sw_if_index");
++  /* Get list of tap interfaces */
++  M (SW_INTERFACE_TAP_DUMP, mp);
++  S (mp);
++
++  /* Use a control ping for synchronization */
++  MPING (CONTROL_PING, mp_ping);
++  S (mp_ping);
++
++  W (ret);
++  return ret;
++}
++
+ static int
+ api_bridge_domain_dump (vat_main_t * vam)
+ {
+@@ -14914,6 +15267,13 @@ _(l2_flags,                                                             \
+   "sw_if <intfc> | sw_if_index <id> [learn] [forward] [uu-flood] [flood] [arp-term] [disable]\n") \
+ _(bridge_flags,                                                         \
+   "bd_id <bridge-domain-id> [learn] [forward] [uu-flood] [flood] [arp-term] [disable]\n") \
++_(tap_connect,                                                          \
++  "tapname <name> mac <mac-addr> | random-mac [tag <string>]")          \
++_(tap_modify,                                                           \
++  "<vpp-if-name> | sw_if_index <id> tapname <name> mac <mac-addr> | random-mac") \
++_(tap_delete,                                                           \
++  "<vpp-if-name> | sw_if_index <id>")                                   \
++_(sw_interface_tap_dump, "")                                            \
+ _(tap_create_v2,                                                        \
+   "id <num> [hw-addr <mac-addr>] [host-if-name <name>] [host-ns <name>] [num-rx-queues <num>] [rx-ring-size <num>] [tx-ring-size <num>] [host-bridge <name>] [host-mac-addr <mac-addr>] [host-ip4-addr <ip4addr/mask>] [host-ip6-addr <ip6addr/mask>] [host-mtu-size <mtu>] [gso | no-gso | csum-offload | gro-coalesce] [persist] [attach] [tun] [packed] [in-order]") \
+ _(tap_delete_v2,                                                        \
+diff --git a/src/vnet/CMakeLists.txt b/src/vnet/CMakeLists.txt
+index c6c2b2e70..27f494cba 100644
+--- a/src/vnet/CMakeLists.txt
++++ b/src/vnet/CMakeLists.txt
+@@ -1157,13 +1157,18 @@ list(APPEND VNET_API_FILES feature/feature.api)
+ 
+ list(APPEND VNET_SOURCES
+   unix/gdb_funcs.c
++  unix/tap_api.c
++  unix/tapcli.c
+   unix/tuntap.c
+ )
+ 
+ list(APPEND VNET_HEADERS
+   unix/tuntap.h
++  unix/tapcli.h
+ )
+ 
++list(APPEND VNET_API_FILES unix/tap.api)
++
+ ##############################################################################
+ # FIB
+ ##############################################################################
+diff --git a/src/vnet/unix/tap.api b/src/vnet/unix/tap.api
+new file mode 100644
+index 000000000..00a1d08ac
+--- /dev/null
++++ b/src/vnet/unix/tap.api
+@@ -0,0 +1,121 @@
++/*
++ * Copyright (c) 2015-2016 Cisco and/or its affiliates.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/** \file
++
++    This file defines vpe control-plane API messages for
++    the Linux kernel TAP device driver
++*/
++
++option version = "1.0.0";
++
++/** \brief Initialize a new tap interface with the given parameters
++    @param client_index - opaque cookie to identify the sender
++    @param context - sender context, to match reply w/ request
++    @param use_random_mac - let the system generate a unique mac address
++    @param tap_name - name to associate with the new interface
++    @param mac_address - mac addr to assign to the interface if use_random not set
++*/
++define tap_connect
++{
++  u32 client_index;
++  u32 context;
++  u8 use_random_mac;
++  u8 tap_name[64];
++  u8 mac_address[6];
++  u8 renumber;
++  u32 custom_dev_instance;
++  u8 ip4_address_set;
++  u8 ip4_address[4];
++  u8 ip4_mask_width;
++  u8 ip6_address_set;
++  u8 ip6_address[16];
++  u8 ip6_mask_width;
++  u8 tag[64];
++};
++
++/** \brief Reply for tap connect request
++    @param context - returned sender context, to match reply w/ request
++    @param retval - return code
++    @param sw_if_index - software index allocated for the new tap interface
++*/
++define tap_connect_reply
++{
++  u32 context;
++  i32 retval;
++  u32 sw_if_index;
++};
++
++/** \brief Modify a tap interface with the given parameters
++    @param client_index - opaque cookie to identify the sender
++    @param context - sender context, to match reply w/ request
++    @param sw_if_index - interface index of existing tap interface
++    @param use_random_mac - let the system generate a unique mac address
++    @param tap_name - name to associate with the new interface
++    @param mac_address - mac addr to assign to the interface if use_random not set
++*/
++define tap_modify
++{
++  u32 client_index;
++  u32 context;
++  u32 sw_if_index;
++  u8 use_random_mac;
++  u8 tap_name[64];
++  u8 mac_address[6];
++  u8 renumber;
++  u32 custom_dev_instance;
++};
++
++/** \brief Reply for tap modify request
++    @param context - returned sender context, to match reply w/ request
++    @param retval - return code
++    @param sw_if_index - software index if the modified tap interface
++*/
++define tap_modify_reply
++{
++  u32 context;
++  i32 retval;
++  u32 sw_if_index;
++};
++
++/** \brief Delete tap interface
++    @param client_index - opaque cookie to identify the sender
++    @param context - sender context, to match reply w/ request
++    @param sw_if_index - interface index of existing tap interface
++*/
++autoreply define tap_delete
++{
++  u32 client_index;
++  u32 context;
++  u32 sw_if_index;
++};
++
++/** \brief Dump tap interfaces request */
++define sw_interface_tap_dump
++{
++  u32 client_index;
++  u32 context;
++};
++
++/** \brief Reply for tap dump request
++    @param sw_if_index - software index of tap interface
++    @param dev_name - Linux tap device name
++*/
++define sw_interface_tap_details
++{
++  u32 context;
++  u32 sw_if_index;
++  u8 dev_name[64];
++};
+diff --git a/src/vnet/unix/tap_api.c b/src/vnet/unix/tap_api.c
+new file mode 100644
+index 000000000..e180973d7
+--- /dev/null
++++ b/src/vnet/unix/tap_api.c
+@@ -0,0 +1,282 @@
++/*
++ *------------------------------------------------------------------
++ * tap_api.c - vnet tap device driver API support
++ *
++ * Copyright (c) 2016 Cisco and/or its affiliates.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *------------------------------------------------------------------
++ */
++
++#include <vnet/vnet.h>
++#include <vlibmemory/api.h>
++
++#include <vnet/interface.h>
++#include <vnet/api_errno.h>
++#include <vnet/ethernet/ethernet.h>
++#include <vnet/ip/ip.h>
++#include <vnet/unix/tuntap.h>
++#include <vnet/unix/tapcli.h>
++
++#include <vnet/vnet_msg_enum.h>
++
++#define vl_typedefs		/* define message structures */
++#include <vnet/vnet_all_api_h.h>
++#undef vl_typedefs
++
++#define vl_endianfun		/* define message structures */
++#include <vnet/vnet_all_api_h.h>
++#undef vl_endianfun
++
++/* instantiate all the print functions we know about */
++#define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
++#define vl_printfun
++#include <vnet/vnet_all_api_h.h>
++#undef vl_printfun
++
++#include <vlibapi/api_helper_macros.h>
++
++#define foreach_tap_api_msg                     \
++_(TAP_CONNECT, tap_connect)                     \
++_(TAP_MODIFY, tap_modify)                       \
++_(TAP_DELETE, tap_delete)                       \
++_(SW_INTERFACE_TAP_DUMP, sw_interface_tap_dump)
++
++#define vl_msg_name_crc_list
++#include <vnet/unix/tap.api.h>
++#undef vl_msg_name_crc_list
++
++/*
++ * WARNING: replicated pending api refactor completion
++ */
++static void
++send_sw_interface_event_deleted (vpe_api_main_t * am,
++				 vl_api_registration_t * reg, u32 sw_if_index)
++{
++  vl_api_sw_interface_event_t *mp;
++
++  mp = vl_msg_api_alloc (sizeof (*mp));
++  clib_memset (mp, 0, sizeof (*mp));
++  mp->_vl_msg_id = ntohs (VL_API_SW_INTERFACE_EVENT);
++  mp->sw_if_index = ntohl (sw_if_index);
++
++  mp->flags = 0;
++  mp->deleted = 1;
++  vl_api_send_msg (reg, (u8 *) mp);
++}
++
++static void
++vl_api_tap_connect_t_handler (vl_api_tap_connect_t * mp)
++{
++  vlib_main_t *vm = vlib_get_main ();
++  int rv;
++  vl_api_tap_connect_reply_t *rmp;
++  vnet_main_t *vnm = vnet_get_main ();
++  vl_api_registration_t *reg;
++  u32 sw_if_index = (u32) ~ 0;
++  u8 *tag;
++  vnet_tap_connect_args_t _a, *ap = &_a;
++
++  clib_memset (ap, 0, sizeof (*ap));
++
++  ap->intfc_name = mp->tap_name;
++  if (!mp->use_random_mac)
++    ap->hwaddr_arg = mp->mac_address;
++  ap->renumber = mp->renumber;
++  ap->sw_if_indexp = &sw_if_index;
++  ap->custom_dev_instance = ntohl (mp->custom_dev_instance);
++  if (mp->ip4_address_set)
++    {
++      ap->ip4_address = (ip4_address_t *) mp->ip4_address;
++      ap->ip4_mask_width = mp->ip4_mask_width;
++      ap->ip4_address_set = 1;
++    }
++  if (mp->ip6_address_set)
++    {
++      ap->ip6_address = (ip6_address_t *) mp->ip6_address;
++      ap->ip6_mask_width = mp->ip6_mask_width;
++      ap->ip6_address_set = 1;
++    }
++
++  rv = vnet_tap_connect_renumber (vm, ap);
++
++  /* Add tag if supplied */
++  if (rv == 0 && mp->tag[0])
++    {
++      mp->tag[ARRAY_LEN (mp->tag) - 1] = 0;
++      tag = format (0, "%s%c", mp->tag, 0);
++      vnet_set_sw_interface_tag (vnm, tag, sw_if_index);
++    }
++
++  reg = vl_api_client_index_to_registration (mp->client_index);
++  if (!reg)
++    return;
++
++  rmp = vl_msg_api_alloc (sizeof (*rmp));
++  rmp->_vl_msg_id = ntohs (VL_API_TAP_CONNECT_REPLY);
++  rmp->context = mp->context;
++  rmp->retval = ntohl (rv);
++  rmp->sw_if_index = ntohl (sw_if_index);
++
++  vl_api_send_msg (reg, (u8 *) rmp);
++}
++
++static void
++vl_api_tap_modify_t_handler (vl_api_tap_modify_t * mp)
++{
++  int rv;
++  vl_api_tap_modify_reply_t *rmp;
++  vl_api_registration_t *reg;
++  u32 sw_if_index = (u32) ~ 0;
++  vlib_main_t *vm = vlib_get_main ();
++  vnet_tap_connect_args_t _a, *ap = &_a;
++
++  clib_memset (ap, 0, sizeof (*ap));
++
++  ap->orig_sw_if_index = ntohl (mp->sw_if_index);
++  ap->intfc_name = mp->tap_name;
++  if (!mp->use_random_mac)
++    ap->hwaddr_arg = mp->mac_address;
++  ap->sw_if_indexp = &sw_if_index;
++  ap->renumber = mp->renumber;
++  ap->custom_dev_instance = ntohl (mp->custom_dev_instance);
++
++  rv = vnet_tap_modify (vm, ap);
++
++  reg = vl_api_client_index_to_registration (mp->client_index);
++  if (!reg)
++    return;
++
++  rmp = vl_msg_api_alloc (sizeof (*rmp));
++  rmp->_vl_msg_id = ntohs (VL_API_TAP_MODIFY_REPLY);
++  rmp->context = mp->context;
++  rmp->retval = ntohl (rv);
++  rmp->sw_if_index = ntohl (sw_if_index);
++
++  vl_api_send_msg (reg, (u8 *) rmp);
++}
++
++static void
++vl_api_tap_delete_t_handler (vl_api_tap_delete_t * mp)
++{
++  vlib_main_t *vm = vlib_get_main ();
++  int rv;
++  vpe_api_main_t *vam = &vpe_api_main;
++  vl_api_tap_delete_reply_t *rmp;
++  vl_api_registration_t *reg;
++  u32 sw_if_index = ntohl (mp->sw_if_index);
++
++  rv = vnet_tap_delete (vm, sw_if_index);
++  if (!rv)
++    {
++      vnet_main_t *vnm = vnet_get_main ();
++      vnet_clear_sw_interface_tag (vnm, sw_if_index);
++    }
++
++  reg = vl_api_client_index_to_registration (mp->client_index);
++  if (!reg)
++    return;
++
++  rmp = vl_msg_api_alloc (sizeof (*rmp));
++  rmp->_vl_msg_id = ntohs (VL_API_TAP_DELETE_REPLY);
++  rmp->context = mp->context;
++  rmp->retval = ntohl (rv);
++
++  vl_api_send_msg (reg, (u8 *) rmp);
++
++  if (!rv)
++    send_sw_interface_event_deleted (vam, reg, sw_if_index);
++}
++
++static void
++send_sw_interface_tap_details (vpe_api_main_t * am,
++			       vl_api_registration_t * reg,
++			       tapcli_interface_details_t * tap_if,
++			       u32 context)
++{
++  vl_api_sw_interface_tap_details_t *mp;
++  mp = vl_msg_api_alloc (sizeof (*mp));
++  clib_memset (mp, 0, sizeof (*mp));
++  mp->_vl_msg_id = ntohs (VL_API_SW_INTERFACE_TAP_DETAILS);
++  mp->sw_if_index = ntohl (tap_if->sw_if_index);
++  strncpy ((char *) mp->dev_name,
++	   (char *) tap_if->dev_name, ARRAY_LEN (mp->dev_name) - 1);
++  mp->context = context;
++
++  vl_api_send_msg (reg, (u8 *) mp);
++}
++
++static void
++vl_api_sw_interface_tap_dump_t_handler (vl_api_sw_interface_tap_dump_t * mp)
++{
++  int rv = 0;
++  vpe_api_main_t *am = &vpe_api_main;
++  vl_api_registration_t *reg;
++  tapcli_interface_details_t *tapifs = NULL;
++  tapcli_interface_details_t *tap_if = NULL;
++
++  reg = vl_api_client_index_to_registration (mp->client_index);
++  if (!reg)
++    return;
++
++  rv = vnet_tap_dump_ifs (&tapifs);
++  if (rv)
++    return;
++
++  vec_foreach (tap_if, tapifs)
++  {
++    send_sw_interface_tap_details (am, reg, tap_if, mp->context);
++  }
++
++  vec_free (tapifs);
++}
++
++static void
++setup_message_id_table (api_main_t * am)
++{
++#define _(id,n,crc) vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id);
++  foreach_vl_msg_name_crc_tap;
++#undef _
++}
++
++static clib_error_t *
++tap_api_hookup (vlib_main_t * vm)
++{
++  api_main_t *am = vlibapi_get_main ();
++
++#define _(N,n)                                                  \
++    vl_msg_api_set_handlers(VL_API_##N, #n,                     \
++                           vl_api_##n##_t_handler,              \
++                           vl_noop_handler,                     \
++                           vl_api_##n##_t_endian,               \
++                           vl_api_##n##_t_print,                \
++                           sizeof(vl_api_##n##_t), 1);
++  foreach_tap_api_msg;
++#undef _
++
++  /*
++   * Set up the (msg_name, crc, message-id) table
++   */
++  setup_message_id_table (am);
++
++  return 0;
++}
++
++VLIB_API_INIT_FUNCTION (tap_api_hookup);
++
++/*
++ * fd.io coding-style-patch-verification: ON
++ *
++ * Local Variables:
++ * eval: (c-set-style "gnu")
++ * End:
++ */
+diff --git a/src/vnet/unix/tapcli.c b/src/vnet/unix/tapcli.c
+new file mode 100644
+index 000000000..ce9bd6055
+--- /dev/null
++++ b/src/vnet/unix/tapcli.c
+@@ -0,0 +1,1551 @@
++/*
++ *------------------------------------------------------------------
++ * tapcli.c - dynamic tap interface hookup
++ *
++ * Copyright (c) 2009 Cisco and/or its affiliates.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *------------------------------------------------------------------
++ */
++/**
++ * @file
++ * @brief  dynamic tap interface hookup
++ */
++
++#include <fcntl.h>		/* for open */
++#include <sys/ioctl.h>
++#include <sys/socket.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++#include <sys/uio.h>		/* for iovec */
++#include <netinet/in.h>
++
++#include <linux/if_arp.h>
++#include <linux/if_tun.h>
++
++#include <vlib/vlib.h>
++#include <vlib/unix/unix.h>
++
++#include <vnet/ip/ip.h>
++
++#include <vnet/ethernet/ethernet.h>
++
++#include <vnet/feature/feature.h>
++#include <vnet/devices/devices.h>
++#include <vnet/unix/tuntap.h>
++#include <vnet/unix/tapcli.h>
++
++static vnet_device_class_t tapcli_dev_class;
++static vnet_hw_interface_class_t tapcli_interface_class;
++static vlib_node_registration_t tapcli_rx_node;
++
++static void tapcli_nopunt_frame (vlib_main_t * vm,
++				 vlib_node_runtime_t * node,
++				 vlib_frame_t * frame);
++/**
++ * @brief Struct for the tapcli interface
++ */
++typedef struct
++{
++  u32 unix_fd;
++  u32 clib_file_index;
++  u32 provision_fd;
++  /** For counters */
++  u32 sw_if_index;
++  u32 hw_if_index;
++  u32 is_promisc;
++  struct ifreq ifr;
++  u32 per_interface_next_index;
++  /** for delete */
++  u8 active;
++} tapcli_interface_t;
++
++/**
++ * @brief Struct for RX trace
++ */
++typedef struct
++{
++  u16 sw_if_index;
++} tapcli_rx_trace_t;
++
++/**
++ * @brief Function to format TAP CLI trace
++ *
++ * @param *s - u8 - formatting string
++ * @param *va - va_list
++ *
++ * @return *s - u8 - formatted string
++ *
++ */
++u8 *
++format_tapcli_rx_trace (u8 * s, va_list * va)
++{
++  CLIB_UNUSED (vlib_main_t * vm) = va_arg (*va, vlib_main_t *);
++  CLIB_UNUSED (vlib_node_t * node) = va_arg (*va, vlib_node_t *);
++  vnet_main_t *vnm = vnet_get_main ();
++  tapcli_rx_trace_t *t = va_arg (*va, tapcli_rx_trace_t *);
++  s = format (s, "%U", format_vnet_sw_if_index_name, vnm, t->sw_if_index);
++  return s;
++}
++
++/**
++ * @brief TAPCLI per thread struct
++ */
++typedef struct
++{
++  /** Vector of VLIB rx buffers to use.  We allocate them in blocks
++     of VLIB_FRAME_SIZE (256). */
++  u32 *rx_buffers;
++
++  /** Vector of iovecs for readv/writev calls. */
++  struct iovec *iovecs;
++} tapcli_per_thread_t;
++
++/**
++ * @brief TAPCLI main state struct
++ */
++typedef struct
++{
++  /** per thread variables */
++  tapcli_per_thread_t *threads;
++
++  /** tap device destination MAC address. Required, or Linux drops pkts */
++  u8 ether_dst_mac[6];
++
++  /** Interface MTU in bytes and # of default sized buffers. */
++  u32 mtu_bytes, mtu_buffers;
++
++  /** Vector of tap interfaces */
++  tapcli_interface_t *tapcli_interfaces;
++
++  /** Vector of deleted tap interfaces */
++  u32 *tapcli_inactive_interfaces;
++
++  /** Bitmap of tap interfaces with pending reads */
++  uword *pending_read_bitmap;
++
++  /** Hash table to find tapcli interface given hw_if_index */
++  uword *tapcli_interface_index_by_sw_if_index;
++
++  /** Hash table to find tapcli interface given unix fd */
++  uword *tapcli_interface_index_by_unix_fd;
++
++  /** renumbering table */
++  u32 *show_dev_instance_by_real_dev_instance;
++
++  /** 1 => disable CLI */
++  int is_disabled;
++
++  /** convenience - vlib_main_t */
++  vlib_main_t *vlib_main;
++  /** convenience - vnet_main_t */
++  vnet_main_t *vnet_main;
++} tapcli_main_t;
++
++static tapcli_main_t tapcli_main;
++
++/**
++ * @brief tapcli TX node function
++ * @node tap-cli-tx
++ *
++ * Output node, writes the buffers comprising the incoming frame
++ * to the tun/tap device, aka hands them to the Linux kernel stack.
++ *
++ * @param *vm - vlib_main_t
++ * @param *node - vlib_node_runtime_t
++ * @param *frame - vlib_frame_t
++ *
++ * @return n_packets - uword
++ *
++ */
++static uword
++tapcli_tx (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
++{
++  u32 *buffers = vlib_frame_vector_args (frame);
++  uword n_packets = frame->n_vectors;
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti;
++  int i;
++  u16 thread_index = vm->thread_index;
++
++  for (i = 0; i < n_packets; i++)
++    {
++      struct iovec *iov;
++      vlib_buffer_t *b;
++      uword l;
++      vnet_hw_interface_t *hw;
++      uword *p;
++      u32 tx_sw_if_index;
++
++      b = vlib_get_buffer (vm, buffers[i]);
++
++      tx_sw_if_index = vnet_buffer (b)->sw_if_index[VLIB_TX];
++      if (tx_sw_if_index == (u32) ~ 0)
++	tx_sw_if_index = vnet_buffer (b)->sw_if_index[VLIB_RX];
++
++      ASSERT (tx_sw_if_index != (u32) ~ 0);
++
++      /* Use the sup intfc to finesse vlan subifs */
++      hw = vnet_get_sup_hw_interface (tm->vnet_main, tx_sw_if_index);
++      tx_sw_if_index = hw->sw_if_index;
++
++      p = hash_get (tm->tapcli_interface_index_by_sw_if_index,
++		    tx_sw_if_index);
++      if (p == 0)
++	{
++	  clib_warning ("sw_if_index %d unknown", tx_sw_if_index);
++	  /* $$$ leak, but this should never happen... */
++	  continue;
++	}
++      else
++	ti = vec_elt_at_index (tm->tapcli_interfaces, p[0]);
++
++      /* Re-set iovecs if present. */
++      if (tm->threads[thread_index].iovecs)
++	_vec_len (tm->threads[thread_index].iovecs) = 0;
++
++      /* VLIB buffer chain -> Unix iovec(s). */
++      vec_add2 (tm->threads[thread_index].iovecs, iov, 1);
++      iov->iov_base = b->data + b->current_data;
++      iov->iov_len = l = b->current_length;
++
++      if (PREDICT_FALSE (b->flags & VLIB_BUFFER_NEXT_PRESENT))
++	{
++	  do
++	    {
++	      b = vlib_get_buffer (vm, b->next_buffer);
++
++	      vec_add2 (tm->threads[thread_index].iovecs, iov, 1);
++
++	      iov->iov_base = b->data + b->current_data;
++	      iov->iov_len = b->current_length;
++	      l += b->current_length;
++	    }
++	  while (b->flags & VLIB_BUFFER_NEXT_PRESENT);
++	}
++
++      if (writev (ti->unix_fd, tm->threads[thread_index].iovecs,
++		  vec_len (tm->threads[thread_index].iovecs)) < l)
++	clib_unix_warning ("writev");
++    }
++
++  vlib_buffer_free (vm, vlib_frame_vector_args (frame), frame->n_vectors);
++
++  return n_packets;
++}
++
++/* *INDENT-OFF* */
++VLIB_REGISTER_NODE (tapcli_tx_node,static) = {
++  .function = tapcli_tx,
++  .name = "tapcli-tx",
++  .type = VLIB_NODE_TYPE_INTERNAL,
++  .vector_size = 4,
++};
++/* *INDENT-ON* */
++
++/**
++ * @brief Dispatch tapcli RX node function for node tap_cli_rx
++ *
++ *
++ * @param *vm - vlib_main_t
++ * @param *node - vlib_node_runtime_t
++ * @param *ti - tapcli_interface_t
++ *
++ * @return n_packets - uword
++ *
++ */
++static uword
++tapcli_rx_iface (vlib_main_t * vm,
++		 vlib_node_runtime_t * node, tapcli_interface_t * ti)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  const uword buffer_size = vlib_buffer_get_default_data_size (vm);
++  u32 n_trace = vlib_get_trace_count (vm, node);
++  u8 set_trace = 0;
++  u16 thread_index = vm->thread_index;
++  vnet_main_t *vnm;
++  vnet_sw_interface_t *si;
++  u8 admin_down;
++  u32 next = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
++  u32 n_left_to_next, next_index;
++  u32 *to_next;
++
++  vnm = vnet_get_main ();
++  si = vnet_get_sw_interface (vnm, ti->sw_if_index);
++  admin_down = !(si->flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP);
++
++  vlib_get_next_frame (vm, node, next, to_next, n_left_to_next);
++
++  while (n_left_to_next)
++    {				// Fill at most one vector
++      vlib_buffer_t *b_first, *b, *prev;
++      u32 bi_first, bi;
++      word n_bytes_in_packet;
++      int j, n_bytes_left;
++
++      if (PREDICT_FALSE (vec_len (tm->threads[thread_index].rx_buffers) <
++			 tm->mtu_buffers))
++	{
++	  uword len = vec_len (tm->threads[thread_index].rx_buffers);
++	  _vec_len (tm->threads[thread_index].rx_buffers) +=
++	    vlib_buffer_alloc (vm, &tm->threads[thread_index].rx_buffers[len],
++			       VLIB_FRAME_SIZE - len);
++	  if (PREDICT_FALSE
++	      (vec_len (tm->threads[thread_index].rx_buffers) <
++	       tm->mtu_buffers))
++	    {
++	      vlib_node_increment_counter (vm, tapcli_rx_node.index,
++					   TAPCLI_ERROR_BUFFER_ALLOC,
++					   tm->mtu_buffers -
++					   vec_len (tm->threads
++						    [thread_index].
++						    rx_buffers));
++	      break;
++	    }
++	}
++
++      uword i_rx = vec_len (tm->threads[thread_index].rx_buffers) - 1;
++
++      /* Allocate RX buffers from end of rx_buffers.
++         Turn them into iovecs to pass to readv. */
++      vec_validate (tm->threads[thread_index].iovecs, tm->mtu_buffers - 1);
++      for (j = 0; j < tm->mtu_buffers; j++)
++	{
++	  b =
++	    vlib_get_buffer (vm,
++			     tm->threads[thread_index].rx_buffers[i_rx - j]);
++	  tm->threads[thread_index].iovecs[j].iov_base = b->data;
++	  tm->threads[thread_index].iovecs[j].iov_len = buffer_size;
++	}
++
++      n_bytes_left = readv (ti->unix_fd, tm->threads[thread_index].iovecs,
++			    tm->mtu_buffers);
++      n_bytes_in_packet = n_bytes_left;
++      if (n_bytes_left <= 0)
++	{
++	  if (errno != EAGAIN)
++	    {
++	      vlib_node_increment_counter (vm, tapcli_rx_node.index,
++					   TAPCLI_ERROR_READ, 1);
++	    }
++	  break;
++	}
++
++      bi_first = tm->threads[thread_index].rx_buffers[i_rx];
++      b = b_first = vlib_get_buffer (vm,
++				     tm->threads[thread_index].
++				     rx_buffers[i_rx]);
++      prev = NULL;
++
++      while (1)
++	{
++	  b->current_length =
++	    n_bytes_left < buffer_size ? n_bytes_left : buffer_size;
++	  n_bytes_left -= buffer_size;
++
++	  if (prev)
++	    {
++	      prev->next_buffer = bi;
++	      prev->flags |= VLIB_BUFFER_NEXT_PRESENT;
++	    }
++	  prev = b;
++
++	  /* last segment */
++	  if (n_bytes_left <= 0)
++	    break;
++
++	  i_rx--;
++	  bi = tm->threads[thread_index].rx_buffers[i_rx];
++	  b = vlib_get_buffer (vm, bi);
++	}
++
++      _vec_len (tm->threads[thread_index].rx_buffers) = i_rx;
++
++      b_first->total_length_not_including_first_buffer =
++	(n_bytes_in_packet >
++	 buffer_size) ? n_bytes_in_packet - buffer_size : 0;
++      b_first->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
++
++      VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b_first);
++
++      vnet_buffer (b_first)->sw_if_index[VLIB_RX] = ti->sw_if_index;
++      vnet_buffer (b_first)->sw_if_index[VLIB_TX] = (u32) ~ 0;
++
++      b_first->error = node->errors[TAPCLI_ERROR_NONE];
++      next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
++      next_index = (ti->per_interface_next_index != ~0) ?
++	ti->per_interface_next_index : next_index;
++      next_index = admin_down ? VNET_DEVICE_INPUT_NEXT_DROP : next_index;
++
++      to_next[0] = bi_first;
++      to_next++;
++      n_left_to_next--;
++
++      vnet_feature_start_device_input_x1 (ti->sw_if_index, &next_index,
++					  b_first);
++
++      vlib_validate_buffer_enqueue_x1 (vm, node, next,
++				       to_next, n_left_to_next,
++				       bi_first, next_index);
++
++      /* Interface counters for tapcli interface. */
++      if (PREDICT_TRUE (!admin_down))
++	{
++	  vlib_increment_combined_counter (vnet_main.interface_main.
++					   combined_sw_if_counters +
++					   VNET_INTERFACE_COUNTER_RX,
++					   thread_index, ti->sw_if_index, 1,
++					   n_bytes_in_packet);
++
++	  if (PREDICT_FALSE (n_trace > 0))
++	    {
++	      vlib_trace_buffer (vm, node, next_index,
++				 b_first, /* follow_chain */ 1);
++	      n_trace--;
++	      set_trace = 1;
++	      tapcli_rx_trace_t *t0 =
++		vlib_add_trace (vm, node, b_first, sizeof (*t0));
++	      t0->sw_if_index = si->sw_if_index;
++	    }
++	}
++    }
++  vlib_put_next_frame (vm, node, next, n_left_to_next);
++  if (set_trace)
++    vlib_set_trace_count (vm, node, n_trace);
++  return VLIB_FRAME_SIZE - n_left_to_next;
++}
++
++/**
++ * @brief tapcli RX node function
++ * @node tap-cli-rx
++ *
++ * Input node from the Kernel tun/tap device
++ *
++ * @param *vm - vlib_main_t
++ * @param *node - vlib_node_runtime_t
++ * @param *frame - vlib_frame_t
++ *
++ * @return n_packets - uword
++ *
++ */
++static uword
++tapcli_rx (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  static u32 *ready_interface_indices;
++  tapcli_interface_t *ti;
++  int i;
++  u32 total_count = 0;
++
++  vec_reset_length (ready_interface_indices);
++  /* *INDENT-OFF* */
++  clib_bitmap_foreach (i, tm->pending_read_bitmap) {
++    vec_add1 (ready_interface_indices, i);
++  }
++  /* *INDENT-ON* */
++
++  if (vec_len (ready_interface_indices) == 0)
++    return 0;
++
++  for (i = 0; i < vec_len (ready_interface_indices); i++)
++    {
++      tm->pending_read_bitmap =
++	clib_bitmap_set (tm->pending_read_bitmap,
++			 ready_interface_indices[i], 0);
++
++      ti =
++	vec_elt_at_index (tm->tapcli_interfaces, ready_interface_indices[i]);
++      total_count += tapcli_rx_iface (vm, node, ti);
++    }
++  return total_count;		//This might return more than 256.
++}
++
++/** TAPCLI error strings */
++static char *tapcli_rx_error_strings[] = {
++#define _(sym,string) string,
++  foreach_tapcli_error
++#undef _
++};
++
++/* *INDENT-OFF* */
++VLIB_REGISTER_NODE (tapcli_rx_node, static) = {
++  .function = tapcli_rx,
++  .name = "tapcli-rx",
++  .sibling_of = "device-input",
++  .type = VLIB_NODE_TYPE_INPUT,
++  .state = VLIB_NODE_STATE_INTERRUPT,
++  .vector_size = 4,
++  .n_errors = TAPCLI_N_ERROR,
++  .error_strings = tapcli_rx_error_strings,
++  .format_trace = format_tapcli_rx_trace,
++};
++/* *INDENT-ON* */
++
++
++/**
++ * @brief Gets called when file descriptor is ready from epoll.
++ *
++ * @param *uf - clib_file_t
++ *
++ * @return error - clib_error_t
++ *
++ */
++static clib_error_t *
++tapcli_read_ready (clib_file_t * uf)
++{
++  vlib_main_t *vm = vlib_get_main ();
++  tapcli_main_t *tm = &tapcli_main;
++  uword *p;
++
++  /** Schedule the rx node */
++  vlib_node_set_interrupt_pending (vm, tapcli_rx_node.index);
++
++  p = hash_get (tm->tapcli_interface_index_by_unix_fd, uf->file_descriptor);
++
++  /** Mark the specific tap interface ready-to-read */
++  if (p)
++    tm->pending_read_bitmap = clib_bitmap_set (tm->pending_read_bitmap,
++					       p[0], 1);
++  else
++    clib_warning ("fd %d not in hash table", uf->file_descriptor);
++
++  return 0;
++}
++
++/**
++ * @brief CLI function for TAPCLI configuration
++ *
++ * @param *vm - vlib_main_t
++ * @param *input - unformat_input_t
++ *
++ * @return error - clib_error_t
++ *
++ */
++static clib_error_t *
++tapcli_config (vlib_main_t * vm, unformat_input_t * input)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  const uword buffer_size = vlib_buffer_get_default_data_size (vm);
++
++  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (input, "mtu %d", &tm->mtu_bytes))
++	;
++      else if (unformat (input, "disable"))
++	tm->is_disabled = 1;
++      else
++	return clib_error_return (0, "unknown input `%U'",
++				  format_unformat_error, input);
++    }
++
++  if (tm->is_disabled)
++    return 0;
++
++  if (geteuid ())
++    {
++      clib_warning ("tapcli disabled: must be superuser");
++      tm->is_disabled = 1;
++      return 0;
++    }
++
++  tm->mtu_buffers = (tm->mtu_bytes + (buffer_size - 1)) / buffer_size;
++
++  return 0;
++}
++
++/**
++ * @brief Renumber TAPCLI interface
++ *
++ * @param *hi - vnet_hw_interface_t
++ * @param new_dev_instance - u32
++ *
++ * @return rc - int
++ *
++ */
++static int
++tap_name_renumber (vnet_hw_interface_t * hi, u32 new_dev_instance)
++{
++  tapcli_main_t *tm = &tapcli_main;
++
++  vec_validate_init_empty (tm->show_dev_instance_by_real_dev_instance,
++			   hi->dev_instance, ~0);
++
++  tm->show_dev_instance_by_real_dev_instance[hi->dev_instance] =
++    new_dev_instance;
++
++  return 0;
++}
++
++VLIB_CONFIG_FUNCTION (tapcli_config, "tapcli");
++
++/**
++ * @brief Free "no punt" frame
++ *
++ * @param *vm - vlib_main_t
++ * @param *node - vlib_node_runtime_t
++ * @param *frame - vlib_frame_t
++ *
++ */
++static void
++tapcli_nopunt_frame (vlib_main_t * vm,
++		     vlib_node_runtime_t * node, vlib_frame_t * frame)
++{
++  u32 *buffers = vlib_frame_vector_args (frame);
++  uword n_packets = frame->n_vectors;
++  vlib_buffer_free (vm, buffers, n_packets);
++  vlib_frame_free (vm, node, frame);
++}
++
++/* *INDENT-OFF* */
++VNET_HW_INTERFACE_CLASS (tapcli_interface_class,static) = {
++  .name = "tapcli",
++  .flags = VNET_HW_INTERFACE_CLASS_FLAG_P2P,
++};
++/* *INDENT-ON* */
++
++/**
++ * @brief Formatter for TAPCLI interface name
++ *
++ * @param *s - formatter string
++ * @param *args - va_list
++ *
++ * @return *s - formatted string
++ *
++ */
++static u8 *
++format_tapcli_interface_name (u8 * s, va_list * args)
++{
++  u32 i = va_arg (*args, u32);
++  u32 show_dev_instance = ~0;
++  tapcli_main_t *tm = &tapcli_main;
++
++  if (i < vec_len (tm->show_dev_instance_by_real_dev_instance))
++    show_dev_instance = tm->show_dev_instance_by_real_dev_instance[i];
++
++  if (show_dev_instance != ~0)
++    i = show_dev_instance;
++
++  s = format (s, "tapcli-%d", i);
++  return s;
++}
++
++/**
++ * @brief Modify interface flags for TAPCLI interface
++ *
++ * @param *vnm - vnet_main_t
++ * @param *hw - vnet_hw_interface_t
++ * @param flags - u32
++ *
++ * @return rc - u32
++ *
++ */
++static u32
++tapcli_flag_change (vnet_main_t * vnm, vnet_hw_interface_t * hw, u32 flags)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti;
++
++  ti = vec_elt_at_index (tm->tapcli_interfaces, hw->dev_instance);
++
++  if (flags & ETHERNET_INTERFACE_FLAG_MTU)
++    {
++      const uword buffer_size = vlib_buffer_get_default_data_size (vlib_get_main ());
++      tm->mtu_bytes = hw->max_packet_bytes;
++      tm->mtu_buffers = (tm->mtu_bytes + (buffer_size - 1)) / buffer_size;
++    }
++  else
++    {
++      struct ifreq ifr;
++      u32 want_promisc;
++
++      memcpy (&ifr, &ti->ifr, sizeof (ifr));
++
++      /* get flags, modify to bring up interface... */
++      if (ioctl (ti->provision_fd, SIOCGIFFLAGS, &ifr) < 0)
++	{
++	  clib_unix_warning ("Couldn't get interface flags for %s", hw->name);
++	  return 0;
++	}
++
++      want_promisc = (flags & ETHERNET_INTERFACE_FLAG_ACCEPT_ALL) != 0;
++
++      if (want_promisc == ti->is_promisc)
++	return 0;
++
++      if (flags & ETHERNET_INTERFACE_FLAG_ACCEPT_ALL)
++	ifr.ifr_flags |= IFF_PROMISC;
++      else
++	ifr.ifr_flags &= ~(IFF_PROMISC);
++
++      /* get flags, modify to bring up interface... */
++      if (ioctl (ti->provision_fd, SIOCSIFFLAGS, &ifr) < 0)
++	{
++	  clib_unix_warning ("Couldn't set interface flags for %s", hw->name);
++	  return 0;
++	}
++
++      ti->is_promisc = want_promisc;
++    }
++
++  return 0;
++}
++
++/**
++ * @brief Setting the TAP interface's next processing node
++ *
++ * @param *vnm - vnet_main_t
++ * @param hw_if_index - u32
++ * @param node_index - u32
++ *
++ */
++static void
++tapcli_set_interface_next_node (vnet_main_t * vnm,
++				u32 hw_if_index, u32 node_index)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti;
++  vnet_hw_interface_t *hw = vnet_get_hw_interface (vnm, hw_if_index);
++
++  ti = vec_elt_at_index (tm->tapcli_interfaces, hw->dev_instance);
++
++  /** Shut off redirection */
++  if (node_index == ~0)
++    {
++      ti->per_interface_next_index = node_index;
++      return;
++    }
++
++  ti->per_interface_next_index =
++    vlib_node_add_next (tm->vlib_main, tapcli_rx_node.index, node_index);
++}
++
++/**
++ * @brief Set link_state == admin_state otherwise things like ip6 neighbor discovery breaks
++ *
++ * @param *vnm - vnet_main_t
++ * @param hw_if_index - u32
++ * @param flags - u32
++ *
++ * @return error - clib_error_t
++ */
++static clib_error_t *
++tapcli_interface_admin_up_down (vnet_main_t * vnm, u32 hw_if_index, u32 flags)
++{
++  uword is_admin_up = (flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP) != 0;
++  u32 hw_flags;
++
++  if (is_admin_up)
++    hw_flags = VNET_HW_INTERFACE_FLAG_LINK_UP;
++  else
++    hw_flags = 0;
++
++  vnet_hw_interface_set_flags (vnm, hw_if_index, hw_flags);
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VNET_DEVICE_CLASS (tapcli_dev_class,static) = {
++  .name = "tapcli",
++  .tx_function = tapcli_tx,
++  .format_device_name = format_tapcli_interface_name,
++  .rx_redirect_to_node = tapcli_set_interface_next_node,
++  .name_renumber = tap_name_renumber,
++  .admin_up_down_function = tapcli_interface_admin_up_down,
++};
++/* *INDENT-ON* */
++
++/**
++ * @brief Dump TAP interfaces
++ *
++ * @param **out_tapids - tapcli_interface_details_t
++ *
++ * @return rc - int
++ *
++ */
++int
++vnet_tap_dump_ifs (tapcli_interface_details_t ** out_tapids)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti;
++
++  tapcli_interface_details_t *r_tapids = NULL;
++  tapcli_interface_details_t *tapid = NULL;
++
++  vec_foreach (ti, tm->tapcli_interfaces)
++  {
++    if (!ti->active)
++      continue;
++    vec_add2 (r_tapids, tapid, 1);
++    tapid->sw_if_index = ti->sw_if_index;
++    strncpy ((char *) tapid->dev_name, ti->ifr.ifr_name,
++	     sizeof (ti->ifr.ifr_name) - 1);
++  }
++
++  *out_tapids = r_tapids;
++
++  return 0;
++}
++
++/**
++ * @brief Get tap interface from inactive interfaces or create new
++ *
++ * @return interface - tapcli_interface_t
++ *
++ */
++static tapcli_interface_t *
++tapcli_get_new_tapif ()
++{
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti = NULL;
++
++  int inactive_cnt = vec_len (tm->tapcli_inactive_interfaces);
++  // if there are any inactive ifaces
++  if (inactive_cnt > 0)
++    {
++      // take last
++      u32 ti_idx = tm->tapcli_inactive_interfaces[inactive_cnt - 1];
++      if (vec_len (tm->tapcli_interfaces) > ti_idx)
++	{
++	  ti = vec_elt_at_index (tm->tapcli_interfaces, ti_idx);
++	  clib_warning ("reusing tap interface");
++	}
++      // "remove" from inactive list
++      _vec_len (tm->tapcli_inactive_interfaces) -= 1;
++    }
++
++  // ti was not retrieved from inactive ifaces - create new
++  if (!ti)
++    vec_add2 (tm->tapcli_interfaces, ti, 1);
++
++  return ti;
++}
++
++typedef struct
++{
++  ip6_address_t addr;
++  u32 mask_width;
++  unsigned int ifindex;
++} ip6_ifreq_t;
++
++/**
++ * @brief Connect a TAP interface
++ *
++ * @param vm - vlib_main_t
++ * @param ap - vnet_tap_connect_args_t
++ *
++ * @return rc - int
++ *
++ */
++int
++vnet_tap_connect (vlib_main_t * vm, vnet_tap_connect_args_t * ap)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti = NULL;
++  struct ifreq ifr;
++  int flags;
++  int dev_net_tun_fd;
++  int dev_tap_fd = -1;
++  clib_error_t *error;
++  u8 hwaddr[6];
++  int rv = 0;
++
++  if (tm->is_disabled)
++    {
++      return VNET_API_ERROR_FEATURE_DISABLED;
++    }
++
++  flags = IFF_TAP | IFF_NO_PI;
++
++  if ((dev_net_tun_fd = open ("/dev/net/tun", O_RDWR)) < 0)
++    return VNET_API_ERROR_SYSCALL_ERROR_1;
++
++  clib_memset (&ifr, 0, sizeof (ifr));
++  strncpy (ifr.ifr_name, (char *) ap->intfc_name, sizeof (ifr.ifr_name) - 1);
++  ifr.ifr_flags = flags;
++  if (ioctl (dev_net_tun_fd, TUNSETIFF, (void *) &ifr) < 0)
++    {
++      rv = VNET_API_ERROR_SYSCALL_ERROR_2;
++      goto error;
++    }
++
++  /* Open a provisioning socket */
++  if ((dev_tap_fd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 0)
++    {
++      rv = VNET_API_ERROR_SYSCALL_ERROR_3;
++      goto error;
++    }
++
++  /* Find the interface index. */
++  {
++    struct ifreq ifr;
++    struct sockaddr_ll sll;
++
++    clib_memset (&ifr, 0, sizeof (ifr));
++    strncpy (ifr.ifr_name, (char *) ap->intfc_name,
++	     sizeof (ifr.ifr_name) - 1);
++    if (ioctl (dev_tap_fd, SIOCGIFINDEX, &ifr) < 0)
++      {
++	rv = VNET_API_ERROR_SYSCALL_ERROR_4;
++	goto error;
++      }
++
++    /* Bind the provisioning socket to the interface. */
++    clib_memset (&sll, 0, sizeof (sll));
++    sll.sll_family = AF_PACKET;
++    sll.sll_ifindex = ifr.ifr_ifindex;
++    sll.sll_protocol = htons (ETH_P_ALL);
++
++    if (bind (dev_tap_fd, (struct sockaddr *) &sll, sizeof (sll)) < 0)
++      {
++	rv = VNET_API_ERROR_SYSCALL_ERROR_5;
++	goto error;
++      }
++  }
++
++  /* non-blocking I/O on /dev/tapX */
++  {
++    int one = 1;
++    if (ioctl (dev_net_tun_fd, FIONBIO, &one) < 0)
++      {
++	rv = VNET_API_ERROR_SYSCALL_ERROR_6;
++	goto error;
++      }
++  }
++  ifr.ifr_mtu = tm->mtu_bytes;
++  if (ioctl (dev_tap_fd, SIOCSIFMTU, &ifr) < 0)
++    {
++      rv = VNET_API_ERROR_SYSCALL_ERROR_7;
++      goto error;
++    }
++
++  /* get flags, modify to bring up interface... */
++  if (ioctl (dev_tap_fd, SIOCGIFFLAGS, &ifr) < 0)
++    {
++      rv = VNET_API_ERROR_SYSCALL_ERROR_8;
++      goto error;
++    }
++
++  ifr.ifr_flags |= (IFF_UP | IFF_RUNNING);
++
++  if (ioctl (dev_tap_fd, SIOCSIFFLAGS, &ifr) < 0)
++    {
++      rv = VNET_API_ERROR_SYSCALL_ERROR_9;
++      goto error;
++    }
++
++  if (ap->ip4_address_set)
++    {
++      struct sockaddr_in sin;
++      /* ip4: mask defaults to /24 */
++      u32 mask = clib_host_to_net_u32 (0xFFFFFF00);
++
++      clib_memset (&sin, 0, sizeof (sin));
++      sin.sin_family = AF_INET;
++      /* sin.sin_port = 0; */
++      sin.sin_addr.s_addr = ap->ip4_address->as_u32;
++      memcpy (&ifr.ifr_ifru.ifru_addr, &sin, sizeof (sin));
++
++      if (ioctl (dev_tap_fd, SIOCSIFADDR, &ifr) < 0)
++	{
++	  rv = VNET_API_ERROR_SYSCALL_ERROR_10;
++	  goto error;
++	}
++
++      if (ap->ip4_mask_width > 0 && ap->ip4_mask_width < 33)
++	{
++	  mask = ~0;
++	  mask <<= (32 - ap->ip4_mask_width);
++	}
++
++      mask = clib_host_to_net_u32 (mask);
++      sin.sin_family = AF_INET;
++      sin.sin_port = 0;
++      sin.sin_addr.s_addr = mask;
++      memcpy (&ifr.ifr_ifru.ifru_addr, &sin, sizeof (sin));
++
++      if (ioctl (dev_tap_fd, SIOCSIFNETMASK, &ifr) < 0)
++	{
++	  rv = VNET_API_ERROR_SYSCALL_ERROR_10;
++	  goto error;
++	}
++    }
++
++  if (ap->ip6_address_set)
++    {
++      struct ifreq ifr2;
++      ip6_ifreq_t ifr6;
++      int sockfd6;
++
++      sockfd6 = socket (AF_INET6, SOCK_DGRAM, IPPROTO_IP);
++      if (sockfd6 < 0)
++	{
++	  rv = VNET_API_ERROR_SYSCALL_ERROR_10;
++	  goto error;
++	}
++
++      clib_memset (&ifr2, 0, sizeof (ifr));
++      strncpy (ifr2.ifr_name, (char *) ap->intfc_name,
++	       sizeof (ifr2.ifr_name) - 1);
++      if (ioctl (sockfd6, SIOCGIFINDEX, &ifr2) < 0)
++	{
++	  close (sockfd6);
++	  rv = VNET_API_ERROR_SYSCALL_ERROR_4;
++	  goto error;
++	}
++
++      memcpy (&ifr6.addr, ap->ip6_address, sizeof (ip6_address_t));
++      ifr6.mask_width = ap->ip6_mask_width;
++      ifr6.ifindex = ifr2.ifr_ifindex;
++
++      if (ioctl (sockfd6, SIOCSIFADDR, &ifr6) < 0)
++	{
++	  close (sockfd6);
++	  clib_unix_warning ("ifr6");
++	  rv = VNET_API_ERROR_SYSCALL_ERROR_10;
++	  goto error;
++	}
++      close (sockfd6);
++    }
++
++  ti = tapcli_get_new_tapif ();
++  ti->per_interface_next_index = ~0;
++
++  if (ap->hwaddr_arg != 0)
++    clib_memcpy (hwaddr, ap->hwaddr_arg, 6);
++  else
++    {
++      f64 now = vlib_time_now (vm);
++      u32 rnd;
++      rnd = (u32) (now * 1e6);
++      rnd = random_u32 (&rnd);
++
++      memcpy (hwaddr + 2, &rnd, sizeof (rnd));
++      hwaddr[0] = 2;
++      hwaddr[1] = 0xfe;
++    }
++
++  error = ethernet_register_interface
++    (tm->vnet_main,
++     tapcli_dev_class.index,
++     ti - tm->tapcli_interfaces /* device instance */ ,
++     hwaddr /* ethernet address */ ,
++     &ti->hw_if_index, tapcli_flag_change);
++
++  if (error)
++    {
++      clib_error_report (error);
++      rv = VNET_API_ERROR_INVALID_REGISTRATION;
++      goto error;
++    }
++
++  {
++    clib_file_t template = { 0 };
++    template.read_function = tapcli_read_ready;
++    template.file_descriptor = dev_net_tun_fd;
++    ti->clib_file_index = clib_file_add (&file_main, &template);
++    ti->unix_fd = dev_net_tun_fd;
++    ti->provision_fd = dev_tap_fd;
++    clib_memcpy (&ti->ifr, &ifr, sizeof (ifr));
++  }
++
++  {
++    vnet_hw_interface_t *hw;
++    hw = vnet_get_hw_interface (tm->vnet_main, ti->hw_if_index);
++    hw->min_supported_packet_bytes = TAP_MTU_MIN;
++    hw->max_supported_packet_bytes = TAP_MTU_MAX;
++    vnet_sw_interface_set_mtu (tm->vnet_main, hw->sw_if_index, 9000);
++    ti->sw_if_index = hw->sw_if_index;
++    if (ap->sw_if_indexp)
++      *(ap->sw_if_indexp) = hw->sw_if_index;
++  }
++
++  ti->active = 1;
++
++  hash_set (tm->tapcli_interface_index_by_sw_if_index, ti->sw_if_index,
++	    ti - tm->tapcli_interfaces);
++
++  hash_set (tm->tapcli_interface_index_by_unix_fd, ti->unix_fd,
++	    ti - tm->tapcli_interfaces);
++
++  return rv;
++
++error:
++  close (dev_net_tun_fd);
++  if (dev_tap_fd >= 0)
++    close (dev_tap_fd);
++
++  return rv;
++}
++
++/**
++ * @brief Renumber a TAP interface
++ *
++ * @param *vm - vlib_main_t
++ * @param *intfc_name - u8
++ * @param *hwaddr_arg - u8
++ * @param *sw_if_indexp - u32
++ * @param renumber - u8
++ * @param custom_dev_instance - u32
++ *
++ * @return rc - int
++ *
++ */
++int
++vnet_tap_connect_renumber (vlib_main_t * vm, vnet_tap_connect_args_t * ap)
++{
++  int rv = vnet_tap_connect (vm, ap);
++
++  if (!rv && ap->renumber)
++    vnet_interface_name_renumber (*(ap->sw_if_indexp),
++				  ap->custom_dev_instance);
++
++  return rv;
++}
++
++/**
++ * @brief Disconnect TAP CLI interface
++ *
++ * @param *ti - tapcli_interface_t
++ *
++ * @return rc - int
++ *
++ */
++static int
++tapcli_tap_disconnect (tapcli_interface_t * ti)
++{
++  int rv = 0;
++  vnet_main_t *vnm = vnet_get_main ();
++  tapcli_main_t *tm = &tapcli_main;
++  u32 sw_if_index = ti->sw_if_index;
++
++  // bring interface down
++  vnet_sw_interface_set_flags (vnm, sw_if_index, 0);
++
++  if (ti->clib_file_index != ~0)
++    {
++      clib_file_del (&file_main, file_main.file_pool + ti->clib_file_index);
++      ti->clib_file_index = ~0;
++    }
++  else
++    close (ti->unix_fd);
++
++  hash_unset (tm->tapcli_interface_index_by_unix_fd, ti->unix_fd);
++  hash_unset (tm->tapcli_interface_index_by_sw_if_index, ti->sw_if_index);
++  close (ti->provision_fd);
++  ti->unix_fd = -1;
++  ti->provision_fd = -1;
++
++  return rv;
++}
++
++/**
++ * @brief Delete TAP interface
++ *
++ * @param *vm - vlib_main_t
++ * @param sw_if_index - u32
++ *
++ * @return rc - int
++ *
++ */
++int
++vnet_tap_delete (vlib_main_t * vm, u32 sw_if_index)
++{
++  int rv = 0;
++  tapcli_main_t *tm = &tapcli_main;
++  tapcli_interface_t *ti;
++  uword *p = NULL;
++
++  p = hash_get (tm->tapcli_interface_index_by_sw_if_index, sw_if_index);
++  if (p == 0)
++    {
++      clib_warning ("sw_if_index %d unknown", sw_if_index);
++      return VNET_API_ERROR_INVALID_SW_IF_INDEX;
++    }
++  ti = vec_elt_at_index (tm->tapcli_interfaces, p[0]);
++
++  // inactive
++  ti->active = 0;
++  tapcli_tap_disconnect (ti);
++  // add to inactive list
++  vec_add1 (tm->tapcli_inactive_interfaces, ti - tm->tapcli_interfaces);
++
++  // reset renumbered iface
++  if (p[0] < vec_len (tm->show_dev_instance_by_real_dev_instance))
++    tm->show_dev_instance_by_real_dev_instance[p[0]] = ~0;
++
++  ethernet_delete_interface (tm->vnet_main, ti->hw_if_index);
++  return rv;
++}
++
++/**
++ * @brief CLI function to delete TAP interface
++ *
++ * @param *vm - vlib_main_t
++ * @param *input - unformat_input_t
++ * @param *cmd - vlib_cli_command_t
++ *
++ * @return error - clib_error_t
++ *
++ */
++static clib_error_t *
++tap_delete_command_fn (vlib_main_t * vm,
++		       unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  u32 sw_if_index = ~0;
++
++  if (tm->is_disabled)
++    {
++      return clib_error_return (0, "device disabled...");
++    }
++
++  if (unformat (input, "%U", unformat_vnet_sw_interface, tm->vnet_main,
++		&sw_if_index))
++    ;
++  else
++    return clib_error_return (0, "unknown input `%U'",
++			      format_unformat_error, input);
++
++
++  int rc = vnet_tap_delete (vm, sw_if_index);
++
++  if (!rc)
++    {
++      vlib_cli_output (vm, "Deleted.");
++    }
++  else
++    {
++      vlib_cli_output (vm, "Error during deletion of tap interface. (rc: %d)",
++		       rc);
++    }
++
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (tap_delete_command, static) = {
++    .path = "tap delete",
++    .short_help = "tap delete <vpp-tap-intfc-name>",
++    .function = tap_delete_command_fn,
++};
++/* *INDENT-ON* */
++
++/**
++ * @brief Modifies tap interface - can result in new interface being created
++ *
++ * @param *vm - vlib_main_t
++ * @param orig_sw_if_index - u32
++ * @param *intfc_name - u8
++ * @param *hwaddr_arg - u8
++ * @param *sw_if_indexp - u32
++ * @param renumber - u8
++ * @param custom_dev_instance - u32
++ *
++ * @return rc - int
++ *
++ */
++int
++vnet_tap_modify (vlib_main_t * vm, vnet_tap_connect_args_t * ap)
++{
++  int rv = vnet_tap_delete (vm, ap->orig_sw_if_index);
++
++  if (rv)
++    return rv;
++
++  rv = vnet_tap_connect_renumber (vm, ap);
++
++  return rv;
++}
++
++/**
++ * @brief CLI function to modify TAP interface
++ *
++ * @param *vm - vlib_main_t
++ * @param *input - unformat_input_t
++ * @param *cmd - vlib_cli_command_t
++ *
++ * @return error - clib_error_t
++ *
++ */
++static clib_error_t *
++tap_modify_command_fn (vlib_main_t * vm,
++		       unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  u8 *intfc_name;
++  tapcli_main_t *tm = &tapcli_main;
++  u32 sw_if_index = ~0;
++  u32 new_sw_if_index = ~0;
++  int user_hwaddr = 0;
++  u8 hwaddr[6];
++  vnet_tap_connect_args_t _a, *ap = &_a;
++
++  if (tm->is_disabled)
++    {
++      return clib_error_return (0, "device disabled...");
++    }
++
++  if (unformat (input, "%U", unformat_vnet_sw_interface, tm->vnet_main,
++		&sw_if_index))
++    ;
++  else
++    return clib_error_return (0, "unknown input `%U'",
++			      format_unformat_error, input);
++
++  if (unformat (input, "%s", &intfc_name))
++    ;
++  else
++    return clib_error_return (0, "unknown input `%U'",
++			      format_unformat_error, input);
++
++  if (unformat (input, "hwaddr %U", unformat_ethernet_address, &hwaddr))
++    user_hwaddr = 1;
++
++
++  clib_memset (ap, 0, sizeof (*ap));
++  ap->orig_sw_if_index = sw_if_index;
++  ap->intfc_name = intfc_name;
++  ap->sw_if_indexp = &new_sw_if_index;
++  if (user_hwaddr)
++    ap->hwaddr_arg = hwaddr;
++
++  int rc = vnet_tap_modify (vm, ap);
++
++  if (!rc)
++    {
++      vlib_cli_output (vm, "Modified %U for Linux tap '%s'",
++		       format_vnet_sw_if_index_name, tm->vnet_main,
++		       *(ap->sw_if_indexp), ap->intfc_name);
++    }
++  else
++    {
++      vlib_cli_output (vm,
++		       "Error during modification of tap interface. (rc: %d)",
++		       rc);
++    }
++
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (tap_modify_command, static) = {
++    .path = "tap modify",
++    .short_help = "tap modify <vpp-tap-intfc-name> <linux-intfc-name> [hwaddr <addr>]",
++    .function = tap_modify_command_fn,
++};
++/* *INDENT-ON* */
++
++/**
++ * @brief CLI function to connect TAP interface
++ *
++ * @param *vm - vlib_main_t
++ * @param *input - unformat_input_t
++ * @param *cmd - vlib_cli_command_t
++ *
++ * @return error - clib_error_t
++ *
++ */
++static clib_error_t *
++tap_connect_command_fn (vlib_main_t * vm,
++			unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  u8 *intfc_name = 0;
++  unformat_input_t _line_input, *line_input = &_line_input;
++  vnet_tap_connect_args_t _a, *ap = &_a;
++  tapcli_main_t *tm = &tapcli_main;
++  u8 hwaddr[6];
++  u8 *hwaddr_arg = 0;
++  u32 sw_if_index;
++  ip4_address_t ip4_address;
++  int ip4_address_set = 0;
++  ip6_address_t ip6_address;
++  int ip6_address_set = 0;
++  u32 ip4_mask_width = 0;
++  u32 ip6_mask_width = 0;
++  clib_error_t *error = NULL;
++
++  if (tm->is_disabled)
++    return clib_error_return (0, "device disabled...");
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "hwaddr %U", unformat_ethernet_address,
++		    &hwaddr))
++	hwaddr_arg = hwaddr;
++
++      /* It is here for backward compatibility */
++      else if (unformat (line_input, "hwaddr random"))
++	;
++
++      else if (unformat (line_input, "address %U/%d",
++			 unformat_ip4_address, &ip4_address, &ip4_mask_width))
++	ip4_address_set = 1;
++
++      else if (unformat (line_input, "address %U/%d",
++			 unformat_ip6_address, &ip6_address, &ip6_mask_width))
++	ip6_address_set = 1;
++
++      else if (unformat (line_input, "%s", &intfc_name))
++	;
++      else
++	{
++	  error = clib_error_return (0, "unknown input `%U'",
++				     format_unformat_error, line_input);
++	  goto done;
++	}
++    }
++
++  if (intfc_name == 0)
++    {
++      error = clib_error_return (0, "interface name must be specified");
++      goto done;
++    }
++
++  clib_memset (ap, 0, sizeof (*ap));
++
++  ap->intfc_name = intfc_name;
++  ap->hwaddr_arg = hwaddr_arg;
++  if (ip4_address_set)
++    {
++      ap->ip4_address = &ip4_address;
++      ap->ip4_mask_width = ip4_mask_width;
++      ap->ip4_address_set = 1;
++    }
++  if (ip6_address_set)
++    {
++      ap->ip6_address = &ip6_address;
++      ap->ip6_mask_width = ip6_mask_width;
++      ap->ip6_address_set = 1;
++    }
++
++  ap->sw_if_indexp = &sw_if_index;
++
++  int rv = vnet_tap_connect (vm, ap);
++
++  switch (rv)
++    {
++    case VNET_API_ERROR_SYSCALL_ERROR_1:
++      error = clib_error_return (0, "Couldn't open /dev/net/tun");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_2:
++      error =
++	clib_error_return (0, "Error setting flags on '%s'", intfc_name);
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_3:
++      error = clib_error_return (0, "Couldn't open provisioning socket");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_4:
++      error = clib_error_return (0, "Couldn't get if_index");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_5:
++      error = clib_error_return (0, "Couldn't bind provisioning socket");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_6:
++      error = clib_error_return (0, "Couldn't set device non-blocking flag");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_7:
++      error = clib_error_return (0, "Couldn't set device MTU");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_8:
++      error = clib_error_return (0, "Couldn't get interface flags");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_9:
++      error = clib_error_return (0, "Couldn't set intfc admin state up");
++      goto done;
++
++    case VNET_API_ERROR_SYSCALL_ERROR_10:
++      error = clib_error_return (0, "Couldn't set intfc address/mask");
++      goto done;
++
++    case VNET_API_ERROR_INVALID_REGISTRATION:
++      error = clib_error_return (0, "Invalid registration");
++      goto done;
++
++    case 0:
++      break;
++
++    default:
++      error = clib_error_return (0, "Unknown error: %d", rv);
++      goto done;
++    }
++
++  vlib_cli_output (vm, "%U\n", format_vnet_sw_if_index_name,
++		   vnet_get_main (), sw_if_index);
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (tap_connect_command, static) = {
++    .path = "tap connect",
++    .short_help =
++        "tap connect <intfc-name> [address <ip-addr>/mw] [hwaddr <addr>]",
++    .function = tap_connect_command_fn,
++};
++/* *INDENT-ON* */
++
++/**
++ * @brief TAPCLI main init
++ *
++ * @param *vm - vlib_main_t
++ *
++ * @return error - clib_error_t
++ *
++ */
++clib_error_t *
++tapcli_init (vlib_main_t * vm)
++{
++  tapcli_main_t *tm = &tapcli_main;
++  vlib_thread_main_t *m = vlib_get_thread_main ();
++  tapcli_per_thread_t *thread;
++
++  tm->vlib_main = vm;
++  tm->vnet_main = vnet_get_main ();
++  tm->mtu_bytes = TAP_MTU_DEFAULT;
++  tm->tapcli_interface_index_by_sw_if_index = hash_create (0, sizeof (uword));
++  tm->tapcli_interface_index_by_unix_fd = hash_create (0, sizeof (uword));
++  vm->os_punt_frame = tapcli_nopunt_frame;
++  vec_validate_aligned (tm->threads, m->n_vlib_mains - 1,
++			CLIB_CACHE_LINE_BYTES);
++  vec_foreach (thread, tm->threads)
++  {
++    thread->iovecs = 0;
++    thread->rx_buffers = 0;
++    vec_alloc (thread->rx_buffers, VLIB_FRAME_SIZE);
++    vec_reset_length (thread->rx_buffers);
++  }
++
++  return 0;
++}
++
++VLIB_INIT_FUNCTION (tapcli_init);
++
++/*
++ * fd.io coding-style-patch-verification: ON
++ *
++ * Local Variables:
++ * eval: (c-set-style "gnu")
++ * End:
++ */
+diff --git a/src/vnet/unix/tapcli.h b/src/vnet/unix/tapcli.h
+new file mode 100644
+index 000000000..55a5a152b
+--- /dev/null
++++ b/src/vnet/unix/tapcli.h
+@@ -0,0 +1,62 @@
++/*
++ * tapcli.h : tap support
++ *
++ * Copyright (c) 2013 Cisco and/or its affiliates.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/**
++ * @file
++ * @brief TAPCLI definitions
++ */
++
++#ifndef __included_tapcli_h__
++#define __included_tapcli_h__
++
++/** TAP CLI errors */
++#define foreach_tapcli_error				\
++  /* Must be first. */                                  \
++ _(NONE, "no error")                                    \
++ _(READ, "read error")                                  \
++ _(BUFFER_ALLOC, "buffer allocation error")             \
++ _(UNKNOWN, "unknown error")
++
++typedef enum
++{
++#define _(sym,str) TAPCLI_ERROR_##sym,
++  foreach_tapcli_error
++#undef _
++    TAPCLI_N_ERROR,
++} tapcli_error_t;
++
++/** TAP CLI interface details struct */
++typedef struct
++{
++  u32 sw_if_index;
++  u8 dev_name[64];
++} tapcli_interface_details_t;
++
++int vnet_tap_dump_ifs (tapcli_interface_details_t ** out_tapids);
++
++#define TAP_MTU_MIN 68
++#define TAP_MTU_MAX 65535
++#define TAP_MTU_DEFAULT 1500
++
++#endif /* __included_tapcli_h__ */
++
++/*
++ * fd.io coding-style-patch-verification: ON
++ *
++ * Local Variables:
++ * eval: (c-set-style "gnu")
++ * End:
++ */
+diff --git a/src/vnet/vnet_all_api_h.h b/src/vnet/vnet_all_api_h.h
+index 2a5b6bd55..bc343314e 100644
+--- a/src/vnet/vnet_all_api_h.h
++++ b/src/vnet/vnet_all_api_h.h
+@@ -41,6 +41,7 @@
+ #include <vnet/l2/l2.api.h>
+ #include <vnet/span/span.api.h>
+ #include <vnet/ip/ip.api.h>
++#include <vnet/unix/tap.api.h>
+ #include <vnet/vxlan/vxlan.api.h>
+ #include <vnet/vxlan-gpe/vxlan_gpe.api.h>
+ #include <vnet/bfd/bfd.api.h>
+diff --git a/src/vpp/api/custom_dump.c b/src/vpp/api/custom_dump.c
+index d0b5dac48..60ce902d9 100644
+--- a/src/vpp/api/custom_dump.c
++++ b/src/vpp/api/custom_dump.c
+@@ -511,6 +511,72 @@ __clib_unused
+   FINISH;
+ }
+ 
++static void *vl_api_tap_connect_t_print
++  (vl_api_tap_connect_t * mp, void *handle)
++{
++  u8 *s;
++  u8 null_mac[6];
++
++  clib_memset (null_mac, 0, sizeof (null_mac));
++
++  s = format (0, "SCRIPT: tap_connect ");
++  s = format (s, "tapname %s ", mp->tap_name);
++  if (mp->use_random_mac)
++    s = format (s, "random-mac ");
++  if (mp->tag[0])
++    s = format (s, "tag %s ", mp->tag);
++  if (memcmp (mp->mac_address, null_mac, 6))
++    s = format (s, "mac %U ", format_ethernet_address, mp->mac_address);
++  if (mp->ip4_address_set)
++    s = format (s, "address %U/%d ", format_ip4_address, mp->ip4_address,
++		mp->ip4_mask_width);
++  if (mp->ip6_address_set)
++    s = format (s, "address %U/%d ", format_ip6_address, mp->ip6_address,
++		mp->ip6_mask_width);
++  FINISH;
++}
++
++static void *vl_api_tap_modify_t_print
++  (vl_api_tap_modify_t * mp, void *handle)
++{
++  u8 *s;
++  u8 null_mac[6];
++
++  clib_memset (null_mac, 0, sizeof (null_mac));
++
++  s = format (0, "SCRIPT: tap_modify ");
++  s = format (s, "sw_if_index %d ", ntohl (mp->sw_if_index));
++  s = format (s, "tapname %s ", mp->tap_name);
++  if (mp->use_random_mac)
++    s = format (s, "random-mac ");
++
++  if (memcmp (mp->mac_address, null_mac, 6))
++    s = format (s, "mac %U ", format_ethernet_address, mp->mac_address);
++
++  FINISH;
++}
++
++static void *vl_api_tap_delete_t_print
++  (vl_api_tap_delete_t * mp, void *handle)
++{
++  u8 *s;
++
++  s = format (0, "SCRIPT: tap_delete ");
++  s = format (s, "sw_if_index %d ", ntohl (mp->sw_if_index));
++
++  FINISH;
++}
++
++static void *vl_api_sw_interface_tap_dump_t_print
++  (vl_api_sw_interface_tap_dump_t * mp, void *handle)
++{
++  u8 *s;
++
++  s = format (0, "SCRIPT: sw_interface_tap_dump ");
++
++  FINISH;
++}
++
+ static void *vl_api_tap_create_v2_t_print
+   (vl_api_tap_create_v2_t * mp, void *handle)
+ {
+@@ -2981,6 +3047,10 @@ _(SW_INTERFACE_SET_TABLE, sw_interface_set_table)                       \
+ _(SW_INTERFACE_SET_MPLS_ENABLE, sw_interface_set_mpls_enable)           \
+ _(SW_INTERFACE_SET_VPATH, sw_interface_set_vpath)                       \
+ _(SW_INTERFACE_SET_VXLAN_BYPASS, sw_interface_set_vxlan_bypass)         \
++_(TAP_CONNECT, tap_connect)                                             \
++_(TAP_MODIFY, tap_modify)                                               \
++_(TAP_DELETE, tap_delete)                                               \
++_(SW_INTERFACE_TAP_DUMP, sw_interface_tap_dump)                         \
+ _(BOND_CREATE, bond_create)                                             \
+ _(BOND_CREATE2, bond_create2)                                           \
+ _(BOND_DELETE, bond_delete)                                             \
+diff --git a/src/vpp/api/vpe.api b/src/vpp/api/vpe.api
+index 9047d0e1a..ea72d7749 100644
+--- a/src/vpp/api/vpe.api
++++ b/src/vpp/api/vpe.api
+@@ -28,6 +28,7 @@ import "vpp/api/vpe_types.api";
+  * If you're looking for interface APIs, please
+  * see .../src/vnet/{interface.api,interface_api.c}
+  * IP APIs: see .../src/vnet/ip/{ip.api, ip_api.c}
++ * TAP APIs: see .../src/vnet/unix/{tap.api, tap_api.c}
+  * VXLAN APIs: see .../src/vnet/vxlan/{vxlan.api, vxlan_api.c}
+  * GENEVE APIs: see .../src/vnet/geneve/{geneve.api, geneve_api.c}
+  * LLDP APIs: see .../src/vnet/lldp/{lldp.api, lldp_api.c}
+-- 
+2.30.2
+

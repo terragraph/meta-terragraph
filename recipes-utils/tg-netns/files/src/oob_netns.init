@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+if [ "$OOB_NETNS" != "1" ] || [ "$OOB_INTERFACE" != "nic0" ]; then
+  echo "OOB namespace is disabled. Stopping namespace setup service. " >&2
+  exit 0
+fi
+
+MAKE_OOB_NETNS="/usr/sbin/oob_netns.sh $OOB_INTERFACE"
+
+exec $MAKE_OOB_NETNS 2>&1

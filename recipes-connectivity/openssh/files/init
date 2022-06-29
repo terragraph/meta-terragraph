@@ -1,0 +1,193 @@
+#! /bin/sh
+
+# persistent path that won't be erased on an image flash
+SSH_PERSISTENT=/data/etc/ssh
+PIDFILE=/var/run/sshd.pid
+PIDFILE_OOB=/var/run/sshd_oob.pid
+SSHD_OOB_OPTS='-f /etc/ssh/sshd_config_oob_readonly'
+# source function library
+. /etc/init.d/functions
+
+# /etc/init.d/ssh: start and stop the OpenBSD "secure shell" daemon
+
+test -x /usr/sbin/sshd || exit 0
+( /usr/sbin/sshd -\? 2>&1 | grep -q OpenSSH ) 2>/dev/null || exit 0
+
+# /etc/default/ssh may set SYSCONFDIR and SSHD_OPTS
+if test -f /etc/default/ssh; then
+    . /etc/default/ssh
+fi
+
+if (ip netns list | grep -wq oob ) ; then
+	SSH_OOB=1
+else
+	SSH_OOB=0
+fi
+
+[ -z "$SYSCONFDIR" ] && SYSCONFDIR=/etc/ssh
+mkdir -p $SYSCONFDIR
+mkdir -p $SSH_PERSISTENT
+
+HOST_KEY_RSA=ssh_host_rsa_key
+HOST_KEY_DSA=ssh_host_dsa_key
+HOST_KEY_ECDSA=ssh_host_ecdsa_key
+HOST_KEY_ED25519=ssh_host_ed25519_key
+
+check_for_no_start() {
+    . /usr/sbin/config_get_env.sh
+    # check if ssh is disabled in node config
+    if [ "$SSH_ENABLED" == "0" ]; then
+      start-stop-daemon -K -s 9 -p $PIDFILE
+      if [ "$SSH_OOB" -eq 1 ]; then
+        start-stop-daemon -K -s 9 -p $PIDFILE_OOB
+      fi
+      exit 0
+    fi
+    # forget it if we're trying to start, and /etc/ssh/sshd_not_to_be_run exists
+    if [ -e $SYSCONFDIR/sshd_not_to_be_run ]; then
+      echo "OpenBSD Secure Shell server not in use ($SYSCONFDIR/sshd_not_to_be_run)"
+      exit 0
+    fi
+}
+
+check_privsep_dir() {
+    # Create the PrivSep empty dir if necessary
+    if [ ! -d /var/run/sshd ]; then
+  mkdir /var/run/sshd
+  chmod 0755 /var/run/sshd
+    fi
+}
+
+check_trusted_ca() {
+  # Generate tg environment if necessary
+  /usr/sbin/config_get_env.sh
+
+  # Populate TrustedUserCAKeys file with CA keys
+  /usr/sbin/reload_ssh_ca_keys
+}
+
+check_config() {
+  /usr/sbin/sshd -t $SSHD_OPTS || exit 1
+}
+
+check_keys() {
+  # create keys if necessary and symlink to SYSCONFDIR
+  if [ ! -f $SYSCONFDIR/$HOST_KEY_RSA ] ||
+	 [ ! -f $SSH_PERSISTENT/$HOST_KEY_RSA ] ; then
+    if [ ! -f $SSH_PERSISTENT/$HOST_KEY_RSA ]; then
+      echo "  generating ssh RSA key..."
+      ssh-keygen -q -f $SSH_PERSISTENT/$HOST_KEY_RSA -N '' -t rsa
+    fi
+    echo "  creating ssh RSA key symlink..."
+    ln -fs $SSH_PERSISTENT/$HOST_KEY_RSA $SYSCONFDIR/$HOST_KEY_RSA
+    sync_needed=1
+  fi
+  if [ ! -f $SYSCONFDIR/$HOST_KEY_ECDSA ] ||
+	[ ! -f $SSH_PERSISTENT/$HOST_KEY_ECDSA ]; then
+    if [ ! -f $SSH_PERSISTENT/$HOST_KEY_ECDSA ]; then
+      echo "  generating ssh ECDSA key..."
+      ssh-keygen -q -f $SSH_PERSISTENT/$HOST_KEY_ECDSA -N '' -t ecdsa
+    fi
+    echo "  creating ssh ECDSA key symlink..."
+    ln -fs $SSH_PERSISTENT/$HOST_KEY_ECDSA $SYSCONFDIR/$HOST_KEY_ECDSA
+    sync_needed=1
+  fi
+  if [ ! -f $SYSCONFDIR/$HOST_KEY_DSA ] ||
+	[ ! -f $SSH_PERSISTENT/$HOST_KEY_DSA ]; then
+    if [ ! -f $SSH_PERSISTENT/$HOST_KEY_DSA ]; then
+      echo "  generating ssh DSA key..."
+      ssh-keygen -q -f $SSH_PERSISTENT/$HOST_KEY_DSA -N '' -t dsa
+    fi
+    echo "  creating ssh DSA key symlink..."
+    ln -fs $SSH_PERSISTENT/$HOST_KEY_DSA $SYSCONFDIR/$HOST_KEY_DSA
+    sync_needed=1
+  fi
+  if [ ! -f $SYSCONFDIR/$HOST_KEY_ED25519 ] ||
+	[ ! -f $SSH_PERSISTENT/$HOST_KEY_ED25519 ]; then
+    if [ ! -f $SSH_PERSISTENT/$HOST_KEY_ED25519 ]; then
+      echo "  generating ssh ED25519 key..."
+      ssh-keygen -q -f $SSH_PERSISTENT/$HOST_KEY_ED25519 -N '' -t ed25519
+    fi
+    echo "  creating ssh ED25519 key symlink..."
+    ln -fs $SSH_PERSISTENT/$HOST_KEY_ED25519 $SYSCONFDIR/$HOST_KEY_ED25519
+    sync_needed=1
+  fi
+  if [ -n "${sync_needed}" ]; then
+     # sync so that keys written are flushed to disk.
+     # Just being little paranoid with multiple syncs,
+     # to make sure it has indeed made it.  Note sync only
+     # gurantees dirty blocks are queued but not make it to disk.
+     # So multiple syncs might help.
+     echo "Regenerated keys and syncing"
+     /bin/sync
+     /bin/sync
+     /bin/sync
+  fi
+}
+
+export PATH="${PATH:+$PATH:}/usr/sbin:/sbin"
+
+case "$1" in
+  start)
+  check_for_no_start
+  echo "Starting OpenBSD Secure Shell server: sshd"
+  check_keys
+  check_trusted_ca
+  check_privsep_dir
+  start-stop-daemon -S -p $PIDFILE -x /usr/sbin/sshd -- $SSHD_OPTS
+  if [ "$SSH_OOB" -eq 1 ]; then
+    start-stop-daemon -S -p $PIDFILE_OOB -x ip netns exec oob /usr/sbin/sshd -- $SSHD_OOB_OPTS
+  fi
+  echo "done."
+  ;;
+  stop)
+        echo -n "Stopping OpenBSD Secure Shell server: sshd"
+  start-stop-daemon -K -p $PIDFILE -x /usr/sbin/sshd
+  if [ "$SSH_OOB" -eq 1 ]; then
+    start-stop-daemon -K -p $PIDFILE_OOB -x /usr/sbin/sshd
+  fi
+  echo "."
+  ;;
+
+  reload|force-reload)
+  check_for_no_start
+  check_keys
+  check_config
+        echo -n "Reloading OpenBSD Secure Shell server's configuration"
+  start-stop-daemon -K -p $PIDFILE -s 1 -x /usr/sbin/sshd
+  if [ "$SSH_OOB" -eq 1 ]; then
+    start-stop-daemon -K -p $PIDFILE_OOB -s 1 -x /usr/sbin/sshd
+  fi
+  echo "."
+  ;;
+
+  restart)
+    check_keys
+  check_trusted_ca
+  check_config
+        echo -n "Restarting OpenBSD Secure Shell server: sshd"
+  start-stop-daemon -K -s 1 -p $PIDFILE --oknodo -x /usr/sbin/sshd
+  if [ "$SSH_OOB" -eq 1 ]; then
+    start-stop-daemon -K -s 1 -p $PIDFILE_OOB --oknodo -x /usr/sbin/sshd
+  fi
+  check_for_no_start
+  check_privsep_dir
+  sleep 2
+  if [ "$SSH_OOB" -eq 1 ]; then
+    start-stop-daemon -S  -p $PIDFILE_OOB -x  ip netns exec oob /usr/sbin/sshd -- $SSHD_OOB_OPTS
+  fi
+  start-stop-daemon -S -p $PIDFILE -x /usr/sbin/sshd -- $SSHD_OPTS
+  echo "."
+  ;;
+
+  status)
+  status /usr/sbin/sshd
+  exit $?
+  ;;
+
+  *)
+  echo "Usage: /etc/init.d/ssh {start|stop|status|reload|force-reload|restart}"
+  exit 1
+esac
+
+exit 0

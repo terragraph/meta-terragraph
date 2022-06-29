@@ -1,0 +1,23 @@
+diff --git a/components/lwip/port/esp32/include/lwipopts.h b/components/lwip/port/esp32/include/lwipopts.h
+index 53b598609..544e5e1ae 100644
+--- a/components/lwip/port/esp32/include/lwipopts.h
++++ b/components/lwip/port/esp32/include/lwipopts.h
+@@ -185,6 +185,9 @@
+  */
+ #define IP_REASS_MAX_PBUFS              10
+ 
++/* Enable IP forwarding */
++#define IP_FORWARD                      1
++
+ /*
+    ----------------------------------
+    ---------- ICMP options ----------
+@@ -640,7 +643,7 @@
+    ---------- Hook options ---------------
+    ---------------------------------------
+ */
+-#define LWIP_HOOK_IP4_ROUTE_SRC         ip4_route_src_hook
++//#define LWIP_HOOK_IP4_ROUTE_SRC         ip4_route_src_hook
+ /*
+    ---------------------------------------
+    ---------- Debugging options ----------

@@ -1,0 +1,35 @@
+diff --git a/fbzmq/CMakeLists.txt b/fbzmq/CMakeLists.txt
+index c534564e..08a402eb 100644
+--- a/fbzmq/CMakeLists.txt
++++ b/fbzmq/CMakeLists.txt
+@@ -47,18 +47,19 @@ if (BUILD_SHARED_LIBS)
+   )
+ endif()
+
+-target_link_libraries(fbzmq
++target_link_libraries(fbzmq PUBLIC
+   monitor_cpp2
+-  ${ZSTD}
+-  Folly::folly
+-  ${DOUBLECONV}
+-  glog::glog
+-  gflags
+-  ${ZMQ}
+-  ${PTHREAD}
+-  FBThrift::thriftcpp2
+-  ${Boost_LIBRARIES}
+-  -ldl
++    glog::glog
++    gflags
++    -ldl
++  PRIVATE
++    ${Boost_LIBRARIES}
++    ${DOUBLECONV}
++    ${ZMQ}
++    ${ZSTD}
++    FBThrift::thriftcpp2
++    Folly::folly
++    ${PTHREAD}
+ )
+
+ target_include_directories(fbzmq PRIVATE

@@ -1,0 +1,807 @@
+From c7c853042f6670fd131c3518b94c617514947fe6 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Thu, 2 Jul 2020 18:19:10 -0700
+Subject: [PATCH] wil6210: Support for multi-segment packets
+
+Implement support for multi-segment packets.
+
+This Diff reorganizes the Tx/Rx function of the driver so as they
+handle segment descriptors with eop bit, where segment descriptors
+which are exchanged at the wil6210 <-> VPP interface.
+
+Signed-off-by: Pierre Vandwalle <vandwalle@fb.com>
+Signed-off-by: Frank Li <frankli1@fb.com>
+Signed-off-by: Michael Callahan <michaelcallahan@fb.com>
+---
+ wil6210/debugfs.c   |  22 +-
+ wil6210/dvpp_txrx.c | 514 +++++++++++++++++++++++++++-----------------
+ wil6210/txrx_edma.c |   1 +
+ wil6210/wil6210.h   |   5 +-
+ 4 files changed, 339 insertions(+), 203 deletions(-)
+
+diff --git a/wil6210/debugfs.c b/wil6210/debugfs.c
+index 55770e5..19ccb11 100644
+--- a/wil6210/debugfs.c
++++ b/wil6210/debugfs.c
+@@ -1687,11 +1687,30 @@ static ssize_t wil_write_dvpp(struct file *file, const char __user *buf,
+ 	}
+ 
+ 	kbuf[len] = '\0';
++
++	/* Add support for setting DBG flags on per port basis */
++	if (strncmp("dbg", kbuf, 3) == 0) {
++		long debug;
++		if (strlen(kbuf) < 5) {
++			kfree(kbuf);
++			return len;
++		}
++		rc = kstrtol(kbuf + 4, 0, &debug);
++		if (rc == 0) {
++			wil_info(wil, "dvpp port %u set debug 0x%x\n",
++				wil->dvpp_status.port_id, debug);
++			wil->dvpp_status.dbg = debug;
++		}
++		kfree(kbuf);
++		return len;
++	}
++
+ 	rc = kstrtol(kbuf, 0, &on);
+ 	kfree(kbuf);
+ 	if (rc)
+-		return rc;
++		return len;
+ 
++	/* Add support for enabling/disabling DVPP */
+ 	wil_info(wil, "port %u will %s dvpp\n",wil->dvpp_status.port_id, (unsigned int)on?"enable":"disable");
+ 
+ 	if (on) {
+@@ -1719,6 +1738,7 @@ static int wil_dvpp_debugfs_show(struct seq_file *s, void *data)
+ 	seq_printf(s, "port id     : %d\n", wil->dvpp_status.port_id);
+ 	seq_printf(s, "enabled     : %d\n", wil->dvpp_status.enabled);
+ 	seq_printf(s, "error       : %d\n", wil->dvpp_status.error);
++	seq_printf(s, "dbg         : 0x%x\n", wil->dvpp_status.dbg);
+ 	seq_printf(s, "refill fail : %d\n", wil->refill_fail);
+ 	seq_printf(s, "ndev : %p\n", wil->main_ndev);
+ 	return 0;
+diff --git a/wil6210/dvpp_txrx.c b/wil6210/dvpp_txrx.c
+index e12ae81..a6bd1c3 100644
+--- a/wil6210/dvpp_txrx.c
++++ b/wil6210/dvpp_txrx.c
+@@ -210,197 +210,231 @@ int dvpp_rx_refill_edma(struct wil6210_priv *wil)
+ 	return rc;
+ }
+ 
+-/*
++void dvpp_l2_error(struct wil6210_priv *wil, dvpp_desc_t *mini,
++			int l2_rx_status, struct wil_net_stats *stats) {
++	wil_dbg_txrx(wil, "L2 RX error, l2_rx_status=0x%x\n", l2_rx_status);
++
++	/* Due to HW issue, KEY error will trigger a MIC error */
++	if (l2_rx_status == WIL_RX_EDMA_ERROR_MIC) {
++		wil_err_ratelimited(wil,
++					"L2 MIC/KEY error, dropping packet\n");
++		stats->rx_mic_error++;
++	}
++	if (l2_rx_status == WIL_RX_EDMA_ERROR_KEY) {
++		wil_err_ratelimited(wil,
++				"L2 KEY error, dropping packet\n");
++		stats->rx_key_error++;
++	}
++	if (l2_rx_status == WIL_RX_EDMA_ERROR_REPLAY) {
++		wil_err_ratelimited(wil,
++					"L2 REPLAY error, dropping packet\n");
++		stats->rx_replay++;
++	}
++	if (l2_rx_status == WIL_RX_EDMA_ERROR_AMSDU) {
++		wil_err_ratelimited(wil,
++					"L2 AMSDU error, dropping packet\n");
++		stats->rx_amsdu_error++;
++	}
++	mini->seg.flags = 2; /* Report L2 error */
++}
++
++/**
+  * Main Rx Loop.
++ *
++ * Number of fragments in the output array is:
++ *    n_frags + DVPP_MAX_NB_FRAGMENTS
++ * The extra space is so as the ring will necessarily hold enough
++ * enough space for all fragment descriptors of the last packet.
++ * Where DVPP_MAX_NUM_SEGMENTS_IN_PACKET is the maximum number of fragments
++ * in a packet.
++ *
++ * @param wil
++ *     radio and dvpp port context
++ * @param sring
++ *     status ring to reap
++ * @param mini
++ *     output array of (n_seg + DVPP_MAX_NUM_SEGMENTS_IN_PACKET)
++ *     pointers to mini descriptors
++ * @param n_seg
++ *     number of elements in output array
++ * @return
++ *     number of fragments copied into the output array (not number of packets)
+  */
+-static u64*
++static int
+ dvpp_sring_reap_rx_edma(struct wil6210_priv *wil, struct wil_status_ring *sring,
+-			dvpp_desc_t *mini)
++			dvpp_desc_t *mini, int n_seg)
+ {
+ 	struct device *dev = wil_to_dev(wil);
+ 	struct wil_rx_status_extended msg1;
+ 	void *msg = &msg1;
+ 	u16 buff_id;
+ 	dvpp_desc_t _mini = {};
+-	struct wil_ring_rx_data *rxdata = &sring->rx_data;
+ 	unsigned int sz = wil->rx_buf_len;
+ 	struct wil_net_stats *stats = NULL;
+ 	u16 dmalen;
+-	int cid;
++	int cid, l2_rx_status;
+ 	bool eop;
+ 	u8 dr_bit;
+ 	u8 data_offset;
+ 	u16 sring_idx = sring - wil->srings;
++	int count = 0;
+ 
+ 	if (unlikely(wil->dvpp_status.enabled == 0))
+-		return NULL;
++		return 0;
+ 
+-again:
+-	wil_get_next_rx_status_msg(sring, &dr_bit, msg);
++	while (1) {
++		wil_get_next_rx_status_msg(sring, &dr_bit, msg);
+ 
+-	/* Completed handling all the ready status messages */
+-	if (dr_bit != sring->desc_rdy_pol)
+-		return NULL;
++		/* Completed handling all the ready status messages */
++		if (unlikely(dr_bit != sring->desc_rdy_pol))
++			break;
+ 
+-	/* Extract the buffer ID from the status message */
+-	buff_id = le16_to_cpu(wil_rx_status_get_buff_id(msg));
++		/* Extract the buffer ID from the status message */
++		buff_id = le16_to_cpu(wil_rx_status_get_buff_id(msg));
+ 
+-	while (!buff_id) {
+-		struct wil_rx_status_extended *s;
+-		int invalid_buff_id_retry = 0;
++		while (!buff_id) {
++			struct wil_rx_status_extended *s;
++			int invalid_buff_id_retry = 0;
++
++			wil_dbg_txrx(
++				wil,
++				"buff_id is not updated yet by HW, (swhead 0x%x)\n",
++				sring->swhead);
++			if (++invalid_buff_id_retry > MAX_INVALID_BUFF_ID_RETRY)
++				break;
++
++			/* Read the status message again */
++			s = (struct wil_rx_status_extended *)(sring->va +
++								(sring->elem_size *
++								sring->swhead));
++			*(struct wil_rx_status_extended *)msg = *s;
++			buff_id = le16_to_cpu(wil_rx_status_get_buff_id(msg));
++		}
+ 
+-		wil_dbg_txrx(
+-			wil,
+-			"buff_id is not updated yet by HW, (swhead 0x%x)\n",
+-			sring->swhead);
+-		if (++invalid_buff_id_retry > MAX_INVALID_BUFF_ID_RETRY)
++		if (unlikely(!wil_val_in_range(buff_id, 1, wil->rx_buff_mgmt.size))) {
++			ktime_t now = ktime_get();
++			if ((now - _last_print) > NSEC_PER_SEC) {
++				wil_err(wil, "Corrupt buff_id=%d, sring->swhead=%d seg=%llx\n", buff_id,
++					sring->swhead, _mini.seg.desc);
++					_last_print = now;
++			}
++			wil_rx_status_reset_buff_id(sring);
++			wil_sring_advance_swhead(sring);
++			sring->invalid_buff_id_cnt++;
+ 			break;
++		}
+ 
+-		/* Read the status message again */
+-		s = (struct wil_rx_status_extended *)(sring->va +
+-						      (sring->elem_size *
+-						       sring->swhead));
+-		*(struct wil_rx_status_extended *)msg = *s;
+-		buff_id = le16_to_cpu(wil_rx_status_get_buff_id(msg));
+-	}
++		/* Extract the mini buf from the rx_buff management array */
++		_mini = wil->rx_buff_mgmt.buff_arr[buff_id].mini;
++		dvpp_desc_clear(&wil->rx_buff_mgmt.buff_arr[buff_id].mini);
+ 
+-	if (unlikely(!wil_val_in_range(buff_id, 1, wil->rx_buff_mgmt.size))) {
+-		ktime_t now = ktime_get();
+-		if ((now - _last_print) > NSEC_PER_SEC) {
+-			wil_err(wil, "Corrupt buff_id=%d, sring->swhead=%d seg=%llx\n", buff_id,
+-				sring->swhead, _mini.seg.desc);
++		if (!_mini.data) {
++			ktime_t now = ktime_get();
++			if ((now - _last_print) > NSEC_PER_SEC) {
++				wil_err(wil, "port %u No Rx buf at buff_id %d seg=%llx @ %p\n",
++					wil->dvpp_status.port_id, buff_id,  _mini.seg.desc,
++					&wil->rx_buff_mgmt.buff_arr[buff_id]);
+ 				_last_print = now;
++			}
++			wil_rx_status_reset_buff_id(sring);
++			/* Move the buffer from the active list to the free list */
++			list_move_tail(&wil->rx_buff_mgmt.buff_arr[buff_id].list,
++					&wil->rx_buff_mgmt.free);
++			wil_sring_advance_swhead(sring);
++			sring->invalid_buff_id_cnt++;
++			_mini.seg.mflags = 1; /* Report Error on Rx */
++			goto skipping;
+ 		}
++
+ 		wil_rx_status_reset_buff_id(sring);
+ 		wil_sring_advance_swhead(sring);
+-		sring->invalid_buff_id_cnt++;
+-		goto again;
+-	}
++		dma_unmap_single(dev, wil->rx_buff_mgmt.buff_arr[buff_id].pa + \
++			_mini.seg.offset, sz, DMA_FROM_DEVICE);
+ 
+-	/* Extract the mini buf from the rx_buff management array */
+-	_mini = wil->rx_buff_mgmt.buff_arr[buff_id].mini;
+-	dvpp_desc_clear(&wil->rx_buff_mgmt.buff_arr[buff_id].mini);
++		dmalen = le16_to_cpu(wil_rx_status_get_length(msg));
+ 
+-	if (!_mini.data) {
+-		ktime_t now = ktime_get();
+-		if ((now - _last_print) > NSEC_PER_SEC) {
+-			wil_err(wil, "port %u No Rx buf at buff_id %d seg=%llx @ %p\n",
+-				wil->dvpp_status.port_id, buff_id,  _mini.seg.desc,
+-				&wil->rx_buff_mgmt.buff_arr[buff_id]);
+-			_last_print = now;
++		if (unlikely(wil->dvpp_status.dbg & DVPP_PORT_DBG_RX)) {
++			wil_dbg_txrx(wil, "Rx, buff_id=%u, sring_idx=%u, dmalen=%u bytes\n",
++				buff_id, sring_idx, dmalen);
+ 		}
+-		wil_rx_status_reset_buff_id(sring);
++
+ 		/* Move the buffer from the active list to the free list */
+ 		list_move_tail(&wil->rx_buff_mgmt.buff_arr[buff_id].list,
+-			       &wil->rx_buff_mgmt.free);
+-		wil_sring_advance_swhead(sring);
+-		sring->invalid_buff_id_cnt++;
+-		goto again;
+-	}
+-
+-	wil_rx_status_reset_buff_id(sring);
+-	wil_sring_advance_swhead(sring);
+-	dma_unmap_single(dev, wil->rx_buff_mgmt.buff_arr[buff_id].pa + \
+-		_mini.seg.offset, sz, DMA_FROM_DEVICE);
++				&wil->rx_buff_mgmt.free);
+ 
+-	dmalen = le16_to_cpu(wil_rx_status_get_length(msg));
++		eop = wil_rx_status_get_eop(msg);
+ 
+-	wil_dbg_txrx(wil, "Rx, buff_id=%u, sring_idx=%u, dmalen=%u bytes\n",
+-		     buff_id, sring_idx, dmalen);
++		cid = wil_rx_status_get_cid(msg);
+ 
+-	/* Move the buffer from the active list to the free list */
+-	list_move_tail(&wil->rx_buff_mgmt.buff_arr[buff_id].list,
+-		       &wil->rx_buff_mgmt.free);
+-
+-	eop = wil_rx_status_get_eop(msg);
+-
+-	cid = wil_rx_status_get_cid(msg);
++		if (unlikely(!wil_val_in_range(cid, 0, max_assoc_sta))) {
++			wil_err(wil, "Corrupt cid=%d, sring->swhead=%d\n", cid,
++				sring->swhead);
++			_mini.seg.mflags = 1; /* Report Error on Rx */
++			goto skipping;
++		}
++		stats = &wil->sta[cid].stats;
+ 
+-	if (unlikely(!wil_val_in_range(cid, 0, max_assoc_sta))) {
+-		wil_err(wil, "Corrupt cid=%d, sring->swhead=%d\n", cid,
+-			sring->swhead);
+-		rxdata->skipping = true;
+-		goto skipping;
+-	}
+-	stats = &wil->sta[cid].stats;
++		if (unlikely(dmalen < ETH_HLEN)) {
++			wil_dbg_txrx(wil, "Short frame, len = %d\n", dmalen);
++			stats->rx_short_frame++;
++			goto skipping;
++		}
+ 
+-	if (unlikely(dmalen < ETH_HLEN)) {
+-		wil_dbg_txrx(wil, "Short frame, len = %d\n", dmalen);
+-		stats->rx_short_frame++;
+-		rxdata->skipping = true;
+-		goto skipping;
+-	}
++		if (unlikely(dmalen > sz)) {
++			wil_err(wil, "Rx size too large: %d bytes!\n", dmalen);
++			stats->rx_large_frame++;
++			goto skipping;
++		}
+ 
+-	if (unlikely(dmalen > sz)) {
+-		wil_err(wil, "Rx size too large: %d bytes!\n", dmalen);
+-		stats->rx_large_frame++;
+-		rxdata->skipping = true;
+-	}
+-skipping:
+-	/* skipping indicates if a certain SKB should be dropped.
+-	 * It is set in case there is an error on the current SKB or in case
+-	 * of RX chaining: as long as we manage to merge the SKBs it will
+-	 * be false. once we have a bad SKB or we don't manage to merge SKBs
+-	 * it will be set to the !EOP value of the current SKB.
+-	 * This guarantees that all the following SKBs until EOP will also
+-	 * get dropped.
+-	 */
+-	if (unlikely(rxdata->skipping)) {
+-		dvpp_p_ops->port_free_mini(&_mini, wil->dvpp_status.port_id);
+-		if (rxdata->mini.data) {
+-			dvpp_p_ops->port_free_mini(&rxdata->mini, wil->dvpp_status.port_id);
+-			dvpp_desc_clear(&rxdata->mini);
+-		}
+-		rxdata->skipping = !eop;
+-		goto again;
+-	}
++		_mini.seg.len = dmalen;
++		_mini.seg.eop = eop;
+ 
+-	_mini.seg.len = dmalen;
++		if (stats) {
++			stats->last_mcs_rx = wil_rx_status_get_mcs(msg);
++			if (stats->last_mcs_rx < ARRAY_SIZE(stats->rx_per_mcs))
++				stats->rx_per_mcs[stats->last_mcs_rx]++;
+ 
+-	if (likely(!rxdata->mini.data)) {
+-		rxdata->mini = _mini;
+-	} else {
+-		/* TODO report multisegments. */
+-		wil_err(wil, "Error: DVPP RX multisegment packet\n");
+-		wil->dvpp_status.enabled = 0;
+-		wil->dvpp_status.error = DVPP_ERROR_MULTISEG_RX;
+-		return NULL;
+-	}
++			stats->rx_packets++;
++			/* TODO: should check if entire packets is rcvd w/o errors */
++			stats->rx_bytes += _mini.seg.len;
++		}
+ 
+-	if (unlikely(!eop))
+-		goto again;
++		l2_rx_status = wil_rx_status_get_l2_rx_status(msg);
++		if (unlikely(l2_rx_status != 0)) {
++			dvpp_l2_error(wil, &_mini, l2_rx_status, stats);
++		}
+ 
+-	/* reaching here rxdata->skb always contains a full packet */
+-	*mini = rxdata->mini;
+-	dvpp_desc_clear(&rxdata->mini);
+-	rxdata->skipping = false;
++		/* Compensate for the HW data alignment according to the status
++		* message
++		*/
++		data_offset = wil_rx_status_get_data_offset(msg);
++		if (data_offset == 0xFF || data_offset > WIL_EDMA_MAX_DATA_OFFSET) {
++			wil_err(wil, "Unexpected data offset %d\n", data_offset);
++			goto skipping;
++		}
+ 
+-	if (stats) {
+-		stats->last_mcs_rx = wil_rx_status_get_mcs(msg);
+-		if (stats->last_mcs_rx < ARRAY_SIZE(stats->rx_per_mcs))
+-			stats->rx_per_mcs[stats->last_mcs_rx]++;
++		_mini.seg.hi = data_offset;
++		_mini.pipe_id = 0; /* TODO set peer ID */
+ 
+-		stats->rx_packets++;
+-		/* TODO: should check if entire packets is rcvd w/o errors */
+-		stats->rx_bytes += _mini.seg.len;
+-	}
++		if (unlikely(wil->dvpp_status.dbg & DVPP_PORT_DBG_RX)) {
++			wil_info(wil, "Rx port %u, buff_id=%u, sring_idx=%u, len=%u"
++				" eop %u data_offset %u offset %u count %u\n",
++				wil->dvpp_status.port_id, buff_id, sring_idx,
++				_mini.seg.len, eop, data_offset, _mini.seg.offset, count);
++		}
+ 
+-	/* Compensate for the HW data alignment according to the status
+-	 * message
+-	 */
+-	data_offset = wil_rx_status_get_data_offset(msg);
+-	if (data_offset == 0xFF || data_offset > WIL_EDMA_MAX_DATA_OFFSET) {
+-		wil_err(wil, "Unexpected data offset %d\n", data_offset);
+-		dvpp_p_ops->port_free_mini(mini, wil->dvpp_status.port_id);
+-		goto again;
++skipping:
++		count++;
++		*mini = _mini;
++		mini++;
++		if (unlikely(count >= n_seg && eop))
++			break;
+ 	}
+-	mini->seg.offset += data_offset;
+-
+-	mini->pipe_id = 0; /* TODO set peer ID */
+ 
+-	return (u64*)(mini->data);
++	return count;
+ }
+ 
++
+ int dvpp_rx_handle_edma(void *p, dvpp_desc_t *b, u32 n_pkts,
+ 			u32 verbose)
+ {
+@@ -409,8 +443,6 @@ int dvpp_rx_handle_edma(void *p, dvpp_desc_t *b, u32 n_pkts,
+ 	struct wil_status_ring *sring;
+ 	int cnt = 0;
+ 	struct wil_ring *ring = &wil->ring_rx;
+-	u64 * data;
+-	dvpp_desc_t *mini = b;
+ 
+ 	if (unlikely(!ring->va)) {
+ 		wil_err(wil, "Rx IRQ while Rx not yet initialized\n");
+@@ -427,10 +459,8 @@ int dvpp_rx_handle_edma(void *p, dvpp_desc_t *b, u32 n_pkts,
+ 				i);
+ 			continue;
+ 		}
+-		while ((cnt < n_pkts) &&
+-		       (NULL != (data = dvpp_sring_reap_rx_edma(wil, sring, mini++)))) {
+-			cnt++;
+-		}
++
++		cnt = dvpp_sring_reap_rx_edma(wil, sring, b, n_pkts);
+ 		wil_w(wil, sring->hwtail, (sring->swhead - 1) % sring->size);
+ 	}
+ 
+@@ -504,9 +534,11 @@ int dvpp_tx_sring_handler(struct wil6210_priv *wil,
+ 		cid = wil->ring2cid_tid[ring_id][0];
+ 		stats = (cid < max_assoc_sta ? &wil->sta[cid].stats : NULL);
+ 
+-		wil_dbg_txrx(wil,
++		if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
++			wil_dbg_txrx(wil,
+ 			     "tx_status: completed desc_ring (%d), num_descs (%d)\n",
+ 			     ring_id, num_descs);
++		}
+ 
+ 		used_before_complete = wil_ring_used_tx(ring);
+ 
+@@ -520,15 +552,17 @@ int dvpp_tx_sring_handler(struct wil6210_priv *wil,
+ 			*d = *_d;
+ 
+ 			dmalen = le16_to_cpu(d->dma.length);
+-			trace_wil6210_tx_status(&msg, ring->swtail, dmalen);
+-			wil_dbg_txrx(wil,
+-				     "TxC[%2d][%3d] : %d bytes, status 0x%02x\n",
+-				     ring_id, ring->swtail, dmalen,
+-				     msg.status);
+-			wil_hex_dump_txrx("TxS ", DUMP_PREFIX_NONE, 32, 4,
+-					  (const void *)&msg, sizeof(msg),
+-					  false);
+ 
++			if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
++				trace_wil6210_tx_status(&msg, ring->swtail, dmalen);
++				wil_dbg_txrx(wil,
++						"TxC[%2d][%3d] : %d bytes, status 0x%02x\n",
++						ring_id, ring->swtail, dmalen,
++						msg.status);
++				wil_hex_dump_txrx("TxS ", DUMP_PREFIX_NONE, 32, 4,
++						(const void *)&msg, sizeof(msg),
++						false);
++			}
+ 			if (WIL_CTX_FLAGS(ctx) & WIL_CTX_FLAG_RESERVED_USED)
+ 				txdata->tx_reserved_count++;
+ 
+@@ -577,13 +611,15 @@ int dvpp_tx_sring_handler(struct wil6210_priv *wil,
+ 			desc_cnt++;
+ 		}
+ 
+-		/* performance monitoring */
+-		used_new = wil_ring_used_tx(ring);
+-		if (wil_val_in_range(wil->ring_idle_trsh,
+-				     used_new, used_before_complete)) {
+-			wil_dbg_txrx(wil, "Ring[%2d] idle %d -> %d\n",
+-				     ring_id, used_before_complete, used_new);
+-			txdata->last_idle = get_cycles();
++		if (wil->dvpp_status.dbg & DVPP_PORT_WIL_PERF_MONITORING) {
++			/* performance monitoring */
++			used_new = wil_ring_used_tx(ring);
++			if (wil_val_in_range(wil->ring_idle_trsh,
++						used_new, used_before_complete)) {
++				wil_dbg_txrx(wil, "Ring[%2d] idle %d -> %d\n",
++						ring_id, used_before_complete, used_new);
++				txdata->last_idle = get_cycles();
++			}
+ 		}
+ 
+ again:
+@@ -616,7 +652,26 @@ int dvpp_tx_complete(void *p)
+ 	return 0;
+ }
+ 
+-int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_pkts,
++/**
++ * dvpp_tx_batch: transmit a vector of segment descriptors
++ *
++ * It is guaranteed that entire packets be included in the input array.
++ * That is, the last segment must have 'eop' bit set
++ *
++ * @param p
++ *     radio and dvpp port context
++ * @param pipe
++ *     pipe (i.e. TX ring) the segments belong to
++ * @param bufs
++ *     input array
++ * @param n_seg
++ *     number of elements in output array
++ * @param verbose
++ *     for debug only, allow verbose level to be set w/o debugfs
++ * @return
++ *     number of segments transmitted
++ */
++int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_seg,
+ 		  u32 verbose)
+ {
+ 	struct wil6210_priv *wil = (struct wil6210_priv *)p;
+@@ -632,14 +687,16 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_pkts,
+ 	uint len;
+ 	dma_addr_t pa;
+ 	dvpp_desc_t *b;
+-	int nr_frags;
+-	bool mcast = false;
+-	struct vring_tx_desc dd, *d = &dd;
++	int nr_segs;
++	struct vring_tx_desc dd, *d;
++	struct vring_tx_desc start;
++
+ 	volatile struct vring_tx_desc *_d;
++	volatile struct vring_tx_desc *_start;
+ 	int num_sent = 0;
+ 	int num_bytes_sent = 0; /* Statistics */
+-	int num_seg = 0;
+ 	u32 swhead;
++	u32 last_good_swhead;
+ 	int avail;
+ 
+ 	if (unlikely(wil->dvpp_status.enabled == 0))
+@@ -658,14 +715,23 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_pkts,
+ 		spin_unlock(&txdata->lock);
+ 		return -EINVAL;
+ 	}
+-	swhead = ring->swhead;
++	last_good_swhead = swhead = ring->swhead;
+ 
+ 	/* Count number of buffers we can transmit */
+ 	avail = wil_ring_avail_tx(ring);
+ 
+-	while (num_sent < n_pkts) {
++	if (avail < n_seg) {
++		wil_err(wil, "TX overflow null data \n");
++
++		/* Overflow, this is a sw bug, hence transmit nothing. */
++		spin_unlock(&txdata->lock);
++		return -EINVAL;
++	}
++
++	nr_segs = 1; /* counts number of DMA segment in the current packet */
++
++	while (num_sent < n_seg) {
+ 		void *data;
+-		//b = bufs[num_sent];
+ 		b = bufs++;
+ 		if (likely(!b->seg.special))
+ 			data = dvpp_p_ops->get_desc_kernel_address(b);
+@@ -674,57 +740,99 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_pkts,
+ 			data = skb->data;
+ 		}
+ 		if (unlikely(data == 0)) {
++			wil_err(wil, "transmit null data \n");
+ 			break;
+ 		}
+-		// no account for multi frags yet
+-		nr_frags = 0;
+-		num_seg += 1 + nr_frags;
+-		if (num_seg > avail) {
++
++		len = b->seg.len;
++		if (unlikely(len > WIL_MAX_ETH_MTU)) {
++			wil_info(wil, "tx len %u max %u !!\n", len, WIL_MAX_ETH_MTU);
+ 			break;
+ 		}
+ 
+-		len = b->seg.len;
++		if (unlikely(len < ETH_HLEN)) {
++			wil_info(wil, "short tx len %u !!\n", len);
++			break;
++		}
+ 		_d = &ring->va[swhead].tx.legacy;
++
+ 		data += b->seg.offset;
+ 		pa = dma_map_single(dev, data, len, DMA_TO_DEVICE);
+ 
+ 		if (unlikely(dma_mapping_error(dev, pa))) {
+-			// We need to clean up what we sent
+-			goto dma_error;
++			/* TODO: this really can't happen */
++			wil_info(wil, "dma_mapping_error !!\n");
++			break;
+ 		}
+ 
+ 		ring->ctx[swhead].desc = *b;
+ 		ring->ctx[swhead].desc.seg.mflags = wil_mapped_as_single;
+ 		ring->ctx[swhead].desc.seg.flags = 0; //ctx_flags;
+-		/* 1-st segment */
++
++		if (nr_segs == 1) {
++			d = &start;
++			_start = _d; /* remember first descriptor */
++		} else {
++			d = &dd;
++		}
+ 		wil->txrx_ops.tx_desc_map((union wil_tx_desc *)d, pa, len,
+ 					  ring_index);
+-		if (unlikely(mcast)) {
+-			d->mac.d[0] |=
+-				BIT(MAC_CFG_DESC_TX_0_MCS_EN_POS); /* MCS 0 */
+-			if (unlikely(len >
+-				     WIL_BCAST_MCS0_LIMIT)) /* set MCS 1 */
+-				d->mac.d[0] |=
+-					(1 << MAC_CFG_DESC_TX_0_MCS_INDEX_POS);
++
++		if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
++			wil_info(wil, "idx %u eop %u len %u num_sent %u start %p _d %p "
++				" nr_segs %u pa %p cpu %u swhead %u last %u\n",
++				b->seg.index, b->seg.eop, len, num_sent, _start, _d,
++				nr_segs, (void*)pa, task_cpu(current),
++				swhead, last_good_swhead);
+ 		}
+ 
+-		ring->ctx[swhead].desc.seg.flags = nr_frags;
+-		wil_tx_desc_set_nr_frags(d, nr_frags + 1);
++		if (b->seg.eop) {
++			/* for the last seg only */
++			d->dma.d0 |= BIT(DMA_CFG_DESC_TX_0_CMD_EOP_POS);
++			d->dma.d0 |= BIT(DMA_CFG_DESC_TX_0_CMD_MARK_WB_POS);
++			d->dma.d0 |= BIT(DMA_CFG_DESC_TX_0_CMD_DMA_IT_POS);
+ 
+-		/* skip middle seggments */
++			last_good_swhead = swhead;
+ 
+-		/* for the last seg only */
+-		d->dma.d0 |= BIT(DMA_CFG_DESC_TX_0_CMD_EOP_POS);
+-		d->dma.d0 |= BIT(DMA_CFG_DESC_TX_0_CMD_MARK_WB_POS);
+-		d->dma.d0 |= BIT(DMA_CFG_DESC_TX_0_CMD_DMA_IT_POS);
+-		*_d = *d;
++			/* Write nb fragments in the start descriptor */
++			wil_tx_desc_set_nr_frags(&start, nr_segs);
++
++			if (unlikely(wil->dvpp_status.dbg & DVPP_PORT_DBG_TX)) {
++				print_hex_dump(KERN_INFO, "desc(eop): ", DUMP_PREFIX_NONE,
++			       32, 1, d, sizeof(*_d), false);
++			}
++			*_d = *d; /* Also write the last descriptor */
++			if (unlikely(nr_segs > 1)) {
++				if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
++					print_hex_dump(KERN_INFO, "desc(str): ", DUMP_PREFIX_NONE,
++					32, 1, &start, sizeof(*_d), false);
++				}
++				if (_start == _d) {
++					wil_err(wil, " nr_segs %u and single desc \n", nr_segs);
++				}
++				*_start = start; /* Also write the first descriptor */
++			}
++			nr_segs = 1;
++
++		} else if (unlikely(nr_segs > 1)) {
++			/* middle fragment */
++			if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
++				print_hex_dump(KERN_INFO, "desc(mid): ", DUMP_PREFIX_NONE,
++			       32, 1, d, sizeof(*_d), false);
++			}
++			*_d = *d;
++			nr_segs++;
++		} else {
++			/* First fragment */
++			nr_segs++;
++		}
+ 
+ 		/* Maintains statistics */
+ 		num_sent++;
+ 		num_bytes_sent += len;
+ 
+ 		/* advance swhead */
+-		swhead = (swhead + nr_frags + 1) % ring->size;
++		swhead = (swhead + 1) % ring->size;
+ 	}
+ 
+ 	if (num_sent) {
+@@ -733,7 +841,7 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_pkts,
+ 		 */
+ 		wmb();
+ 		/* Update ring head */
+-		ring->swhead = swhead;
++		ring->swhead = (last_good_swhead + 1) % ring->size;;
+ 
+ 		/* Kick off DMA */
+ 		wil_w(wil, ring->hwtail, ring->swhead);
+@@ -746,12 +854,6 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_pkts,
+ 	spin_unlock(&txdata->lock);
+ 
+ 	return num_sent;
+-dma_error:
+-
+-	spin_unlock(&txdata->lock);
+-
+-	wil_err(wil, "%s: dma error\n", __FUNCTION__);
+-	return -EINVAL;
+ }
+ 
+ int dvpp_tx_avail(void *p, u32 *credit, u32 n_pipe)
+@@ -845,14 +947,24 @@ netdev_tx_t dvpp_transmit_skb(void * p, struct sk_buff *skb, u8 cid,
+ 		return NET_XMIT_DROP;
+ 	}
+ 
++	if (skb->len < ETH_HLEN || skb->len > WIL_MAX_ETH_MTU) {
++		dev_kfree_skb_any(skb);
++		return NET_XMIT_DROP;
++	}
++
+ 	mini = (dvpp_desc_t*)&skb->cb[0];
+ 	dvpp_desc_clear(mini);
+-	mini->data = skb;
++	mini->data = (u64)skb;
+ 
+ 	mini->seg.len = skb->len;
+ 	mini->seg.eop = 1;
+ 	mini->seg.special = 1;
+ 
++	if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
++		wil_info(wil, "len %u  %pM %pM %02x %02x\n",
++			skb->len, da, da+6, da[12], da[13]);
++	}
++
+ 	dvpp_tx_batch(p, cid, mini, 1, 0);
+ 
+ 	return NETDEV_TX_OK;
+diff --git a/wil6210/txrx_edma.c b/wil6210/txrx_edma.c
+index 3403c20..bfb7583 100644
+--- a/wil6210/txrx_edma.c
++++ b/wil6210/txrx_edma.c
+@@ -458,6 +458,7 @@ static void wil_ring_free_edma(struct wil6210_priv *wil, struct wil_ring *ring)
+ 		}
+ 		*d = *_d;
+ 		wil_tx_desc_unmap_edma(dev, (union wil_tx_desc *)d, ctx);
++		/* TODO: need to free DVPP mini descriptors properly */
+ 		if (WIL_CTX_SKB(ctx))
+ 			dev_kfree_skb_any(WIL_CTX_SKB(ctx));
+ 		ring->swtail = wil_ring_next_tail(ring);
+diff --git a/wil6210/wil6210.h b/wil6210/wil6210.h
+index 82fde10..8310b50 100644
+--- a/wil6210/wil6210.h
++++ b/wil6210/wil6210.h
+@@ -1020,11 +1020,14 @@ enum dvpp_error {
+ 	DVPP_ERROR_MULTISEG_RX,
+ };
+ 
++#define DVPP_PORT_DBG_TX 1
++#define DVPP_PORT_DBG_RX 2
++#define DVPP_PORT_WIL_PERF_MONITORING 4
+ struct dvpp_status {
+ 	u8 port_id;
+ 	u8 enabled;
+ 	u8 error;
+-	u8 res;
++	u8 dbg;
+ };
+ 
+ struct wil6210_priv {
+-- 
+2.24.1
+

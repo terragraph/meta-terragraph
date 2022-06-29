@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+CLI_PATH="/usr/sbin/tg2"
+if [ ! -x "$CLI_PATH" ]; then
+  echo "$CLI_PATH not found"
+  exit 1
+fi
+
+# Dump stats from the given sources:
+set -- "driver-if" "minion" "system" "openr"
+for s in "$@"; do
+  echo -e "============== $s ==============\n"
+  eval $CLI_PATH stats $s --dump 2>&1
+  echo
+done
+
+exit 0

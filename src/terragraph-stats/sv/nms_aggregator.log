@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/nms_aggregator
+exec svlogd /var/log/nms_aggregator

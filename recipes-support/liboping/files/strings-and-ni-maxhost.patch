@@ -1,0 +1,19 @@
+--- a/src/oping.c	2017-05-11 00:24:21.000000000 -0700
++++ b/src/oping.c	2019-06-12 14:01:36.199622043 -0700
+@@ -25,6 +25,7 @@
+ # include <stdlib.h>
+ # include <stdio.h>
+ # include <string.h>
++# include <strings.h>
+ # include <stdint.h>
+ # include <inttypes.h>
+ # include <errno.h>
+@@ -63,7 +64,7 @@
+ #endif
+ 
+ #if HAVE_NETDB_H
+-# include <netdb.h> /* NI_MAXHOST */
++#define NI_MAXHOST 1025
+ #endif
+ 
+ #if HAVE_SIGNAL_H

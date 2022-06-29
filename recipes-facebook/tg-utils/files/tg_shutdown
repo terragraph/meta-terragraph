@@ -1,0 +1,36 @@
+#! /bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+### BEGIN INIT INFO
+# Provides:             tg_shutdown
+# Required-Start:       $local_fs
+# Required-Stop:
+# Default-Start:        0 6
+# Default-Stop:
+# Short-Description:    Perform TG specific shutdown actions.
+### END INIT INFO
+
+/etc/init.d/persist_reboot_history.sh down
+/etc/init.d/persist_remaining_gps_timeout.sh
+# Force stats_agent to dump unsent events into cache file.
+#
+# We are rebooting real soon, so stopping e2e_minion and stats_agent
+# here should be ok.
+#
+# Stopping e2e_minion seems to be necessary for stats agent to consistently
+# dump the most recently added event - such as a watchdog reboot event.
+restart_e2e_minion --retries 3 --stoponly
+sleep 1
+sv stop stats_agent
+/etc/init.d/persist_event_cache.sh save
+if [ "$1" != "fast" ]; then
+	# TODO: Throttle. Rotating logs frequently may be unhealthy for (EVT) nand.
+	mkdir -p /data/log
+	touch /data/log/logs.tar.gz
+	/usr/sbin/logrotate -f /etc/logrotate.conf
+fi
+exit 0

@@ -1,0 +1,564 @@
+From 10f299b8425182daed3e17726e331bf3326a7c29 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Thu, 2 Jul 2020 20:54:02 -0700
+Subject: [PATCH] support for multi-segments packets
+
+---
+ src/vnet/devices/dvpp/dvpp.c       | 139 +++++++++++++++++++---------
+ src/vnet/devices/dvpp/dvpp_local.c |  45 ++++++---
+ src/vnet/devices/dvpp/dvpp_sched.c | 144 +++++++++++++++++++++++------
+ src/vnet/devices/dvpp/dvpp_sched.h |   9 ++
+ src/vnet/devices/dvpp/interface.h  |   6 +-
+ 5 files changed, 256 insertions(+), 87 deletions(-)
+
+diff --git a/src/vnet/devices/dvpp/dvpp.c b/src/vnet/devices/dvpp/dvpp.c
+index 03e8548d3..795714d10 100644
+--- a/src/vnet/devices/dvpp/dvpp.c
++++ b/src/vnet/devices/dvpp/dvpp.c
+@@ -104,7 +104,7 @@ int dvpp_create_if (vlib_main_t *vm, u8 *hw_addr_set, u32 port, u32 pipe)
+   dvpp_main.sw2device[sw->sw_if_index].pipe_id = pipe;
+   dvpp_main.sw2device[sw->sw_if_index].inject = 1;
+ 
+-  dvpp_enable_kernel_inject(sw->sw_if_index, 1);
++  dvpp_enable_kernel_inject (sw->sw_if_index, 1);
+   return 0;
+ }
+ 
+@@ -272,9 +272,10 @@ static int dvpp_create_control_thread (vlib_main_t *vm)
+                                 &cpuset);
+   if (ret != 0)
+     {
+-      vlib_log_err (dvpp_main.control_thread, "%s: Unable to set poller "
+-                      "thread affinity: %s\n",
+-                      __FUNCTION__, strerror (errno));
++      vlib_log_err (dvpp_main.control_thread,
++                    "%s: Unable to set poller "
++                    "thread affinity: %s\n",
++                    __FUNCTION__, strerror (errno));
+       goto fail;
+     }
+ fail:
+@@ -304,8 +305,8 @@ static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
+   ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_GET_PORTS, &port_list);
+   if (ret)
+     {
+-      vlib_log_err (dvpp_main.logger, "%s: cannot get ports %d fd %d, %s\n", __FUNCTION__, ret,
+-                    dvpp_main.dvpp_fd, strerror (errno));
++      vlib_log_err (dvpp_main.logger, "%s: cannot get ports %d fd %d, %s\n",
++                    __FUNCTION__, ret, dvpp_main.dvpp_fd, strerror (errno));
+       goto fail;
+     }
+ 
+@@ -332,9 +333,9 @@ static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
+       dvpp_main.dvpp_fd, 0);
+   if (dvpp_main.maps == MAP_FAILED)
+     {
+-      vlib_log_err (dvpp_main.logger, "%s: cannot map port list size %lu, errno %d %s\n",
+-                    __FUNCTION__, sizeof (*dvpp_main.maps), errno,
+-                    strerror (errno));
++      vlib_log_err (
++          dvpp_main.logger, "%s: cannot map port list size %lu, errno %d %s\n",
++          __FUNCTION__, sizeof (*dvpp_main.maps), errno, strerror (errno));
+       goto fail;
+     }
+ 
+@@ -376,7 +377,8 @@ static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
+               ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_GET_PORTS, &cur_port_list);
+           if (ret)
+             {
+-              vlib_log_err (dvpp_main.logger, "%s: cannot get ports %d\n", __FUNCTION__, ret);
++              vlib_log_err (dvpp_main.logger, "%s: cannot get ports %d\n",
++                            __FUNCTION__, ret);
+               goto fail;
+             }
+ 
+@@ -444,6 +446,7 @@ u8 *format_dvpp_rx_trace (u8 *s, va_list *va)
+ 
+ u32 log_count = 0;
+ int alloc = 0;
++static int printp = 0;
+ VLIB_NODE_FN (dvpp_input_node)
+ (vlib_main_t *vm, vlib_node_runtime_t *node, vlib_frame_t *f)
+ {
+@@ -511,7 +514,13 @@ VLIB_NODE_FN (dvpp_input_node)
+ #endif
+       if (ret > 0)
+         {
++          int num_in_chain = 1;
+           u32 *buffers_out = to_next;
++          /* Head/Tail pointers of the list we will build in multi-segment case
++           */
++          vlib_buffer_t *head = 0;
++          u32 head_idx;
++          vlib_buffer_t *tail = 0;
+           count = 0;
+           while (count < ret)
+             {
+@@ -523,61 +532,102 @@ VLIB_NODE_FN (dvpp_input_node)
+               if (b == 0 || rxb->seg.len == 0)
+                 {
+                   count++;
+-                  vlib_log_debug (
++                  vlib_log_notice (
+                       dvpp_main.logger,
+                       "%s: rx error buffer_idx port %u index %d b %p "
+-                      "zero len cnt %u ret %u rxblen %u desc %lu data %lu\n",
++                      "zero len cnt %u ret %u rxblen %u desc %lx data %lx\n",
+                       __FUNCTION__, port, buffer_idx, b, count, ret,
+                       rxb->seg.len, rxb->seg.desc, rxb->data);
+                   /* TODO: this is a serious error, should terminate
+                    * or notify that driver is errored.
+                    */
++                  ASSERT (0);
+                   continue;
+                 }
++
+               b->current_length = rxb->seg.len;
+               b->current_data = rxb->seg.offset - sizeof (vlib_buffer_t);
+-              if (dvpp_main.input_verbose && ((log_count++ & 0xffff) == 0))
++
++              if (rxb->seg.eop == 0 || head)
++                {
++                  /* Slow-path for secondary segments,
++                   * build chain of VPP buffers
++                   */
++                  if (head == 0)
++                    {
++                      num_in_chain = 1;
++                      head = tail = b; /* Start building the chain */
++                      head_idx = buffer_idx;
++                      head->total_length_not_including_first_buffer = 0;
++                      /* First segment of the chain, adjust length */
++                      b->current_length -= rxb->seg.hi;
++                      b->current_data += rxb->seg.hi;
++                    }
++                  else
++                    {
++                      num_in_chain++;
++                      if (num_in_chain > DVPP_MAX_NUM_SEGMENTS_IN_PACKET)
++                        {
++                          vlib_log_notice (
++                              dvpp_main.logger,
++                              " Construcing over large packets num_in_chain "
++                              " %u count %u\n",
++                              num_in_chain, count);
++                            ASSERT(0);
++                        }
++                      tail->flags = VLIB_BUFFER_NEXT_PRESENT;
++                      tail->next_buffer = buffer_idx;
++                      tail = b;
++                      head->total_length_not_including_first_buffer +=
++                          rxb->seg.len;
++                      b->flags = 0;
++                    }
++                }
++              else
+                 {
+-                  u8 *s = 0;
++                  num_in_chain = 1;
++                  /* Single fragment, adjust length */
++                  b->current_length -= rxb->seg.hi;
++                  b->current_data += rxb->seg.hi;
++                  b->flags = 0;
++                }
++
++              if (dvpp_main.input_verbose)
++                {
++                  u8 *s = 0, *ifc = 0;
+                   vnet_main_t *vnm = vnet_get_main ();
+                   u32 sw_idx = dvpp_main.sw_if_index[port][rxb->pipe_id];
+-                  vnet_sw_interface_t *si = vnet_get_sw_interface (vnm, sw_idx);
+-
+-                  s = format (0, "%u%c", format_vnet_sw_interface_name, vnm,
+-                              si, 0);
+-                  char *a = (char *)b->data + b->current_data;
+-                  vlib_log_notice (
+-                      dvpp_main.logger,
+-                      "%s: port %u %s num_rx %lu buffer_idx %d b %p data %p len %u "
+-                      "left %u next_index %u rxoffset %u current_data %d "
+-                      "pipe %u "
+-                      " desc %lx %lx "
+-                      " flags %x swidx %u a %p [%02x %02x] "
+-                      "%02x:%02x:%02x:%02x:%02x:%02x "
+-                      " %02x:%02x:%02x:%02x:%02x:%02x %02x%02x %02x %02x "
+-                      "%02x %02x %02x %02x\n",
+-                      __FUNCTION__, port, s,
+-                      dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read,
+-                      buffer_idx, b, b->data, b->current_length,
+-                      n_left_to_next, next_index, rxb->seg.offset,
+-                      b->current_data, rxb->pipe_id, rxb->seg.desc, rxb->data,
+-                      b->flags, dvpp_main.sw_if_index[port][rxb->pipe_id], a,
+-                      *(a - 2), *(a - 1), a[0], a[1], a[2], a[3], a[4], a[5],
+-                      a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13],
+-                      a[14], a[15], a[16], a[17], a[18], a[19]);
++                  vnet_sw_interface_t *si =
++                      vnet_get_sw_interface (vnm, sw_idx);
++
++                  ifc = format (0, "%u%c", format_vnet_sw_interface_name, vnm,
++                                si, 0);
++                  s = format (0, "%U%c", format_hexdump,
++                              b->data + b->current_data, b->current_length, 0);
++                  printf ("%s:\nSeg %u len %u tot %u :\n%s\n", ifc, count,
++                          b->current_length,
++                          head ? head->total_length_not_including_first_buffer
++                               : 0,
++                          s);
+                   vec_free (s);
++                  vec_free (ifc);
+                 }
+ 
+-              dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read++;
+               vnet_buffer (b)->sw_if_index[VLIB_RX] =
+                   dvpp_main.sw_if_index[port][rxb->pipe_id];
+               vnet_buffer (b)->sw_if_index[VLIB_TX] = ~0;
++              dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read++;
+ 
+-              n_rx_packets++;
+-              buffers_out[0] = buffer_idx;
+-              buffers_out += 1;
+-              n_left_to_next--;
+               count++;
++              if (rxb->seg.eop)
++                {
++                  n_rx_packets++;
++                  buffers_out[0] = head ? head_idx : buffer_idx;
++                  buffers_out += 1;
++                  n_left_to_next--;
++                  head = tail = 0;
++                  head_idx = ~0;
++                }
+             }
+         }
+       else
+@@ -682,7 +732,8 @@ VLIB_NODE_FN (dvpp_input_node)
+ #endif
+               if (ret < 0)
+                 {
+-                  vlib_log_warn (dvpp_main.logger, "%s: Fail to transmit %d packets, ret %d\n",
++                  vlib_log_warn (dvpp_main.logger,
++                                 "%s: Fail to transmit %d packets, ret %d\n",
+                                  __FUNCTION__, n_pkts, ret);
+                 }
+ #ifdef USE_PERF
+diff --git a/src/vnet/devices/dvpp/dvpp_local.c b/src/vnet/devices/dvpp/dvpp_local.c
+index d92291043..943eea9bb 100644
+--- a/src/vnet/devices/dvpp/dvpp_local.c
++++ b/src/vnet/devices/dvpp/dvpp_local.c
+@@ -77,7 +77,8 @@ static uword dvpp_kernel_inject (vlib_main_t *vm, vlib_node_runtime_t *node,
+           rd_sw_if_index = dpo->rd_sw_if_index;
+ 
+           /* Borrow logic from slowpath implementation in tgcfg plugin */
+-          inject = (rd_sw_if_index == ~0 || dvpp_main.sw2device[rw_idx].inject);
++          inject =
++              (rd_sw_if_index == ~0 || dvpp_main.sw2device[rw_idx].inject);
+ 
+           if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
+             {
+@@ -94,18 +95,38 @@ static uword dvpp_kernel_inject (vlib_main_t *vm, vlib_node_runtime_t *node,
+ 
+           if (inject)
+             {
++              /* TODO: make sure n_tx doesn't overflow */
+               /* inject into kernel */
+-              vector[n_tx].seg.index = bi;
+-              vector[n_tx].seg.len = b->current_length;
+-              vector[n_tx].seg.offset = sizeof(vlib_buffer_t) + b->current_data;
+-              vector[n_tx].seg.eop = 1;
+-
+-              vector[n_tx].port_id =
+-                  dvpp_main.sw2device[rw_idx].port_id;
+-              vector[n_tx].pipe_id =
+-                  dvpp_main.sw2device[rw_idx].pipe_id;
+-
+-              n_tx++;
++              while (1)
++                {
++                  /* build descriptor */
++                  vector[n_tx].seg.index = bi;
++                  vector[n_tx].seg.len = b->current_length;
++                  vector[n_tx].seg.offset =
++                      sizeof (vlib_buffer_t) + b->current_data;
++                  vector[n_tx].port_id = dvpp_main.sw2device[rw_idx].port_id;
++                  vector[n_tx].pipe_id = dvpp_main.sw2device[rw_idx].pipe_id;
++#if 0
++                  printf ("DVPP injecting rw_idx %u flag %x (next %u) len %u idx %u n_tx %u FLAGS "
++                          "%x %x\n",
++                          rw_idx, b->flags, b->flags&VLIB_BUFFER_NEXT_PRESENT, b->current_length, bi, n_tx,
++                          VLIB_BUFFER_NEXT_PRESENT,
++                          VLIB_BUFFER_TOTAL_LENGTH_VALID);
++#endif
++                  if (b->flags & VLIB_BUFFER_NEXT_PRESENT)
++                    {
++                      /* Copy chained segments */
++                      bi = b->next_buffer;
++                      b = vlib_get_buffer (vm, bi);
++                      vector[n_tx].seg.eop = 0;
++                      n_tx++;
++                      continue;
++                    }
++                  /* mark end of packet */
++                  vector[n_tx].seg.eop = 1;
++                  n_tx++;
++                  break;
++                }
+             }
+           else
+             {
+diff --git a/src/vnet/devices/dvpp/dvpp_sched.c b/src/vnet/devices/dvpp/dvpp_sched.c
+index 8f40db425..e21795850 100644
+--- a/src/vnet/devices/dvpp/dvpp_sched.c
++++ b/src/vnet/devices/dvpp/dvpp_sched.c
+@@ -4,10 +4,13 @@
+ #include "dvpp_sched.h"
+ 
+ vnet_sched_main_t vnet_sched_main;
++vlib_log_class_t dvpp_sched_logger;
+ 
+ clib_error_t *vnet_sched_port_init (vlib_main_t *vm)
+ {
+   vnet_sched_buffer_ring_t *r;
++  dvpp_sched_logger = vlib_log_register_class ("DVPP-SCHED", 0);
++
+   for (int i = 0; i < VNET_SCHED_NUM_PORTS; i++)
+     {
+       for (int j = 0; j < VNET_SCHED_PIPES_PER_PORT; j++)
+@@ -47,80 +50,163 @@ int vnet_sched_port_enqueue_locked (vlib_main_t *vm, u32 port_id, u32 pipe_id,
+   vnet_sched_port_t *port = &vnet_sched_main.ports[port_id];
+   vnet_sched_buffer_ring_t *ring = &port->pipes[pipe_id].flows[flow_id];
+   vlib_buffer_t *b;
+-
++  u32 current_idx;
+   int ret = 0;
++  u32 enq;
++  u32 tlen = 0;           /* Total length of DMA chain */
++  u32 num_in_chain = 0;   /* Num descriptors in DMA chain */
++  dvpp_desc_t *start = 0; /* Start of DMA chain */
++
+   clib_spinlock_lock (&port->lock);
+   u16 qlen = ring->enq - ring->deq;
+   u16 to_next = (VNET_SCHED_QUEUE_SIZE - 1) - qlen;
++  if (EXPECT_FALSE(to_next == 0)) {
++    clib_spinlock_unlock (&port->lock);
++    return 0;
++  }
++
+   if (to_next > n_buffers)
+     to_next = n_buffers;
+ 
++  /* Start at first packet */
++  current_idx = *indexes++;
++  enq = ring->enq;
+   while (to_next)
+     {
+       dvpp_desc_t desc = {};
+-      if (*indexes == ~0)
++
++      if (EXPECT_FALSE(current_idx == ~0))
+         {
+-          break;
++          /* TODO: Clean recovery */
++          vlib_log_err (dvpp_sched_logger,
++                        "%s: enqueuing unassigned buffer!\n");
++          ASSERT (start == 0);
++          goto error;
+         }
+-      b = vlib_get_buffer (vm, *indexes);
+-      /* build descriptor */
+-      desc.seg.index = *indexes;
++      b = vlib_get_buffer (vm, current_idx);
++
++      /* Build descriptor */
++      desc.seg.index = current_idx;
+       desc.seg.len = b->current_length;
+-      desc.seg.offset = sizeof(vlib_buffer_t) + b->current_data;
+-      desc.seg.eop = 1;
+-      /* copy */
+-      ring->ring[ring->enq & (VNET_SCHED_QUEUE_SIZE - 1)] = desc;
+-      ring->enq++;
+-      ret++;
+-      indexes++;
++      if (EXPECT_FALSE(b->current_length == 0)) {
++        vlib_log_err(dvpp_sched_logger,
++              "enqueue NULL packet!! index %u\n", current_idx);
++        ret = 0; /* Drop entire vector */
++        goto error;
++      }
++      tlen += b->current_length;
++      desc.seg.offset = sizeof (vlib_buffer_t) + b->current_data;
++      desc.seg.eop = !(b->flags & VLIB_BUFFER_NEXT_PRESENT);
++      /* Copy descriptor in */
++      ring->ring[enq & (VNET_SCHED_QUEUE_SIZE - 1)] = desc;
++      /* Record first descriptor */
++      if (start == 0)
++        {
++          start = &ring->ring[enq & (VNET_SCHED_QUEUE_SIZE - 1)];
++        }
++      enq++;
++      num_in_chain++;
++      if (b->flags & VLIB_BUFFER_NEXT_PRESENT)
++        {
++          /* Unwind the chain */
++          current_idx = b->next_buffer;
++          continue;
++        }
++
++      /* Used by the dequeue engine */
++      start->total_len = tlen;
++      start->num_in_chain = num_in_chain;
++      start = 0;
++      num_in_chain = 0;
++      tlen = 0;
++      ret++; /* Number of packets */
++      current_idx = *indexes++;
+       to_next--;
+     }
++  _wmb ();
++  ring->enq = enq;
++error:
+   clib_spinlock_unlock (&port->lock);
+-
+   return ret;
+ }
+ 
+ int dump = 0;
+ int vnet_sched_port_dequeue (vlib_main_t *vm, u32 port_id, u32 pipe_id,
+-                             u32 flow_id, dvpp_desc_t *desc, int n_pkts)
++                             u32 flow_id, dvpp_desc_t *desc, int n_seg)
+ {
+   ASSERT (flow_id < VNET_SCHED_FLOWS_PER_PIPE);
+   ASSERT (pipe_id < VNET_SCHED_PIPES_PER_PORT);
+   ASSERT (port_id < VNET_SCHED_NUM_PORTS);
+ 
+   vnet_sched_port_t *port = &vnet_sched_main.ports[port_id];
+-
+   vnet_sched_buffer_ring_t *ring = &port->pipes[pipe_id].flows[flow_id];
+-
++  dvpp_desc_t *from;
++  dvpp_desc_t *c;
+   int copy = 0;
+   u32 idx;
+-  // clib_spinlock_lock (&port->lock);
++  int nr_segs, i;
+ 
+   u16 qlen = ring->enq - ring->deq;
+-  int num = qlen < n_pkts ? qlen : n_pkts;
++  if (qlen == 0) /* Queue is empty */
++    return 0;
++
++  int num = qlen < n_seg ? qlen : n_seg;
++
++  int d = ring->deq;
++  from = &ring->ring[d & (VNET_SCHED_QUEUE_SIZE - 1)];
+ 
+-  while (copy < num)
++  /* TODO : replace this loop with regular memcpy. We also probably do not need
++   *        to copy the 16 Bytes dvpp_desc_t. Instead, the TX API should need
++   *        to transfer only the 8 Bytes segment_desc_t
++   */
++  while (1)
+     {
+-      int d = (ring->deq + copy) & (VNET_SCHED_QUEUE_SIZE - 1);
+-      idx = ring->ring[d].seg.index;
+-      if (idx == ~0)
++      if (EXPECT_FALSE (copy >= num))
++        break;
++
++      nr_segs = from->num_in_chain;
++      if (EXPECT_FALSE (nr_segs == 0))
++        {
++          vlib_log_err (dvpp_sched_logger,
++                  "\nError: port %u dequeue num_in_chain 0 idx %u "
++                  " eop %u len %u!!\n",
++                  from->seg.index, from->seg.eop, from->seg.len);
++          ASSERT(0);
++          break;
++        }
++
++      /* Check if there is enough space for this packet */
++      /* TODO : this check isn't necessary since there is guard space
++       * in the TX vector.
++       */
++      if (EXPECT_FALSE ((nr_segs + copy) > num))
++        break;
++
++      idx = from->seg.index;
++
++      if (EXPECT_FALSE (idx == ~0))
+         {
+-          // copy = -1;
+           ring->retries++;
+           break; // caller to retry
+         }
+-      desc[copy] = ring->ring[d];
+-      ring->ring[d].seg.index = ~0;
+-      copy++;
++      c = &desc[copy];
++      i = 0;
++      while (i++ < nr_segs)
++        {
++          /* Copy the DMA chain out */
++          *c = *from;
++          d++;
++          from = &ring->ring[d & (VNET_SCHED_QUEUE_SIZE - 1)];
++          c++;
++        }
++      copy += nr_segs;
+     }
+ 
+   if (copy > 0)
+     {
+-      // MWB
+       _wmb ();
+       ring->deq += copy;
+     }
+-
+   return copy;
+ }
+ 
+diff --git a/src/vnet/devices/dvpp/dvpp_sched.h b/src/vnet/devices/dvpp/dvpp_sched.h
+index ddd5e85e4..a51d2ddc5 100644
+--- a/src/vnet/devices/dvpp/dvpp_sched.h
++++ b/src/vnet/devices/dvpp/dvpp_sched.h
+@@ -22,6 +22,15 @@
+ #include "interface.h"
+ #include <vppinfra/cache.h>
+ 
++
++#ifndef EXPECT_TRUE
++#define EXPECT_TRUE(x) __builtin_expect((x),1)
++#endif
++#ifndef EXPECT_FALSE
++#define EXPECT_FALSE(x) __builtin_expect((x),0)
++#endif
++
++
+ #define VNET_SCHED_PIPES_PER_PORT 16
+ #define VNET_SCHED_FLOWS_PER_PIPE 16
+ #define VNET_SCHED_QUEUES_PER_PORT \
+diff --git a/src/vnet/devices/dvpp/interface.h b/src/vnet/devices/dvpp/interface.h
+index 66c76c057..de129a177 100644
+--- a/src/vnet/devices/dvpp/interface.h
++++ b/src/vnet/devices/dvpp/interface.h
+@@ -53,8 +53,9 @@ typedef struct
+       u8 port_id;
+       u8 pipe_id;
+       u8 flow_id;
+-      u8 tmp1;
+-      u32 next;
++      u8 num_in_chain; /* Intra-Layer field */
++      u16 total_len;   /* Intra-Layer field */
++      u16 res;
+     } __attribute__ ((packed));
+     u64 data;
+   };
+@@ -77,6 +78,7 @@ static inline void dvpp_desc_clear (dvpp_desc_t *desc)
+ #define DVPP_NB_BUFFERS 32768
+ #define DVPP_RX_RING_SIZE 4096
+ #define DVPP_MAX_NB_BLOCK 128
++#define DVPP_MAX_NUM_SEGMENTS_IN_PACKET 8
+ 
+ #define DVPP_THRESHOLD_HIGH (8 * 1024)
+ #define DVPP_THRESHOLD_LOW (4 * 1024)
+-- 
+2.24.1
+

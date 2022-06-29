@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/host_manager_11ad
+exec svlogd /var/log/host_manager_11ad

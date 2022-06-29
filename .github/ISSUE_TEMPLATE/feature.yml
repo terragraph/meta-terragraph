@@ -1,0 +1,52 @@
+name: 🚀 Feature Request
+description: Submit a new feature request.
+labels: [enhancement]
+body:
+  - type: checkboxes
+    attributes:
+      label: Prerequisites
+      description: Please check the following items before proceeding.
+      options:
+        - label: I have read the [Contributing Guidelines](../blob/main/CONTRIBUTING.md).
+          required: true
+        - label: I have read the [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true
+
+  - type: dropdown
+    attributes:
+      label: Category
+      description: Select the appropriate category, or choose "Other" if nothing fits.
+      options:
+        - Routing (ex. Open/R, VPP, BGP)
+        - Management plane (ex. E2E, stats, logging)
+        - Tools (ex. CLIs)
+        - Drivers (ex. Terragraph driver, PMD)
+        - Wireless firmware
+        - Performance
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: Priority
+      description: Assess the impact of this ticket.
+      options:
+        - Low
+        - Medium
+        - High
+
+  - type: textarea
+    attributes:
+      label: Description
+      description: |
+        Describe the proposed feature thoroughly, as well as its impact.
+        Do not provide customer information that could be considered personally identifiable information (PII).
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Workaround available?
+      description: If you have a workaround solution, please describe it and explain why this feature request is necessary.

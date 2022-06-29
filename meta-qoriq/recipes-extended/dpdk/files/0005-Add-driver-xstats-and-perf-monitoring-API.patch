@@ -1,0 +1,324 @@
+From db4a7bef7c452062e7cf1f980a96519f3736873f Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Wed, 12 Feb 2020 12:23:09 -0800
+Subject: [PATCH] Add driver xstats and perf monitoring API
+
+---
+ lib/librte_eal/arm/include/meson.build |   1 +
+ lib/librte_eal/arm/include/rte_perf.h  | 206 +++++++++++++++++++++++++
+ lib/librte_ethdev/rte_ethdev.c         |  14 ++
+ lib/librte_ethdev/rte_ethdev.h         |  11 ++
+ lib/librte_ethdev/rte_ethdev_driver.h  |   4 +
+ lib/librte_ethdev/version.map          |   2 +
+ 6 files changed, 238 insertions(+)
+ create mode 100644 lib/librte_eal/arm/include/rte_perf.h
+
+diff --git a/lib/librte_eal/arm/include/meson.build b/lib/librte_eal/arm/include/meson.build
+index 770766de1a..665c4b5ea3 100644
+--- a/lib/librte_eal/arm/include/meson.build
++++ b/lib/librte_eal/arm/include/meson.build
+@@ -21,6 +21,7 @@ arch_headers = files(
+ 	'rte_pause_32.h',
+ 	'rte_pause_64.h',
+ 	'rte_pause.h',
++	'rte_perf.h',
+ 	'rte_power_intrinsics.h',
+ 	'rte_prefetch_32.h',
+ 	'rte_prefetch_64.h',
+diff --git a/lib/librte_eal/arm/include/rte_perf.h b/lib/librte_eal/arm/include/rte_perf.h
+new file mode 100644
+index 0000000000..d2eca64678
+--- /dev/null
++++ b/lib/librte_eal/arm/include/rte_perf.h
+@@ -0,0 +1,206 @@
++#ifndef _RTE_PERF_ARM64_H_
++#define _RTE_PERF_ARM64_H_
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define RTE_PMC_NUM_COUNTERS 6
++
++static inline u64
++rte_cpu_pmcr_el0 (void)
++{
++	u64 vct;
++	asm volatile ("mrs %0, pmcr_el0":"=r" (vct));
++	return vct;
++}
++
++static inline u64
++rte_cpu_enset_el0 (void)
++{
++	u64 vct;
++	asm volatile ("mrs %0, pmcntenset_el0":"=r" (vct));
++
++	return vct;
++}
++
++
++static inline u64
++rte_cpu_eid_el0 (void)
++{
++	u64 vct;
++	asm volatile ("mrs %0, pmceid0_el0":"=r" (vct));
++
++	return vct;
++}
++
++/**
++ * Read a performance counter value.
++ */
++static inline u64 rte_read_perf_counter(int cnt) {
++	u64 vct;
++	switch (cnt) {
++		case 0:
++			asm volatile ("mrs %0, pmevcntr0_el0":"=r" (vct));
++			break;
++		case 1:
++			asm volatile ("mrs %0, pmevcntr1_el0":"=r" (vct));
++		break;
++		case 2:
++			asm volatile ("mrs %0, pmevcntr2_el0":"=r" (vct));
++		break;
++		case 3:
++			asm volatile ("mrs %0, pmevcntr3_el0":"=r" (vct));
++		break;
++		case 4:
++			asm volatile ("mrs %0, pmevcntr4_el0":"=r" (vct));
++		break;
++		case 5:
++			asm volatile ("mrs %0, pmevcntr5_el0":"=r" (vct));
++		break;
++		default:
++			return 0;
++		break;
++	}
++	return vct;
++}
++
++/**
++ * Read single performance counter value.
++ */
++static inline u64 rte_read_perf_counter_0() {
++	u64 vct;
++	asm volatile ("mrs %0, pmevcntr0_el0":"=r" (vct));
++	return vct;
++}
++static inline u64 rte_read_perf_counter_1() {
++	u64 vct;
++	asm volatile ("mrs %0, pmevcntr1_el0":"=r" (vct));
++	return vct;
++
++}
++static inline u64 rte_read_perf_counter_2() {
++	u64 vct;
++	asm volatile ("mrs %0, pmevcntr2_el0":"=r" (vct));
++	return vct;
++}
++static inline u64 rte_read_perf_counter_3() {
++	u64 vct;
++	asm volatile ("mrs %0, pmevcntr3_el0":"=r" (vct));
++	return vct;
++}
++static inline u64 rte_read_perf_counter_4() {
++	u64 vct;
++	asm volatile ("mrs %0, pmevcntr4_el0":"=r" (vct));
++	return vct;
++}
++static inline u64 rte_read_perf_counter_5() {
++	u64 vct;
++	asm volatile ("mrs %0, pmevcntr5_el0":"=r" (vct));
++	return vct;
++}
++
++/**
++ * Write a performance counter type register.
++ *
++ * cnt: counter id (value must be between 0 and 5)
++ * val: value to be written
++ */
++static inline void rte_write_perf_counter_type(int cnt, unsigned int val) {
++	switch (cnt) {
++		case 0:
++			asm volatile ("msr pmevtyper0_el0, %0"::"r" (val));
++		break;
++		case 1:
++			asm volatile ("msr pmevtyper1_el0, %0"::"r" (val));
++		break;
++		case 2:
++			asm volatile ("msr pmevtyper2_el0, %0"::"r" (val));
++		break;
++		case 3:
++			asm volatile ("msr pmevtyper3_el0, %0"::"r" (val));
++		break;
++		case 4:
++			asm volatile ("msr pmevtyper4_el0, %0"::"r" (val));
++		break;
++		case 5:
++			asm volatile ("msr pmevtyper5_el0, %0"::"r" (val));
++		break;
++	}
++}
++
++/**
++ * Read a performance counter type register.
++ *
++ * cnt: counter id (value must be between 0 and 5)
++ */
++static inline u64 rte_read_perf_counter_type(int cnt) {
++	u64 vct;
++	switch (cnt) {
++		case 0:
++			asm volatile ("mrs %0, pmevtyper0_el0":"=r" (vct));
++		break;
++		case 1:
++			asm volatile ("mrs %0, pmevtyper1_el0":"=r" (vct));
++		break;
++		case 2:
++			asm volatile ("mrs %0, pmevtyper2_el0":"=r" (vct));
++		break;
++		case 3:
++			asm volatile ("mrs %0, pmevtyper3_el0":"=r" (vct));
++		break;
++		case 4:
++			asm volatile ("mrs %0, pmevtyper4_el0":"=r" (vct));
++		break;
++		case 5:
++			asm volatile ("mrs %0, pmevtyper5_el0":"=r" (vct));
++		break;
++		default:
++			return 0;
++		break;
++	}
++	return vct;
++}
++
++/**
++ * Enable a performance counter.
++ *
++ * cnt:         counter number, value must be between 0 and 5
++ * type:        type of counter as per ARMv8 arch reference
++ *              value must be between 0 and 0x20
++ */
++static inline void
++rte_select_perf_counter (unsigned int cnt, unsigned int type)
++{
++	u64 vct = 0;
++	u64 en;
++
++	asm volatile ("isb");
++	/* Disable counter */
++	asm volatile ("msr pmcntenclr_el0, %0"::"r" (1 << cnt));
++
++	/* Read current counter config */
++	vct = read_perf_counter_type(cnt);
++
++	/* Select current counter config */
++	write_perf_counter_type(cnt, (type | (vct&0xfffffe00)));
++
++	/* Enable counter */
++	asm volatile ("msr pmcntenset_el0, %0"::"r" (1 << cnt));
++}
++
++/**
++ * Substract two counters values, from u64 to u64.
++ *
++ * ARMv8 counters are 32bits, read into u64, hence manage 32bits roll over.
++ */
++static inline u64 rte_pmc_sub_counters(u64 c1, u64 c2)
++{
++	int64_t diff = c2 - c1;
++	if (diff < 0)
++		return 0x100000000LL + diff;
++	else
++		return diff;
++}
++
++#endif
+diff --git a/lib/librte_ethdev/rte_ethdev.c b/lib/librte_ethdev/rte_ethdev.c
+index 22fb0b96d7..68cd104d00 100644
+--- a/lib/librte_ethdev/rte_ethdev.c
++++ b/lib/librte_ethdev/rte_ethdev.c
+@@ -3209,6 +3209,20 @@ rte_eth_xstats_reset(uint16_t port_id)
+ 	return rte_eth_stats_reset(port_id);
+ }
+ 
++void rte_eth_xstats_config(uint16_t port_id, uint32_t flags)
++{
++	struct rte_eth_dev *dev;
++
++	RTE_ETH_VALID_PORTID_OR_RET(port_id);
++	dev = &rte_eth_devices[port_id];
++
++	/* implemented by the driver */
++	if (dev->dev_ops->xstats_config != NULL) {
++		(*dev->dev_ops->xstats_config)(dev, flags);
++		return;
++	}
++}
++
+ static int
+ eth_dev_set_queue_stats_mapping(uint16_t port_id, uint16_t queue_id,
+ 		uint8_t stat_idx, uint8_t is_rx)
+diff --git a/lib/librte_ethdev/rte_ethdev.h b/lib/librte_ethdev/rte_ethdev.h
+index 8841296566..12e487c4b0 100644
+--- a/lib/librte_ethdev/rte_ethdev.h
++++ b/lib/librte_ethdev/rte_ethdev.h
+@@ -2905,6 +2905,17 @@ int rte_eth_xstats_get_by_id(uint16_t port_id, const uint64_t *ids,
+ int rte_eth_xstats_get_id_by_name(uint16_t port_id, const char *xstat_name,
+ 		uint64_t *id);
+ 
++/**
++ * Config extended statistics of an Ethernet device.
++ *
++ * @param port_id
++ *   The port identifier of the Ethernet device.
++ * @param flags
++ *   Proprietary flags.
++ */
++__rte_experimental
++void rte_eth_xstats_config(uint16_t port_id, uint32_t flags);
++
+ /**
+  * Reset extended statistics of an Ethernet device.
+  *
+diff --git a/lib/librte_ethdev/rte_ethdev_driver.h b/lib/librte_ethdev/rte_ethdev_driver.h
+index 0eacfd8425..d64050f008 100644
+--- a/lib/librte_ethdev/rte_ethdev_driver.h
++++ b/lib/librte_ethdev/rte_ethdev_driver.h
+@@ -214,6 +214,9 @@ typedef int (*eth_xstats_get_by_id_t)(struct rte_eth_dev *dev,
+  */
+ typedef int (*eth_xstats_reset_t)(struct rte_eth_dev *dev);
+ 
++typedef int (*eth_xstats_config_t)(struct rte_eth_dev *dev, uint32_t flags);
++/**< @internal Config extended stats of an Ethernet device. */
++
+ typedef int (*eth_xstats_get_names_t)(struct rte_eth_dev *dev,
+ 	struct rte_eth_xstat_name *xstats_names, unsigned int size);
+ /**< @internal Get names of extended stats of an Ethernet device. */
+@@ -792,6 +795,7 @@ struct eth_dev_ops {
+ 	eth_stats_reset_t          stats_reset;   /**< Reset generic device statistics. */
+ 	eth_xstats_get_t           xstats_get;    /**< Get extended device statistics. */
+ 	eth_xstats_reset_t         xstats_reset;  /**< Reset extended device statistics. */
++	eth_xstats_config_t        xstats_config;  /**< Config extended device statistics. */
+ 	eth_xstats_get_names_t     xstats_get_names;
+ 	/**< Get names of extended statistics. */
+ 	eth_queue_stats_mapping_set_t queue_stats_mapping_set;
+diff --git a/lib/librte_ethdev/version.map b/lib/librte_ethdev/version.map
+index d3f5410806..61e3de027a 100644
+--- a/lib/librte_ethdev/version.map
++++ b/lib/librte_ethdev/version.map
+@@ -240,6 +240,8 @@ EXPERIMENTAL {
+ 	rte_flow_get_restore_info;
+ 	rte_flow_tunnel_action_decap_release;
+ 	rte_flow_tunnel_item_release;
++
++	rte_eth_xstats_config;
+ };
+ 
+ INTERNAL {
+-- 
+2.30.2
+

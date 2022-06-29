@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7b248a010..f76ee5c33 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -121,7 +121,7 @@ if(lib_only OR build_all)
+   add_definitions("-DTHRIFT_HAVE_LIBSNAPPY=0")
+   if(lib_only)
+     find_program(THRIFT1 thrift1)
+-    include(${THRIFT_COMPILER_INCLUDE}/thrift/ThriftLibrary.cmake)
++    include(ThriftLibrary.cmake)
+   endif(lib_only)
+
+   find_package(python-six)

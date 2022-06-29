@@ -1,0 +1,45 @@
+{
+  "name": "tg95",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@testing-library/jest-dom": "^4.2.4",
+    "@testing-library/react": "^9.3.2",
+    "@testing-library/user-event": "^7.1.2",
+    "axios": "^0.19.2",
+    "customize-cra": "^1.0.0",
+    "preact": "^10.4.7",
+    "react-app-rewired": "^2.1.6",
+    "react-draggable": "^4.4.3",
+    "react-scripts": "^3.4.1",
+    "react95": "^3.0.0",
+    "recharts": "^1.8.5",
+    "styled-components": "^5.1.1"
+  },
+  "scripts": {
+    "start": "react-app-rewired start",
+    "build": "react-app-rewired build",
+    "test": "react-app-rewired test",
+    "eject": "react-scripts eject",
+    "analyze": "source-map-explorer 'build/static/js/*.js'"
+  },
+  "homepage": ".",
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "source-map-explorer": "^2.4.2"
+  }
+}

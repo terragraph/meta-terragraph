@@ -1,0 +1,21 @@
+Backport a fix from thrift-0.13.0 (THRIFT-5262) where writing structs can
+corrupt field indices.
+
+However, this fix conflicts with a similar change in THRIFT-4992 (also added in
+thrift-0.13.0) which together creates a similar bug. Do NOT apply the change in
+THRIFT-4992 to `TCompactProtocol:writeStructEnd()`. The revert of THRIFT-4992 is
+submitted in THRIFT-5325.
+
+Upstream-Status: Backport
+
+--- a/lib/lua/TCompactProtocol.lua
++++ b/lib/lua/TCompactProtocol.lua
+@@ -118,8 +118,8 @@
+ end
+
+ function TCompactProtocol:writeStructBegin(name)
+-  self.lastFieldIndex = self.lastFieldIndex + 1
+   self.lastField[self.lastFieldIndex] = self.lastFieldId
++  self.lastFieldIndex = self.lastFieldIndex + 1
+   self.lastFieldId = 0
+ end

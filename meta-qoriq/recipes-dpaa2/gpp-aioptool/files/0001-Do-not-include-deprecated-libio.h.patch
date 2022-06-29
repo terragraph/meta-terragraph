@@ -1,0 +1,24 @@
+From beba3cad500c638f8e6155e21bd5a36c1ce91fd3 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Wed, 26 Dec 2018 12:06:08 -0500
+Subject: [PATCH] Do not include deprecated libio.h
+
+---
+ flib/mc/fsl_mc_sys.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/flib/mc/fsl_mc_sys.h b/flib/mc/fsl_mc_sys.h
+index b01db32..7ba8800 100644
+--- a/flib/mc/fsl_mc_sys.h
++++ b/flib/mc/fsl_mc_sys.h
+@@ -52,7 +52,6 @@ struct fsl_mc_io {
+ #else /* __linux_driver__ */
+ 
+ #include <stdio.h>
+-#include <libio.h>
+ #include <stdint.h>
+ #include <errno.h>
+ #include <sys/uio.h>
+-- 
+2.12.2
+

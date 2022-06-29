@@ -1,0 +1,202 @@
+From a4baa52cb2d75421e055e3c903ff36b3da160128 Mon Sep 17 00:00:00 2001
+From: Anand Singh <anandsingh@fb.com>
+Date: Thu, 27 Jun 2019 02:16:35 +0000
+Subject: [PATCH 22/22] Fix up GPIO for fb-ls1048a-puma
+
+---
+ .../fb_ls1048a_puma/fb_ls1048a_puma.c         | 144 +++++++-----------
+ 1 file changed, 56 insertions(+), 88 deletions(-)
+
+diff --git a/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c b/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c
+index 2a73316757..35cdd2bfa3 100644
+--- a/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c
++++ b/board/freescale/fb_ls1048a_puma/fb_ls1048a_puma.c
+@@ -286,110 +286,87 @@ int board_init(void)
+ 	ppa_init();
+ #endif
+ 
+-#define GPIO(N,P)  (32 * ((N)-1) + (P))
++#define GPIO(N,P)	(32 * ((N)-1) + (P))
+ 
+-#define BB1_RF_WAKE  GPIO(2,29)
++#define BB1_RF_WAKE	GPIO(1, 7)    /*   7 */
++#define BB2_RF_WAKE	GPIO(1, 3)	  /*   3 */
++#define BB3_RF_WAKE	GPIO(1, 4)	  /*   4 */
++#define BB4_RF_WAKE	GPIO(1, 5)	  /*   5 */
+ 
+-#define BB2_PWR_ON GPIO(1, 3)  /*   3 */
+-#define BB3_PWR_ON GPIO(1, 4)  /*   4 */
+-#define BB4_PWR_ON GPIO(1, 5)  /*   5 */
++#define BB1_PWR_ON_N	GPIO(2, 25)	/*  57 */
++#define BB2_PWR_ON_N	GPIO(2, 26)	/*  58 */
++#define BB3_PWR_ON_N	GPIO(2, 27)	/*  59 */
++#define BB4_PWR_ON_N	GPIO(2, 28)	/*  60 */
+ 
+-#define BB1_RST_N  GPIO(4,11)  /* 107 */
+-#define BB2_RST_N  GPIO(2,17)  /*  49 */
+-#define BB3_RST_N  GPIO(2,18)  /*  50 */
+-#define BB4_RST_N  GPIO(2, 8)  /*  40 */
++#define BB1_REG_ON	GPIO(4, 9)	/* 105 */
++#define BB2_REG_ON	GPIO(2,19)	/*  51 */
++#define BB3_REG_ON	GPIO(2,22)	/*  54 */
++#define BB4_REG_ON	GPIO(4,13)	/* 109 */
+ 
+-#define BB1_REG_ON GPIO(4, 9)  /* 105 */
+-#define BB2_REG_ON GPIO(2,19)  /*  51 */
+-#define BB3_REG_ON GPIO(2,22)  /*  54 */
+-#define BB4_REG_ON GPIO(4,13)  /* 109 */
++#define BB2_PERST_N GPIO(2, 29)    /*  61 */
++#define BB4_PERST_N GPIO(2, 15)    /*  47 */
+ 
+-#define BB1_RF_CONN_RST_N GPIO(2,14) /*  46 */
+-#define BB2_RF_CONN_RST_N GPIO(2,26) /*  58 */
+-#define BB3_RF_CONN_RST_N GPIO(2,27)    /*  59 */
+-#define BB4_RF_CONN_RST_N GPIO(2,28)    /*  60 */
+-
+-#define BB1_PERST  GPIO(2,15)  /*  47 */
+-#define BB2_PERST  GPIO(1, 7)  /*   7 */
+-
+-#define I2C_4_BB3_EN	GPIO(1, 0)	/* 0 */
+-#define I2C_4_BB4_EN	GPIO(2, 23)	/* 55 */
++#define I2C_4_BB3_EN   GPIO(4, 7)	/* 0 */
+ 
+ #if 0
+ #define BB3_PERST        Connected to PcieSW
+ #define BB4_PERST        Connected to PcieSW
+ #endif
+ 
+-#define PCIESW_RESET GPIO(2,30)  /*  62 */
+-
+-#define GPS_1PPS_IN  GPIO(4,27)  /* 123 */
+-#define GPS_1PPS_OUT GPIO(4,24)  /* 120 */
+-
+-#define LED_BLUE GPIO(1,26)  /*  26 */
+-#define LED_GRN    GPIO(1,22)  /*  22 */
+-#define LED_RED    GPIO(4,10)  /* 106 */
++#define PCIESW_PERST_N	GPIO(2, 30)	/*  62 */
+ 
+-#define SFP_TX_EN  GPIO(4, 8)  /* 104 */
++#define GPS_1PPS_IN	GPIO(4,27)	/* 123 */
++#define GPS_1PPS_OUT	GPIO(4,24)	/* 120 */
+ 
+-    /* SFP TX_EN set low */
+-    gpio_direction_output(SFP_TX_EN, 0);
++#define SFP_TX_EN	GPIO(4, 8)	/* 104 */
+ 
++	/* SFP TX_EN set low */
++	gpio_direction_output(SFP_TX_EN, 0);
+ 
+-    /* BB2/BB3/BB4 power on */
+-    gpio_direction_output(BB2_PWR_ON, 0);
+-    gpio_direction_output(BB3_PWR_ON, 0);
+-    gpio_direction_output(BB4_PWR_ON, 0);
+-    udelay(100000);
++	/* BB1/BB2/BB3/BB4 Wake# */
++	gpio_direction_input(BB1_RF_WAKE);
++	gpio_direction_input(BB2_RF_WAKE);
++	gpio_direction_input(BB3_RF_WAKE);
++	gpio_direction_input(BB4_RF_WAKE);
+ 
+-    /* BB1/BB2 - Toggle REG_ON and RF_CONN_RST
+-    *    - Set RST/PERST High
+-    */
+-    gpio_direction_output(BB1_REG_ON, 0);
+-    gpio_direction_output(BB1_RF_CONN_RST_N, 0);
+-    gpio_direction_output(BB1_RST_N, 1);
+-    gpio_direction_output(BB1_PERST, 1);
++	/* Keep BB1/Bb2/BB3/BB4 powered off */
++	gpio_direction_output(BB1_REG_ON, 0);
+ 
+-    gpio_direction_output(BB2_REG_ON, 0);
+-    gpio_direction_output(BB2_RF_CONN_RST_N, 0);
+-    gpio_direction_output(BB1_RST_N, 1);
+-    gpio_direction_output(BB2_PERST, 1);
++	gpio_direction_output(BB2_REG_ON, 0);
+ 
+-    /* BB3/BB4 - Toggle REG_ON and RF_CONN_RST
+-    *         - Set RST High
+-    * PE_RST comes from switch
+-    */
+-    gpio_direction_output(BB3_REG_ON, 0);
+-    gpio_direction_output(BB3_RF_CONN_RST_N, 0);
+-    gpio_direction_output(BB3_RST_N, 1);
++	gpio_direction_output(BB3_REG_ON, 0);
+ 
+-    gpio_direction_output(BB4_REG_ON, 0);
+-    gpio_direction_output(BB4_RF_CONN_RST_N, 0);
+-    gpio_direction_output(BB4_RST_N, 1);
++	gpio_direction_output(BB4_REG_ON, 0);
+ 
+-    udelay(500000);
++	/* Keep PCIe devices in reset */
++	gpio_direction_output(BB2_PERST_N, 0);
++	gpio_direction_output(BB4_PERST_N, 0);
++	gpio_direction_output(PCIESW_PERST_N, 0);
+ 
+-    gpio_set_value(BB1_REG_ON, 1);
+-    gpio_set_value(BB1_RF_CONN_RST_N, 1);
++	/* BB1/BB2/BB3/BB4 12V power on */
++	gpio_direction_output(BB1_PWR_ON_N, 0);
++	gpio_direction_output(BB2_PWR_ON_N, 0);
++	gpio_direction_output(BB3_PWR_ON_N, 0);
++	gpio_direction_output(BB4_PWR_ON_N, 0);
+ 
+-    gpio_set_value(BB2_REG_ON, 1);
+-    gpio_set_value(BB2_RF_CONN_RST_N, 1);
++	udelay(500000);
+ 
+-    gpio_set_value(BB3_REG_ON, 1);
+-    gpio_set_value(BB3_RF_CONN_RST_N, 1);
++	gpio_direction_output(BB1_REG_ON, 1);
++	gpio_direction_output(BB2_REG_ON, 1);
++	gpio_direction_output(BB3_REG_ON, 1);
++	gpio_direction_output(BB4_REG_ON, 1);
+ 
+-    gpio_set_value(BB4_REG_ON, 1);
+-    gpio_set_value(BB4_RF_CONN_RST_N, 1);
+-
+-    /*
+-    * After toggling baseband gpios need to
+-    * reset the upstream pcie switch.  If not causing pcie
+-    * problems and aborts.
+-    */
+-    printf("Resetting PCIE switch \n");
+-    gpio_direction_output(PCIESW_RESET, 0);
+-    udelay(500000);
+-    gpio_set_value(PCIESW_RESET, 1);
++	/*
++	 * After toggling baseband gpios need to
++	 * reset the upstream pcie switch.  If not causing pcie
++	 * problems and aborts.
++	 */
++	udelay(500000);
+ 
++	/* Take PCIe buses out of reset */
++	gpio_set_value(PCIESW_PERST_N, 1);
++	gpio_direction_output(BB2_PERST_N, 1);
++	gpio_direction_output(BB4_PERST_N, 1);
+ 	return 0;
+ }
+ 
+@@ -425,18 +402,9 @@ void set_secondary_led(int sec_bus, int on)
+ 
+ 		/* Set gpios to chose the right secondary board */
+ 		if (sec_bus == BB3_PCI_BUS_NUM) {
+-			/* I2C_4_BB3_EN=H (GPIO1_0)
+-			 * and
+-			 * I2C_4_BB4_EN=L (GPIO2_23) */
+ 			gpio_direction_output(I2C_4_BB3_EN, 1);
+-			gpio_direction_output(I2C_4_BB4_EN, 0);
+ 		} else {
+-			/* I2C_4_BB3_EN=L (GPIO1_0)
+-			 * and
+-			 * I2C_4_BB4_EN=H (GPIO2_23)
+-			 */
+ 			gpio_direction_output(I2C_4_BB3_EN, 0);
+-			gpio_direction_output(I2C_4_BB4_EN, 1);
+ 		}
+ 	}
+ 
+-- 
+2.17.1
+

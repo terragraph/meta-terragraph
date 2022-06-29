@@ -1,0 +1,12 @@
+--- init.d.orig/sysfs.sh	2018-06-01 19:34:50.182551413 -0700
++++ init.d/sysfs.sh	2018-06-01 19:37:36.622041380 -0700
+@@ -20,6 +20,9 @@
+ 
+ if [ -e /sys/kernel/debug ] && grep -q debugfs /proc/filesystems; then
+   mount -t debugfs debugfs /sys/kernel/debug
++  # mount debugfs also at /debugfs so that even with ssh /debugfs files are
++  # visible while /sys/kernel/debug might not be without another mount
++  mount -t debugfs debugfs /debugfs
+ fi
+ 
+ if [ -e /sys/kernel/config ] && grep -q configfs /proc/filesystems; then

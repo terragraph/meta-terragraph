@@ -1,0 +1,42 @@
+From ad4985fbdce8411454366188ea8cf96029a9b4f0 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Wed, 8 Sep 2021 16:27:00 -0700
+Subject: [PATCH] Don't exit HandleClosedFilesThread if file deletion fails
+
+---
+ debug-tools/host_manager_11ad/CyclicFileRecorder.cpp | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/debug-tools/host_manager_11ad/CyclicFileRecorder.cpp b/debug-tools/host_manager_11ad/CyclicFileRecorder.cpp
+index 45fcdcb..0ba1879 100755
+--- a/debug-tools/host_manager_11ad/CyclicFileRecorder.cpp
++++ b/debug-tools/host_manager_11ad/CyclicFileRecorder.cpp
+@@ -92,13 +92,12 @@ OperationStatus FileBookkeeper::RemoveOldFilesIfNeeded()
+     {
+         msgBuilder << "Deleting old file: " << m_fileQueue.front();
+         OperationStatus os = FileSystemOsAbstraction::RemoveFile(m_fileQueue.front());
++        m_fileQueue.pop();
+         if (!os)
+         {
+             os.AddPrefix(msgBuilder.str());
+             return os;
+         }
+-
+-        m_fileQueue.pop();
+     }
+
+     return OperationStatus(true, msgBuilder.str());
+@@ -477,10 +476,8 @@ void CyclicFileRecorder::HandleClosedFilesThread()
+             ostringstream ss;
+             ss << m_debugPrefix << os.GetStatusMessage();
+             LogErrorTrace(ss.str());
+-            return;
+         }
+-
+-        if (!os.GetStatusMessage().empty())
++        else if (!os.GetStatusMessage().empty())
+         {
+             ostringstream ss;
+             ss << m_debugPrefix << os.GetStatusMessage();
+--
+2.30.2

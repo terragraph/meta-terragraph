@@ -1,0 +1,39 @@
+{
+  "bgpParams": {
+    "localAsn": 64675,
+    "neighbors": {
+      "0": {
+        "asn": 64674,
+        "ipv6": "2001::2",
+        "maximumPrefixes": 128
+      },
+      "1": {
+        "asn": 64674,
+        "ipv6": "2001::3"
+      }
+    },
+    "keepalive": 30,
+    "cpeNetworkPrefix": "3001::/56",
+    "delegatedNetworkPrefixes": "3001:0:0:0010::/60,3001:0:0:0020::/60"
+  },
+  "sysParams": {},
+  "envParams": {
+    "POP_ADDR": "",
+    "POP_ADDR_PREFIX_LEN": "64",
+    "POP_IFACE": "nic2",
+    "POP_STATIC_ROUTING": "1",
+    "POP_BGP_ROUTING": "0",
+    "GW_ADDR": "fe80::235:1aff:feea:92fc"
+  },
+  "kvstoreParams": {
+    "e2e-ctrl-url": "tcp://[3001::1]:7007",
+    "e2e-aggr-url": "tcp://[3001::1]:8002",
+    "e2e-network-prefix": "3001::/56,64"
+  },
+  "logTailParams": {
+    "sources": {}
+  },
+  "statsAgentParams": {
+    "sources": {}
+  }
+}

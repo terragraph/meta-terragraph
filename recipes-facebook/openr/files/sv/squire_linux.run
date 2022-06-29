@@ -1,0 +1,78 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+# check if Open/R is enabled
+if [ -z "$OPENR_ENABLED" ] || [ "$OPENR_ENABLED" -ne "1" ]; then
+  echo "open/r is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+cpe_interface=$(/usr/sbin/config_get_cpe intf --index 1)
+
+if [ -z "$cpe_interface" ]; then
+  echo "cpe_interface not set"
+  sleep ${DELAY}
+  continue
+fi
+
+# Enable squire_linux only on the first CPE interface
+cpe_interface_prefix=$(/usr/sbin/config_get_cpe prefix $cpe_interface)
+if [ -z "$cpe_interface_prefix" ]; then
+  echo "cpe_interface_prefix not set, setting from interface lo"
+  PREFIX_FLAG="--prefix_from_interface=lo"
+  if ! ip -6 address show dev lo | grep "inet6.*global" > /dev/null ; then
+    echo "lo global v6 address not assigned yet"
+    sleep ${DELAY}
+    continue
+  fi
+else
+  PREFIX_FLAG="--prefix=$cpe_interface_prefix"
+fi
+
+if [ "$OPENR_USE_FIB_NSS" -eq "1" ] || [ "$OPENR_USE_FIB_VPP" -eq "1" ]; then
+  echo "NSS || VPP and Linux cannot be enabled together"
+  sleep ${DELAY}
+  continue
+fi
+
+if [ "$OOB_INTERFACE" ]; then
+  # For OOB nic0 to continue getting RA despite forwarding
+  sysctl net.ipv6.conf."$OOB_INTERFACE".accept_ra=2
+fi
+
+# Run CPE operations (read config and enable CPE interfaces)
+/usr/sbin/cpe_operations
+
+hw_board_id=$(/usr/sbin/get_hw_info HW_BOARD_ID)
+
+if [ "$cpe_interface" ]; then
+  if [ "$hw_board_id" = "NXP_LS1048A_PUMA" ]; then
+    if ! ip -6 address show dev lo | grep "inet6.*global" > /dev/null ; then
+      sleep ${DELAY}
+      continue
+    fi
+  fi
+fi
+
+WLAN_IF=""
+if [ "$hw_board_id" = "NXP_LS1012A_BOBCAT" ]; then
+  WLAN_IF="terra0"
+fi
+
+# run squire_linux
+exec /usr/sbin/squire_linux -v 1 -logtostderr \
+    "$PREFIX_FLAG" \
+    --nic="$cpe_interface" \
+    --wireless="$WLAN_IF" 2>&1
+
+done

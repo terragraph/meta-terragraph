@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+BGPD_CONF_FILE=/var/run/bgpd.conf
+
+/usr/sbin/update_bgpd_conf -v -o "$BGPD_CONF_FILE"
+
+exec /usr/sbin/bgpd \
+  --config_file "$BGPD_CONF_FILE" \
+  --vty_addr ::1 \
+  -u frr \
+  -g frr \
+  2>&1

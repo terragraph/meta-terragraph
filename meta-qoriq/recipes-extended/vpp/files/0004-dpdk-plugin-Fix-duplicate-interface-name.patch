@@ -1,0 +1,42 @@
+From 4e8f2ada19c8ec75a502973a45e633cfea9f1d83 Mon Sep 17 00:00:00 2001
+From: ssreedev <ssreedev@devvm1152.ftw3.facebook.com>
+Date: Thu, 10 Oct 2019 10:48:00 -0700
+Subject: [PATCH] dpdk plugin: Fix duplicate interface name
+
+Summary: Fixed a naming error during creation of interface
+         name. PCI domain information need to be part of the
+         interface name to resolve ambiguity.
+---
+ src/plugins/dpdk/device/format.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/plugins/dpdk/device/format.c b/src/plugins/dpdk/device/format.c
+index ec09ce06f..c034ad55d 100644
+--- a/src/plugins/dpdk/device/format.c
++++ b/src/plugins/dpdk/device/format.c
+@@ -128,9 +128,9 @@ format_dpdk_device_name (u8 * s, va_list * args)
+     return format (s, "%s", xd->name);
+ 
+   if (dm->conf->interface_name_format_decimal)
+-    devname_format = "%s%d/%d/%d";
++    devname_format = "%s%d/%d/%d/%d";
+   else
+-    devname_format = "%s%x/%x/%x";
++    devname_format = "%s%x/%x/%x/%x";
+ 
+   switch (xd->port_type)
+     {
+@@ -211,8 +211,8 @@ format_dpdk_device_name (u8 * s, va_list * args)
+   pci_dev = dpdk_get_pci_device (&dev_info);
+ 
+   if (pci_dev && xd->port_type != VNET_DPDK_PORT_TYPE_FAILSAFE)
+-    ret = format (s, devname_format, device_name, pci_dev->addr.bus,
+-		  pci_dev->addr.devid, pci_dev->addr.function);
++    ret = format (s, devname_format, device_name, pci_dev->addr.domain,
++		  pci_dev->addr.bus, pci_dev->addr.devid, pci_dev->addr.function);
+   else
+     ret = format (s, "%s%d", device_name, xd->port_id);
+ 
+-- 
+2.30.2
+

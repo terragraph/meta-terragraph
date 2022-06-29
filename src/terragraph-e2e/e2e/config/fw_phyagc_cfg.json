@@ -1,0 +1,29 @@
+{
+  "agcNodeParams" : {
+    "crsScale" : 0,
+    "debugagc" : 3,
+    "ifGaindBperIndexQ8" : 256,
+    "maxIfSweetGainRange" : 17,
+    "minIfSweetGainRange" : 7,
+    "logIntervalBwgd" : 39,
+    "maxIfGainIndex" : 31,
+    "maxRfGainIndex" : 5,
+    "minIfGainIndex" : 0,
+    "minRfGainIndex" : 0,
+    "rawAdcScaleFactorQ8" : 128,
+    "rfGaindBperIndexQ8" : 1792,
+    "rfGainHiLo" : 0,
+    "targetRawAdc" : -14,
+    "useMinRssi" : 0,
+    "useSameForAllSta" : 1
+  },
+  "agcLinkParams" : {
+    "iirAlphaDownQ8" : 128,
+    "iirAlphaUpQ8" : 192,
+    "linkAgc" : 33269,
+    "maxAgcTrackingMargindB" : 7,
+    "maxAgcTrackingEnabled" : 1,
+    "maxNumberMissingBWGDs" : 2,
+    "minRssi" : -40
+  }
+}

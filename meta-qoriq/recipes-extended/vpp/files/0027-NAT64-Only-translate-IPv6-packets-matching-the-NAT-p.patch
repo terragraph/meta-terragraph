@@ -1,0 +1,132 @@
+From e15166022b40601ee68c1aa0cb41292db790fae4 Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Tue, 15 Sep 2020 12:40:32 -0700
+Subject: [PATCH] NAT64: Only translate IPv6 packets matching the NAT prefix
+
+---
+ src/plugins/nat/lib/lib.h            |  2 +-
+ src/plugins/nat/nat.h                |  2 +-
+ src/plugins/nat/nat64/nat64_in2out.c | 53 ++++++++++++++++++++++++++++
+ 3 files changed, 55 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/nat/lib/lib.h b/src/plugins/nat/lib/lib.h
+index 04bad5c74..f0ac7b9c5 100644
+--- a/src/plugins/nat/lib/lib.h
++++ b/src/plugins/nat/lib/lib.h
+@@ -39,7 +39,7 @@ typedef enum nat_config_flags_t_
+ #undef _
+ } nat_config_flags_t;
+ 
+-#define foreach_nat_counter _ (tcp) _ (udp) _ (icmp) _ (other) _ (drops)
++#define foreach_nat_counter _ (tcp) _ (udp) _ (icmp) _ (other) _ (drops) _ (no_translations_ipv6)
+ 
+ #define foreach_nat_error                      \
+   _ (VALUE_EXIST, -1, "Value already exists")  \
+diff --git a/src/plugins/nat/nat.h b/src/plugins/nat/nat.h
+index daebe451f..f90697893 100644
+--- a/src/plugins/nat/nat.h
++++ b/src/plugins/nat/nat.h
+@@ -509,7 +509,7 @@ typedef int (nat_alloc_out_addr_and_port_function_t) (snat_address_t *
+ 						      u16 port_per_thread,
+ 						      u32 snat_thread_index);
+ 
+-#define foreach_nat_counter _ (tcp) _ (udp) _ (icmp) _ (other) _ (drops)
++#define foreach_nat_counter _ (tcp) _ (udp) _ (icmp) _ (other) _ (drops) _ (no_translations_ipv6)
+ 
+ typedef struct snat_main_s
+ {
+diff --git a/src/plugins/nat/nat64/nat64_in2out.c b/src/plugins/nat/nat64/nat64_in2out.c
+index 5d98277d4..149195554 100644
+--- a/src/plugins/nat/nat64/nat64_in2out.c
++++ b/src/plugins/nat/nat64/nat64_in2out.c
+@@ -45,6 +45,7 @@ format_nat64_in2out_trace (u8 * s, va_list * args)
+ #define foreach_nat64_in2out_error                       \
+ _(UNSUPPORTED_PROTOCOL, "unsupported protocol")          \
+ _(NO_TRANSLATION, "no translation")                      \
++_(NO_TRANSLATION_IPV6, "non-NAT64 IPv6")                 \
+ _(UNKNOWN, "unknown")
+ 
+ 
+@@ -78,6 +79,24 @@ typedef struct nat64_in2out_set_ctx_t_
+   u32 thread_index;
+ } nat64_in2out_set_ctx_t;
+ 
++static u8
++ip6_prefixes_equal (ip6_address_t * prefix1, ip6_address_t * prefix2, u8 len)
++{
++  if (len >= 64)
++    {
++      if (prefix1->as_u64[0] != prefix2->as_u64[0]) {
++	      return 0;
++      }
++      if (len == 64) {
++	      return 1;
++      }
++      u64 p1 = clib_net_to_host_u64(prefix1->as_u64[1]) >> (128 - len);
++      u64 p2 = clib_net_to_host_u64(prefix2->as_u64[1]) >> (128 - len);
++      return p1 == p2;
++    }
++  return prefix1->as_u64[0] >> (64 - len) == prefix2->as_u64[0] >> (64 - len);
++}
++
+ static inline u8
+ nat64_not_translate (u32 sw_if_index, ip6_address_t ip6_addr)
+ {
+@@ -86,6 +105,7 @@ nat64_not_translate (u32 sw_if_index, ip6_address_t ip6_addr)
+   ip_lookup_main_t *lm6 = &im6->lookup_main;
+   ip_interface_address_t *ia = 0;
+ 
++  /* Check if destination IPv6 address is assigned to NAT interface itself */
+   /* *INDENT-OFF* */
+   foreach_ip_interface_address (lm6, ia, sw_if_index, 0,
+   ({
+@@ -98,6 +118,30 @@ nat64_not_translate (u32 sw_if_index, ip6_address_t ip6_addr)
+   return 0;
+ }
+ 
++static inline u8
++nat64_not_translate_ip6 (ip6_address_t ip6_addr)
++{
++  nat64_main_t *nm = &nat64_main;
++  nat64_prefix_t *p, *gp = 0, *prefix = 0;
++
++  /*
++   * Check if the IPv6 prefix matches the programmed NAT prefixes (well-known
++   * prefix or IPv6 prefixes with embedded IPv4 addresses). If yes, do NAT64
++   * translation. If not, forward the IPv6 packet to IP6 lookup.
++   */
++
++  /* *INDENT-OFF* */
++  vec_foreach (p, nm->pref64)
++    {
++      if (ip6_prefixes_equal(&p->prefix, &ip6_addr, p->plen))
++        {
++          return 0;
++        }
++    };
++  /* *INDENT-ON* */
++  return 1;
++}
++
+ /**
+  * @brief Check whether is a hairpinning.
+  *
+@@ -1091,6 +1135,15 @@ nat64_in2out_node_fn_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	      goto trace0;
+ 	    }
+ 
++	  if (nat64_not_translate_ip6 (ip60->dst_address))
++	    {
++	      next0 = NAT64_IN2OUT_NEXT_IP6_LOOKUP;
++	      vlib_increment_simple_counter (
++		&nm->counters.in2out.no_translations_ipv6,
++		thread_index, sw_if_index0, 1);
++	      goto trace0;
++	    }
++
+ 	  proto0 = ip_proto_to_nat_proto (l4_protocol0);
+ 
+ 	  if (is_slow_path)
+-- 
+2.30.2
+

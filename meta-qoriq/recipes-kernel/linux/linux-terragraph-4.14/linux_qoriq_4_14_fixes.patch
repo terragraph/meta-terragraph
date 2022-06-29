@@ -1,0 +1,143 @@
+From c2940840ba4eb0c80ca97748deef1c61b62090cf Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 5 Mar 2019 08:36:53 -0500
+Subject: [PATCH] linux_qoriq_4_14_fixes.patch
+
+---
+ arch/arm64/boot/dts/freescale/fsl-ls1088a.dtsi |  5 +++++
+ arch/arm64/configs/defconfig                   |  2 +-
+ arch/arm64/configs/lsdk.config                 |  9 ++++++++-
+ include/linux/rculist.h                        |  6 ++++++
+ net/bridge/br_input.c                          | 13 +++++++++++++
+ net/core/dev.c                                 |  8 ++++++--
+ 6 files changed, 39 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/freescale/fsl-ls1088a.dtsi b/arch/arm64/boot/dts/freescale/fsl-ls1088a.dtsi
+index 78d41609be46..2dbb3946d2d6 100644
+--- a/arch/arm64/boot/dts/freescale/fsl-ls1088a.dtsi
++++ b/arch/arm64/boot/dts/freescale/fsl-ls1088a.dtsi
+@@ -102,6 +102,11 @@
+ 		};
+ 	};
+ 
++	pmu {
++		compatible = "arm,armv8-pmuv3";
++		interrupts = <1 7 IRQ_TYPE_LEVEL_LOW>; /* PMU PPI, Level low type */
++	};
++
+ 	gic: interrupt-controller@6000000 {
+ 		compatible = "arm,gic-v3";
+ 		#interrupt-cells = <3>;
+diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
+index 333ce7a7919b..1249c10bfb5b 100644
+--- a/arch/arm64/configs/defconfig
++++ b/arch/arm64/configs/defconfig
+@@ -616,7 +616,7 @@ CONFIG_PHY_TEGRA_XUSB=y
+ CONFIG_QCOM_L2_PMU=y
+ CONFIG_QCOM_L3_PMU=y
+ CONFIG_TEE=y
+-CONFIG_OPTEE=y
++#CONFIG_OPTEE=y
+ CONFIG_NVMEM_BCM_OCOTP=m
+ CONFIG_ARM_SCPI_PROTOCOL=y
+ CONFIG_RASPBERRYPI_FIRMWARE=y
+diff --git a/arch/arm64/configs/lsdk.config b/arch/arm64/configs/lsdk.config
+index fdfd5fce5093..e9055f5903e3 100644
+--- a/arch/arm64/configs/lsdk.config
++++ b/arch/arm64/configs/lsdk.config
+@@ -81,7 +81,7 @@ CONFIG_NETFILTER_XT_MATCH_COMMENT=y
+ # CONFIG_BACKLIGHT_GENERIC is not set
+ # CONFIG_TEGRA_HOST1X is not set
+ # CONFIG_BT is not set
+-# CONFIG_CFG80211 is not set
++CONFIG_CFG80211=y
+ # CONFIG_MAC80211 is not set
+ # CONFIG_DRM_TEGRA is not set
+ # CONFIG_DRM_EXYNOS is not set
+@@ -110,6 +110,13 @@ CONFIG_MACVTAP=y
+ CONFIG_BTRFS_FS=y
+ CONFIG_FUSE_FS=y
+ 
++# QCA
++CONFIG_WIRELESS=y
++CONFIG_DYNAMIC_DEBUG=y
++CONFIG_EXPERIMENTAL=y
++CONFIG_TRACEPOINTS=y
++CONFIG_NET_DROP_MONITOR=y
++
+ # lxc
+ CONFIG_UNIX_DIAG=y
+ CONFIG_PACKET_DIAG=y
+diff --git a/include/linux/rculist.h b/include/linux/rculist.h
+index 127f534fec94..63475865bf77 100644
+--- a/include/linux/rculist.h
++++ b/include/linux/rculist.h
+@@ -486,6 +486,12 @@ static inline void hlist_add_head_rcu(struct hlist_node *n,
+ 		first->pprev = &n->next;
+ }
+ 
++static inline void hlist_del_head_rcu(struct hlist_node *n,
++				      struct hlist_head *h)
++{
++	rcu_assign_pointer(hlist_first_rcu(h), NULL);
++}
++
+ /**
+  * hlist_add_tail_rcu
+  * @n: the element to add to the hash list.
+diff --git a/net/bridge/br_input.c b/net/bridge/br_input.c
+index 10fa84056cb5..3d2e5776e63d 100644
+--- a/net/bridge/br_input.c
++++ b/net/bridge/br_input.c
+@@ -331,6 +331,19 @@ rx_handler_result_t br_handle_frame(struct sk_buff **pskb)
+ 
+ forward:
+ 	switch (p->state) {
++	case BR_STATE_DISABLED:
++		if (skb->protocol == htons(ETH_P_PAE)) {
++			if (ether_addr_equal(p->br->dev->dev_addr, dest))
++				skb->pkt_type = PACKET_HOST;
++
++			NF_HOOK(NFPROTO_BRIDGE, NF_BR_PRE_ROUTING, dev_net(skb->dev),
++				NULL, skb, skb->dev, NULL, br_handle_local_finish);
++				break;
++			BR_INPUT_SKB_CB(skb)->brdev = p->br->dev;
++			br_pass_frame_up(skb);
++			break;
++		}
++		goto drop;
+ 	case BR_STATE_FORWARDING:
+ 		rhook = rcu_dereference(br_should_route_hook);
+ 		if (rhook) {
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 22dc10d9c57e..2bb2d57aef25 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -5353,11 +5353,13 @@ EXPORT_SYMBOL(napi_complete_done);
+ static struct napi_struct *napi_by_id(unsigned int napi_id)
+ {
+ 	unsigned int hash = napi_id % HASH_SIZE(napi_hash);
+-	struct napi_struct *napi;
++	struct napi_struct *napi = NULL;
+ 
+ 	hlist_for_each_entry_rcu(napi, &napi_hash[hash], napi_hash_node)
+-		if (napi->napi_id == napi_id)
++		if (napi && napi->napi_id == napi_id)
+ 			return napi;
++		else
++			return NULL;
+ 
+ 	return NULL;
+ }
+@@ -5500,6 +5502,8 @@ bool napi_hash_del(struct napi_struct *napi)
+ 	if (test_and_clear_bit(NAPI_STATE_HASHED, &napi->state)) {
+ 		rcu_sync_needed = true;
+ 		hlist_del_rcu(&napi->napi_hash_node);
++		hlist_del_head_rcu(&napi->napi_hash_node,
++				   &napi_hash[napi->napi_id % HASH_SIZE(napi_hash)]);
+ 	}
+ 	spin_unlock(&napi_hash_lock);
+ 	return rcu_sync_needed;
+-- 
+2.17.1
+

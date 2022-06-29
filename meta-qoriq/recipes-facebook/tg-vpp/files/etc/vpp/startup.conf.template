@@ -1,0 +1,62 @@
+# THIS IS A TEMPLATE FILE!
+# The real config file is located in:
+#   /var/run/vpp/startup.conf
+# To generate the real config file, run:
+#   /usr/sbin/update_vpp_startup_conf
+
+logging {
+  default-log-level debug
+  default-syslog-log-level info
+}
+
+unix {
+  nodaemon
+  log /var/log/vpp/vpp-debug.log
+  cli-listen /run/vpp/cli.sock
+  gid vpp
+  exec /etc/vpp/init.cmd
+${coredump_config}
+}
+
+api-segment {
+  gid vpp
+}
+
+api-trace {
+  on
+}
+
+buffers {
+  buffers-per-numa 65536
+  page-size 2048K
+}
+
+cpu {
+  # Place VPP main thread on core 1
+  skip-cores 1
+  # Reserve 2 remaining cores for data-paths (1 worker per core):
+  workers 2
+}
+
+dpdk {
+  # number of memory channels. We only have 1
+  nchannels 1
+  huge-dir   /mnt/hugepages
+  log-level debug
+  ${dpdk_log_config}
+  ${devices}
+}
+
+terragraph {
+  host interface vnet0
+${interface_config}
+  ${ula_test_prefix}
+  ${wsec_enable}
+}
+
+${esmc_config}
+${ptptc_config}
+${tghqos_config}
+
+session { evt_qs_memfd_seg  }
+socksvr { socket-name /var/run/vpp/api.sock }

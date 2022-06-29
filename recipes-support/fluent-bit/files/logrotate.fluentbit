@@ -1,0 +1,10 @@
+# no packages own fluent-bit -- we'll rotate it here
+/var/log/fluent-bit/current {
+    rotate 1
+    missingok
+    notifempty
+    compress
+    delaycompress
+    nodateext
+    size 1M
+}

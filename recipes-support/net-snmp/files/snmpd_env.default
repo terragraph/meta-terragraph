@@ -1,0 +1,2 @@
+SNMPDCONF=/var/run/snmpd.conf
+SNMPDOPTS="-Lsd -Lf /dev/null -p /var/run/snmpd.pid -c ${SNMPDCONF} -C"

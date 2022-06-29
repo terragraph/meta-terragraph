@@ -1,0 +1,43 @@
+From e7c7db1756dd6a6d70676579c7356fa143ee23c4 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 20 Nov 2018 23:08:15 -0500
+Subject: [PATCH] [tg] Use environment variable to disable bus rescans
+
+Allow one to suppress unconditional calls to rescan the
+fsl-mc bus in kernel. Having it enabled results in extremely
+slow scripts performance when multiple objects are created
+or altered.
+---
+ restool.c | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/restool.c b/restool.c
+index 4af2e6f..6a1e4ef 100644
+--- a/restool.c
++++ b/restool.c
+@@ -1487,13 +1487,15 @@ int main(int argc, char *argv[])
+ 			goto out;
+ 	}
+ 
+-	DEBUG_PRINTF("calling sytem()\n");
+-	error = system("echo 1 > /sys/bus/fsl-mc/rescan");
+-	if (error == -1) {
+-		error = -errno;
+-		DEBUG_PRINTF(
+-			"fsl-mc bus rescan failed (error %d)\n", error);
+-		goto out;
++	if (getenv("RESTOOL_NO_RESCAN") == 0) {
++		DEBUG_PRINTF("calling sytem()\n");
++		error = system("echo 1 > /sys/bus/fsl-mc/rescan");
++		if (error == -1) {
++			error = -errno;
++			DEBUG_PRINTF(
++				"fsl-mc bus rescan failed (error %d)\n", error);
++			goto out;
++		}
+ 	}
+ 
+ out:
+-- 
+2.12.2
+

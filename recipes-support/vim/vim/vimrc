@@ -1,0 +1,7 @@
+set nocompatible
+set number
+set autoindent
+set backspace=2
+set mouse=a
+nnoremap <F2> :set invpaste paste?<CR>
+map <silent> <F3> :set invnumber<CR>

@@ -1,0 +1,29 @@
+From 05de9c7ae382859b620f8c536388f38af2046ac2 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Tue, 28 Apr 2020 20:09:03 -0700
+Subject: [PATCH] Set device flag down before stop
+
+---
+ src/plugins/dpdk/device/device.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/dpdk/device/device.c b/src/plugins/dpdk/device/device.c
+index a64f4e3ee..8629e5d10 100644
+--- a/src/plugins/dpdk/device/device.c
++++ b/src/plugins/dpdk/device/device.c
+@@ -489,9 +489,10 @@ dpdk_interface_admin_up_down (vnet_main_t * vnm, u32 hw_if_index, u32 flags)
+   else
+     {
+       vnet_hw_interface_set_flags (vnm, xd->hw_if_index, 0);
+-      if ((xd->flags & DPDK_DEVICE_FLAG_ADMIN_UP) != 0)
+-	dpdk_device_stop (xd);
++      u32 flags = xd->flags;
+       xd->flags &= ~DPDK_DEVICE_FLAG_ADMIN_UP;
++      if ((flags & DPDK_DEVICE_FLAG_ADMIN_UP) != 0)
++	dpdk_device_stop (xd);
+     }
+ 
+   return /* no error */ 0;
+-- 
+2.30.2
+

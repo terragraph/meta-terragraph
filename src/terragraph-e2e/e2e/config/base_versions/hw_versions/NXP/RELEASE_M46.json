@@ -1,0 +1,46 @@
+{
+  "envParams": {
+    "DPDK_ENABLED": "1",
+    "GPSD_BAUD_RATE": "115200",
+    "GPSD_DEVICE": "/dev/ttyS1",
+    "GPSD_ENABLED": "1",
+    "GPSD_GPS_MODULE": "Telit_SL869_T",
+    "GPSD_NMEA_TIME_OFFSET": "0.08",
+    "GPSD_PPS_DEVICE": "/dev/pps1",
+    "LOGTAIL_ENABLED": "0",
+    "OPENR_IFACE_PREFIXES": "terra",
+    "OPENR_USE_FIB_VPP": "1"
+  },
+  "fluentdParams": {
+    "sources": {
+      "fib_vpp": {
+        "enabled": true,
+        "filename": "/var/log/fib_vpp/current"
+      },
+      "vpp": {
+        "enabled": true,
+        "filename": "/var/log/vpp/current"
+      },
+      "vpp_vnet": {
+        "enabled": true,
+        "filename": "/var/log/vpp/vnet.log"
+      }
+    }
+  },
+  "logTailParams": {
+    "sources": {
+      "terragraph_fib_vpp_logs": {
+        "enabled": true,
+        "filename": "/var/log/fib_vpp/current"
+      },
+      "terragraph_vpp_logs": {
+        "enabled": true,
+        "filename": "/var/log/vpp/current"
+      },
+      "terragraph_vpp_vnet_logs": {
+        "enabled": true,
+        "filename": "/var/log/vpp/vnet.log"
+      }
+    }
+  }
+}

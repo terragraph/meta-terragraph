@@ -1,0 +1,13 @@
+diff --git a/CMake/folly-config.h.cmake b/CMake/folly-config.h.cmake
+index a5d7b12c7..4d9aadcdb 100644
+--- a/CMake/folly-config.h.cmake
++++ b/CMake/folly-config.h.cmake
+@@ -58,7 +58,7 @@
+ #cmakedefine FOLLY_HAVE_WEAK_SYMBOLS 1
+ #cmakedefine FOLLY_HAVE_LINUX_VDSO 1
+ #cmakedefine FOLLY_HAVE_MALLOC_USABLE_SIZE 1
+-#cmakedefine FOLLY_HAVE_INT128_T 1
++#cmakedefine FOLLY_HAVE_INT128_T 0
+ #cmakedefine FOLLY_HAVE_WCHAR_SUPPORT 1
+ #cmakedefine FOLLY_HAVE_EXTRANDOM_SFMT19937 1
+ #cmakedefine HAVE_VSNPRINTF_ERRORS 1

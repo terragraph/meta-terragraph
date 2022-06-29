@@ -1,0 +1,84 @@
+#
+# Kbuild file for Terragraph kernel module
+#
+ccflags-y += -I$(KERNEL_EXTRA_HEADER_PATH)/nl-driver-if \
+	     -I$(srctree)/include/net -I$(src)/../nl-driver-if-hdr
+
+# Disable new warnings
+ccflags-y += -Werror
+
+ifeq ($(ENABLE_ASAN),1)
+	ccflags-y += -fsanitize=kernel-address
+endif
+
+MODULE_NAME ?= terragraph-dhd
+ccflags-y += -I$(KERNEL_EXTRA_HEADER_PATH)/bcmdhd
+
+obj-m := $(MODULE_NAME).o
+
+# List of objects to compile, keep sorted
+$(MODULE_NAME)-y := fb_tgd_amsdu.o \
+		    fb_tgd_fw_if.o \
+		    fb_tgd_gps_if.o \
+		    fb_tgd_nlsdn.o \
+		    fb_tgd_route.o \
+		    fb_tgd_route_linux.o \
+		    fb_tgd_terragraph_linux.o
+
+ifeq ($(TG_ENABLE_GPS),y)
+	ccflags-y += -DTG_ENABLE_GPS
+endif
+
+ifeq ($(TG_ENABLE_NSS),y)
+	ccflags-y += -DTG_ENABLE_NSS
+	ccflags-y += -I$(KERNEL_EXTRA_HEADER_PATH)/mv_common \
+		     -I$(KERNEL_EXTRA_HEADER_PATH)/mv_common/sfp
+	$(MODULE_NAME)-y += fb_tgd_route_nss.o
+endif
+
+ifeq ($(TG_ENABLE_PFE),y)
+	ccflags-y += -DTG_ENABLE_PFE
+	$(MODULE_NAME)-y += fb_tgd_route_pfe.o
+endif
+
+ifeq ($(TG_ENABLE_DPAA2),y)
+	ccflags-y += -DTG_ENABLE_DPAA2
+	ccflags-y += -I$(KERNEL_EXTRA_HEADER_PATH)
+	$(MODULE_NAME)-y += fb_tgd_route_dpaa2.o
+endif
+
+ifeq ($(TG_ENABLE_CFG80211),y)
+	ccflags-y += -DTG_ENABLE_CFG80211
+	$(MODULE_NAME)-y += fb_tgd_cfg80211.o
+endif
+
+ifeq ($(TG_ENABLE_QWILMASTER),y)
+	$(MODULE_NAME)-y += fb_tgd_qwilmaster.o
+endif
+
+ifeq ($(TG_ENABLE_PFIFOFC),y)
+	ccflags-y += -DTG_ENABLE_PFIFOFC
+endif
+
+ifeq ($(TG_ENABLE_QUEUE_STATS),y)
+	ccflags-y += -DTG_ENABLE_QUEUE_STATS
+	$(MODULE_NAME)-y += fb_tgd_queue_stats.o
+endif
+
+ifeq ($(TG_ENABLE_BH_COMMON),y)
+	$(MODULE_NAME)-y += fb_tgd_backhaul.o
+endif
+
+ifneq ($(TG_RX_EVENT_CPU),)
+	ccflags-y += -DTGD_RX_EVENT_CPU=$(TG_RX_EVENT_CPU)
+endif
+
+# Comment/uncomment the following line to disable/enable debugging
+DEBUG = n
+ifeq ($(DEBUG),y)
+	DEBFLAGS = -O -g -DDEBUG # "-O" is needed to expand inlines
+else
+	DEBFLAGS = -O2
+ endif
+
+ccflags-y += -DTG_DRIVER $(DEBFLAGS)

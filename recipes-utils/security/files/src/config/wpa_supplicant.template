@@ -1,0 +1,13 @@
+ctrl_interface=/var/run/wpa_supplicant_${ifname}
+update_config=1
+ap_scan=1
+autoscan=exponential:1:1
+
+network={
+	ssid="terragraph"
+	psk="${wpa_passphrase}"
+	pairwise=GCMP
+#	group=GTK_NOT_USED
+	group=GCMP
+	proto=WPA2
+}

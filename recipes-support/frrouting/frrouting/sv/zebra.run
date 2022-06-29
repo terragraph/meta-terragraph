@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+exec /usr/sbin/zebra \
+  -M fpm:netlink \
+  --nl-bufsize 90000000 \
+  --vty_addr ::1 \
+  -u frr \
+  -g frr \
+  2>&1

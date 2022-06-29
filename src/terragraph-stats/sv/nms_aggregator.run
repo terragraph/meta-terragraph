@@ -1,0 +1,35 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+# Default config files (can be overridden by config_get_env)
+AGGREGATOR_CONFIG_FILE="/data/cfg/aggregator_config.json"
+
+while [ : ]; do
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+# read aggregator config file
+if [ ! -f "$AGGREGATOR_CONFIG_FILE" ]; then
+  echo "$AGGREGATOR_CONFIG_FILE not found, copying default aggregator config file..."
+  cp -v /etc/stats_config/aggregator_config_default.json "$AGGREGATOR_CONFIG_FILE"
+fi
+if [ -f /usr/sbin/config_print_flags ]; then
+  CONFIG_ARGS=$(/usr/sbin/config_print_flags "$AGGREGATOR_CONFIG_FILE")
+  if [ $? -ne 0 ]; then
+    echo "Aggregator config file ($AGGREGATOR_CONFIG_FILE) had errors: $CONFIG_ARGS"
+    sleep ${DELAY}
+    continue
+  fi
+fi
+
+RUN_NMS_AGGREGATOR="nms_aggregator -aggregator_config_file $AGGREGATOR_CONFIG_FILE $CONFIG_ARGS"
+
+# run nms_aggregator
+eval exec $RUN_NMS_AGGREGATOR 2>&1
+
+done

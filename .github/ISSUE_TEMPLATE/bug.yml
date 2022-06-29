@@ -1,0 +1,81 @@
+name: 🚩 Bug Report
+description: Submit a new bug report.
+labels: [bug]
+body:
+  - type: checkboxes
+    attributes:
+      label: Prerequisites
+      description: Please check the following items before proceeding.
+      options:
+        - label: I have read the [Contributing Guidelines](../blob/main/CONTRIBUTING.md).
+          required: true
+        - label: I have read the [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true
+
+  - type: dropdown
+    attributes:
+      label: Category
+      description: Select the appropriate category, or choose "Other" if nothing fits.
+      options:
+        - Routing (ex. Open/R, VPP, BGP)
+        - Management plane (ex. E2E, stats, logging)
+        - Tools (ex. CLIs)
+        - Drivers (ex. Terragraph driver, PMD)
+        - Wireless firmware
+        - Performance
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: Priority
+      description: Assess the impact of this ticket.
+      options:
+        - Low
+        - Medium
+        - High
+
+  - type: textarea
+    attributes:
+      label: Description
+      description: |
+        Describe the bug thoroughly.
+        Do not provide customer information that could be considered personally identifiable information (PII).
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: Write down the steps needed to reproduce the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Additional information (logs, etc.)
+      description: |
+        Submit any other information to help us understand the issue, either as text or attachments.
+        This may include application logs, crash traces, configuration files, topology, screenshots, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Your environment
+      description: |
+        Include details about the environment you experienced the bug in (ex. software/firmware version, OEM hardware).
+        You may also attach the output of the "tg2 version" command.
+      value: |
+        - Software version:
+        - Firmware version:
+        - Hardware:
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: External tickets
+      description: If you have opened a similar ticket in another system, please provide a reference number or link.

@@ -1,0 +1,9 @@
+diff --git a/fb303/thrift/fb303_core.thrift b/fb303/thrift/fb303_core.thrift
+index c9d6b8a1..0cf25c19 100644
+--- a/fb303/thrift/fb303_core.thrift
++++ b/fb303/thrift/fb303_core.thrift
+@@ -23,6 +23,7 @@ namespace hack fb303
+ namespace node_module fb303
+ namespace go fb303.thrift.fb303_core
+ namespace js fb303
++namespace lua fb303.fb303_core

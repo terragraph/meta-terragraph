@@ -1,0 +1,621 @@
+diff --git a/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c b/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
+index 8ea206a..e75c2b5 100644
+--- a/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
++++ b/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
+@@ -1824,8 +1824,481 @@ BOOL  vtss_appl_malibu_gpio_in_set(vtss_inst_t   inst, vtss_port_no_t   port_no)
+ #endif
+ }
+ 
++#include <sys/socket.h>
++#include <sys/types.h>
++#include <sys/un.h>
++
++int setup_dgram_sock_interface(const char *path) {
++  int sockfd;
++  struct sockaddr_un name;
++
++  unlink(path);
++
++  sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
++  if (sockfd < 0) {
++    printf("Error opening datagram socket\n");
++    return -1;
++  }
++
++  name.sun_family = AF_UNIX;
++  strcpy(name.sun_path, path);
++  if (bind(sockfd, (struct sockaddr*)&name, sizeof(struct sockaddr_un))) {
++    printf("Error binding name to datagram socket\n");
++    return -1;
++  }
++
++  return sockfd;
++}
++
++#ifdef VTSS_FEATURE_PHY_TIMESTAMP
++#include "vtss_phy_ts_api.h"
++#endif
++
++//
++// Datagram socket API.
++//
++// Expected message format (CSV):
++//   <api_name>,<port_no>(,<api_args>)*
++//
++// Response formats (CSV):
++//   ~OK(,<data>)*\r\n
++//   ~ERR(,<data>)*\r\n
++//
++// Supported messages:
++//   ltc_get
++//     - Get the PTP time (sec,nsec)
++//   ltc_set <sec (6-byte)> <nsec (4-byte))
++//     - Set the PTP time
++//   ltc_ns_adj <1|-1>
++//     - Adjust the PTP time by +/- 1 nsec
++//   ltc_tod_adj <nsec>
++//     - Adjust the PTP time by up to +/- 1 sec (subtracted from current time)
++//   ltc_freq_get
++//     - Get the LTC clock frequency adjustment value (in scaled ppb)
++//   ltc_freq_adj <ppb * 2^16>
++//     - Set the LTC clock frequency adjustment value (in scaled ppb)
++//
++
++#define VTSS_DGRAM_OK_MSG "~OK"
++#define VTSS_DGRAM_ERR_MSG "~ERR"
++
++void handle_dgram_sock_msg(vtss_inst_t inst, char *msg, int msglen, char *respbuf) {
++  char *tokens[256], **api_args;
++  char *cp;
++  int n_args = 0, n_api_args;
++  vtss_port_no_t port_no;
++  vtss_rc rc;
++  static BOOL ptptime_set_needs_completion = FALSE;
++
++  sprintf(respbuf, "%s\r\n", VTSS_DGRAM_ERR_MSG);
++
++  printf("Received message (len=%d): %s\n", msglen, msg);
++
++  // Split input into tokens
++  cp = strtok(msg, ",");
++  while (cp && n_args < sizeof(tokens) - 1) {
++    tokens[n_args++] = cp;
++    cp = strtok(NULL, ",");
++  }
++  if (n_args < 2) {
++    return;
++  }
++  port_no = atoi(tokens[1]);
++  if (port_no < VTSS_PORT_NO_START || port_no >= VTSS_PORT_NO_END) {
++    sprintf(respbuf, "%s,Invalid port_no\r\n", VTSS_DGRAM_ERR_MSG);
++    return;
++  }
++
++  // Handle messages
++  api_args = tokens + 2;
++  n_api_args = n_args - 2;
++#ifdef VTSS_FEATURE_PHY_TIMESTAMP
++  if (strcmp(tokens[0], "ltc_get") == 0) {
++    if (n_api_args != 0) {
++      sprintf(respbuf, "%s,Wrong argument count\r\n", VTSS_DGRAM_ERR_MSG);
++    } else {
++      if (ptptime_set_needs_completion) {
++        // Assume this is called after the next PPS
++        // Need to call vtss_phy_ts_ptptime_set_done() and invalidate the read
++        printf("> Port %d: vtss_phy_ts_ptptime_arm\n", port_no);
++        vtss_phy_ts_ptptime_arm(inst, port_no);
++        printf("> Port %d: vtss_phy_ts_ptptime_set_done\n", port_no);
++        vtss_phy_ts_ptptime_set_done(inst, port_no);
++        ptptime_set_needs_completion = FALSE;
++        sprintf(respbuf, "%s,vtss_phy_ts_ptptime_set_done\r\n", VTSS_DGRAM_ERR_MSG);
++      } else {
++        vtss_phy_timestamp_t ts;
++
++        // Read PTP time
++        printf("> Port %d: vtss_phy_ts_ptptime_get\n", port_no);
++        rc = vtss_phy_ts_ptptime_get(inst, port_no, &ts);
++        if (rc == VTSS_RC_OK) {
++          int64_t sec = ((int64_t)ts.seconds.high << 32) | ts.seconds.low;
++          sprintf(respbuf, "%s,%ld,%d\r\n", VTSS_DGRAM_OK_MSG, sec, ts.nanoseconds);
++        } else {
++          sprintf(respbuf, "%s,vtss_phy_ts_ptptime_get,%d\r\n", VTSS_DGRAM_ERR_MSG, rc);
++        }
++
++        // Arm local time for next read
++        printf("> Port %d: vtss_phy_ts_ptptime_arm\n", port_no);
++        vtss_phy_ts_ptptime_arm(inst, port_no);
++      }
++    }
++  } else if (strcmp(tokens[0], "ltc_set") == 0) {
++    if (n_api_args != 2) {
++      sprintf(respbuf, "%s,Wrong argument count\r\n", VTSS_DGRAM_ERR_MSG);
++    } else {
++      vtss_phy_timestamp_t ts;
++      i64 secs;
++
++      memset(&ts, 0, sizeof(vtss_phy_timestamp_t));
++      secs = atol(api_args[0]);
++      ts.seconds.high = (secs >> 32) & 0xffff; /* upper 16 bits */
++      ts.seconds.low = secs & 0xffffffff;      /* lower 32 bits */
++      ts.nanoseconds = atol(api_args[1]);
++
++      // Arm PTP time
++      printf("> Port %d: vtss_phy_ts_ptptime_arm\n", port_no);
++      vtss_phy_ts_ptptime_arm(inst, port_no);
++
++      // Set PTP time
++      printf("> Port %d: vtss_phy_ts_ptptime_set\n", port_no);
++      rc = vtss_phy_ts_ptptime_set(inst, port_no, &ts);
++      if (rc == VTSS_RC_OK) {
++        sprintf(respbuf, "%s\r\n", VTSS_DGRAM_OK_MSG);
++      } else {
++        sprintf(respbuf, "%s,vtss_phy_ts_ptptime_set,%d\r\n", VTSS_DGRAM_ERR_MSG, rc);
++      }
++
++      ptptime_set_needs_completion = TRUE;
++    }
++  } else if (strcmp(tokens[0], "ltc_ns_adj") == 0) {
++    if (n_api_args != 1) {
++      sprintf(respbuf, "%s,Wrong argument count\r\n", VTSS_DGRAM_ERR_MSG);
++    } else {
++      int v = atoi(api_args[0]);
++      if (v != 1 && v != -1) {
++        sprintf(respbuf, "%s,Bad argument value\r\n", VTSS_DGRAM_ERR_MSG);
++      } else {
++        // Adjust PTP time by +/- 1ns
++        printf("> Port %d: vtss_phy_ts_ptptime_adj1ns\n", port_no);
++        rc = vtss_phy_ts_ptptime_adj1ns(inst, port_no, v == 1 ? TRUE : FALSE);
++        if (rc == VTSS_RC_OK) {
++          sprintf(respbuf, "%s\r\n", VTSS_DGRAM_OK_MSG);
++        } else {
++          sprintf(respbuf, "%s,vtss_phy_ts_ptptime_adj1ns,%d\r\n", VTSS_DGRAM_ERR_MSG, rc);
++        }
++      }
++    }
++  } else if (strcmp(tokens[0], "ltc_tod_adj") == 0) {
++    if (n_api_args != 1) {
++      sprintf(respbuf, "%s,Wrong argument count\r\n", VTSS_DGRAM_ERR_MSG);
++    } else {
++      i32 offset = atoi(api_args[0]);
++      if (offset == 0) {
++        sprintf(respbuf, "%s,Bad argument value\r\n", VTSS_DGRAM_ERR_MSG);
++      } else {
++        // Subtract offset from PTP time
++        printf("> Port %d: vtss_phy_ts_timeofday_offset_set\n", port_no);
++        rc = vtss_phy_ts_timeofday_offset_set(inst, port_no, offset);
++        if (rc == VTSS_RC_OK) {
++          sprintf(respbuf, "%s\r\n", VTSS_DGRAM_OK_MSG);
++        } else {
++          sprintf(respbuf, "%s,vtss_phy_ts_timeofday_offset_set,%d\r\n", VTSS_DGRAM_ERR_MSG, rc);
++        }
++      }
++    }
++  } else if (strcmp(tokens[0], "ltc_freq_get") == 0) {
++    if (n_api_args != 0) {
++      sprintf(respbuf, "%s,Wrong argument count\r\n", VTSS_DGRAM_ERR_MSG);
++    } else {
++      vtss_phy_ts_scaled_ppb_t adj = 0;
++
++      // Read frequency adjustment
++      printf("> Port %d: vtss_phy_ts_clock_rateadj_get\n", port_no);
++      rc = vtss_phy_ts_clock_rateadj_get(inst, port_no, &adj);
++      if (rc == VTSS_RC_OK) {
++        sprintf(respbuf, "%s,%ld\r\n", VTSS_DGRAM_OK_MSG, adj);
++      } else {
++        sprintf(respbuf, "%s,vtss_phy_ts_clock_rateadj_get,%d\r\n", VTSS_DGRAM_ERR_MSG, rc);
++      }
++    }
++  } else if (strcmp(tokens[0], "ltc_freq_adj") == 0) {
++    if (n_api_args != 1) {
++      sprintf(respbuf, "%s,Wrong argument count\r\n", VTSS_DGRAM_ERR_MSG);
++    } else {
++      vtss_phy_ts_scaled_ppb_t adj = atol(api_args[0]);
++
++      // Set frequency adjustment
++      printf("> Port %d: vtss_phy_ts_clock_rateadj_set\n", port_no);
++      rc = vtss_phy_ts_clock_rateadj_set(inst, port_no, &adj);
++      if (rc == VTSS_RC_OK) {
++        sprintf(respbuf, "%s\r\n", VTSS_DGRAM_OK_MSG);
++      } else {
++        sprintf(respbuf, "%s,vtss_phy_ts_clock_rateadj_set,%d\r\n", VTSS_DGRAM_ERR_MSG, rc);
++      }
++    }
++  }
++#endif /* VTSS_FEATURE_PHY_TIMESTAMP */
++
++  printf("Sending response: %s\n", respbuf);
++}
++
++void do_ptp_init(vtss_inst_t inst, vtss_port_no_t port_no) {
++#ifdef VTSS_FEATURE_PHY_TIMESTAMP
++  vtss_phy_ts_init_conf_t conf;
++  vtss_rc rc;
++  vtss_phy_ts_scaled_ppb_t adj = 0;
++
++  memset(&conf, 0, sizeof(vtss_phy_ts_init_conf_t));
++  conf.clk_freq	        = VTSS_PHY_TS_CLOCK_FREQ_250M;
++  conf.clk_src	        = VTSS_PHY_TS_CLOCK_SRC_EXTERNAL;
++  conf.rx_ts_pos	      = VTSS_PHY_TS_RX_TIMESTAMP_POS_IN_PTP;
++  conf.rx_ts_len	      = VTSS_PHY_TS_RX_TIMESTAMP_LEN_30BIT;
++  conf.tx_fifo_mode     = VTSS_PHY_TS_FIFO_MODE_NORMAL;
++  conf.tx_ts_len	      = VTSS_PHY_TS_FIFO_TIMESTAMP_LEN_10BYTE;
++  conf.tc_op_mode       = VTSS_PHY_TS_TC_OP_MODE_B;
++  conf.auto_clear_ls    = TRUE;
++  conf.macsec_ena       = FALSE;
++  conf.chk_ing_modified = FALSE;
++
++  printf("Running vtss_phy_ts_init for port: %d\n", port_no);
++  rc = vtss_phy_ts_init(inst, port_no, &conf);
++  if (rc != VTSS_RC_OK) {
++    printf("vtss_phy_ts_init failed for port: %d\n", port_no);
++    return;
++  }
++
++  // Reset frequency adjustment, since vtss_phy_ts_clock_rateadj_get always
++  // returns zero on startup (even if another value is set)
++  rc = vtss_phy_ts_clock_rateadj_set(inst, port_no, &adj);
++  if (rc != VTSS_RC_OK) {
++    printf("vtss_phy_ts_clock_rateadj_set failed for port: %d\n", port_no);
++  }
++
++  // Configure one-step end-to-end transparent clock
++  do {
++    vtss_port_no_t ing_port_no = port_no;
++    vtss_port_no_t egr_port_no = port_no;
++    vtss_phy_ts_engine_t eng_id = VTSS_PHY_TS_PTP_ENGINE_ID_0;
++    vtss_phy_ts_encap_t pkt_encap = VTSS_PHY_TS_ENCAP_ETH_IP_PTP;
++    vtss_phy_ts_engine_flow_match_t flow_match_mode = VTSS_PHY_TS_ENG_FLOW_MATCH_STRICT;
++    int start_flow = 0, end_flow = 0, flow_id;
++    vtss_phy_ts_fifo_sig_mask_t sig_mask;
++    vtss_phy_ts_fifo_sig_mask_t sig_mask_min = VTSS_PHY_TS_FIFO_SIG_SOURCE_PORT_ID | VTSS_PHY_TS_FIFO_SIG_SEQ_ID;
++    vtss_phy_ts_engine_flow_conf_t flow_conf;
++    vtss_phy_ts_engine_action_t ptp_action;
++    vtss_phy_ts_ptp_clock_mode_t clk_mode = VTSS_PHY_TS_PTP_CLOCK_MODE_TC1STEP;
++    vtss_phy_ts_ptp_delaym_type_t	delay_type = VTSS_PHY_TS_PTP_DELAYM_E2E;
++    u8 ptp_action_id = 0;
++
++    printf("== Configuring PTP-TC on ingress port %d, egress port %d using TS engine %d ==\n", ing_port_no, egr_port_no, eng_id);
++
++    // Enable timestamp block
++    // NOTE: If egr_port_no != ingr_port_no, it also needs
++    //       vtss_phy_ts_init() and vtss_phy_ts_mode_set()
++    printf("Running vtss_phy_ts_mode_set for port: %d\n", ing_port_no);
++    vtss_phy_ts_mode_set(inst, ing_port_no, TRUE);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_mode_set failed for port: %d\n", ing_port_no);
++      break;
++    }
++
++    // Initialize analyzer ingress engine
++    printf("Running vtss_phy_ts_ingress_engine_init for port: %d\n", ing_port_no);
++    rc = vtss_phy_ts_ingress_engine_init(inst, ing_port_no, eng_id, pkt_encap, start_flow, end_flow, flow_match_mode);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_ingress_engine_init failed for port: %d\n", ing_port_no);
++      break;
++    }
++
++    // Initialize analyzer egress engine
++    printf("Running vtss_phy_ts_egress_engine_init for port: %d\n", egr_port_no);
++    rc = vtss_phy_ts_egress_engine_init(inst, egr_port_no, eng_id, pkt_encap, start_flow, end_flow, flow_match_mode);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_egress_engine_init failed for port: %d\n", egr_port_no);
++      break;
++    }
++
++    // Validate frame signature mask in Tx TSFIFO
++    rc = vtss_phy_ts_fifo_sig_get(inst, ing_port_no, &sig_mask);
++    if (sig_mask < sig_mask_min) {
++      printf("Current TS signature mask 0x%04x < 0x%04x (minimum required), setting to minimum...\n", sig_mask, sig_mask_min);
++      vtss_phy_ts_fifo_sig_set(inst, ing_port_no, sig_mask_min);
++    }
++
++    // Get the current ingress analyzer flow config
++    memset(&flow_conf, 0, sizeof(vtss_phy_ts_engine_flow_conf_t));
++    printf("Running vtss_phy_ts_ingress_engine_conf_get for port: %d\n", ing_port_no);
++    rc = vtss_phy_ts_ingress_engine_conf_get(inst, ing_port_no, eng_id, &flow_conf);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_ingress_engine_conf_get failed for port: %d\n", ing_port_no);
++      break;
++    }
++
++    // Modify the ingress analyzer flow config
++    // NOTE: We are using identical config for ingress and egress
++    flow_conf.eng_mode = TRUE;
++    for (flow_id = start_flow; flow_id <= end_flow; flow_id++) {
++      /* Map each flow to the channel which is already mapped to the port */
++      flow_conf.channel_map[flow_id] = VTSS_PHY_TS_ENG_FLOW_VALID_FOR_CH0 | VTSS_PHY_TS_ENG_FLOW_VALID_FOR_CH1;
++      /* Enable the MAC flow */
++      flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].flow_en = TRUE;
++      flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].addr_match_mode = VTSS_PHY_TS_ETH_ADDR_MATCH_ANY_MULTICAST | VTSS_PHY_TS_ETH_ADDR_MATCH_ANY_UNICAST;
++      /* Notify the engine which MAC address needs to be matched (dest/src/both) */
++      flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].addr_match_select = VTSS_PHY_TS_ETH_MATCH_DEST_ADDR;
++      /* Notify the engine if it is a VLAN flow */
++      flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].vlan_check = FALSE;
++      /* Configure the MAC address of the flow */
++      /* Only used if 'addr_match_mode' = VTSS_PHY_TS_ETH_ADDR_MATCH_48BIT, otherwise set to all 0s */
++      if (flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].addr_match_mode == VTSS_PHY_TS_ETH_ADDR_MATCH_48BIT) {
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[0] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[1] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[2] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[3] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[4] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[5] = 0x01 + flow_id;
++      } else {
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[0] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[1] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[2] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[3] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[4] = 0x00;
++        flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[5] = 0x00;
++      }
++      printf("Flow: %d::ETH1 MAC_Addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
++             flow_id,
++             flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[0],
++             flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[1],
++             flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[2],
++             flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[3],
++             flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[4],
++             flow_conf.flow_conf.ptp.eth1_opt.flow_opt[flow_id].mac_addr[5]);
++
++      /* ************************************************************************* */
++      /* For Demo Purpose ONLY, Modify eth1 MAC Addr for each flow to be different */
++      /* For Demo Purpose ONLY, Modify ip1 IP_Addr for each flow to be different */
++      /* ************************************************************************* */
++      /* Match 1st IPv6 address - Depends on SRC or DEST flag */
++      flow_conf.flow_conf.ptp.eth1_opt.comm_opt.etype = 0x86DD /* ETHERTYPE_IEEE_IPV6 */;
++      /* Set IP Version to IPv6 */
++      flow_conf.flow_conf.ptp.ip1_opt.comm_opt.ip_mode = VTSS_PHY_TS_IP_VER_6;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[3] = 0xA000000A;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[2] = 0xB000000B;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[1] = 0xC000000C;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[0] = 0x1 + flow_id;
++      /* Completely SKIP IPv6 matching by setting to all 0s */
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[3] = 0x0;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[2] = 0x0;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[1] = 0x0;
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[0] = 0x0;
++      printf("Flow: %d::ETHERTYPE_IEEE_IPV6:: IP1: 0x%08x:%08x:%08x:%08x\n",
++             flow_id,
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[3],
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[2],
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[1],
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.addr[0]);
++      printf("Flow: %d::ETHERTYPE_IEEE_IPV6:: MSK: 0x%08x:%08x:%08x:%08x\n",
++             flow_id,
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[3],
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[2],
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[1],
++             flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].ip_addr.ipv6.mask[0]);
++      /* Enable the IP flow */
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].flow_en = TRUE;
++      /* Match 1st IP address - Depends on SRC or DEST or BOTH flag */
++      flow_conf.flow_conf.ptp.ip1_opt.flow_opt[flow_id].match_mode = VTSS_PHY_TS_IP_MATCH_DEST;
++    }
++
++    /* Set dest port to 319 to receive PTP event messages */
++    flow_conf.flow_conf.ptp.ip1_opt.comm_opt.dport_val = 319;
++    /* Set dest port mask 0 means any port 0xFFFF means exact match to given port */
++    flow_conf.flow_conf.ptp.ip1_opt.comm_opt.dport_mask = 0xffff;
++    flow_conf.flow_conf.ptp.ip1_opt.comm_opt.sport_val = 0x0;
++    flow_conf.flow_conf.ptp.ip1_opt.comm_opt.sport_mask = 0x0;
++    printf("Flow: %d  IP1: UDP_dport: %d; dportM:0x%04x;  UDP_Sport: %d; SportM: 0x%04x\n", flow_id,
++           flow_conf.flow_conf.ptp.ip1_opt.comm_opt.dport_val,
++           flow_conf.flow_conf.ptp.ip1_opt.comm_opt.dport_mask,
++           flow_conf.flow_conf.ptp.ip1_opt.comm_opt.sport_val,
++           flow_conf.flow_conf.ptp.ip1_opt.comm_opt.sport_mask);
++
++    // Set the ingress analyzer flow config
++    printf("Running vtss_phy_ts_ingress_engine_conf_set for port: %d\n", ing_port_no);
++    rc = vtss_phy_ts_ingress_engine_conf_set(inst, ing_port_no, eng_id, &flow_conf);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_ingress_engine_conf_set failed for port: %d\n", ing_port_no);
++      break;
++    }
++
++    // Set the egress analyzer flow config
++    printf("Running vtss_phy_ts_egress_engine_conf_set for port: %d\n", egr_port_no);
++    rc = vtss_phy_ts_egress_engine_conf_set(inst, egr_port_no, eng_id, &flow_conf);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_egress_engine_conf_set failed for port: %d\n", egr_port_no);
++      break;
++    }
++
++    // Get the current ingress analyzer action
++    memset(&ptp_action, 0, sizeof(vtss_phy_ts_engine_action_t));
++    printf("Running vtss_phy_ts_ingress_engine_action_get for port: %d\n", ing_port_no);
++    rc = vtss_phy_ts_ingress_engine_action_get(inst, ing_port_no, eng_id, &ptp_action);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_ingress_engine_action_get failed for port: %d\n", ing_port_no);
++      break;
++    }
++
++    // Set the ingress analyzer action
++    ptp_action.action_ptp = TRUE;
++    ptp_action.action.ptp_conf[ptp_action_id].enable = TRUE;
++    ptp_action.action.ptp_conf[ptp_action_id].channel_map = VTSS_PHY_TS_ENG_FLOW_VALID_FOR_CH0 | VTSS_PHY_TS_ENG_FLOW_VALID_FOR_CH1;
++    ptp_action.action.ptp_conf[ptp_action_id].ptp_conf.range_en = FALSE;
++    ptp_action.action.ptp_conf[ptp_action_id].clk_mode = clk_mode;
++    ptp_action.action.ptp_conf[ptp_action_id].delaym_type = delay_type;
++    printf("Running vtss_phy_ts_ingress_engine_action_set for port: %d\n", ing_port_no);
++    rc = vtss_phy_ts_ingress_engine_action_set(inst, ing_port_no, eng_id, &ptp_action);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_ingress_engine_action_set failed for port: %d\n", ing_port_no);
++      break;
++    }
++
++    // Get the current egress analyzer action
++    memset(&ptp_action, 0, sizeof(vtss_phy_ts_engine_action_t));
++    printf("Running vtss_phy_ts_egress_engine_action_get for port: %d\n", egr_port_no);
++    rc = vtss_phy_ts_egress_engine_action_get(inst, egr_port_no, eng_id, &ptp_action);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_egress_engine_action_get failed for port: %d\n", egr_port_no);
++      break;
++    }
++
++    // Set the egress analyzer action
++    ptp_action.action_ptp = TRUE;
++    ptp_action.action.ptp_conf[ptp_action_id].enable = TRUE;
++    ptp_action.action.ptp_conf[ptp_action_id].channel_map = VTSS_PHY_TS_ENG_FLOW_VALID_FOR_CH0 | VTSS_PHY_TS_ENG_FLOW_VALID_FOR_CH1;
++    ptp_action.action.ptp_conf[ptp_action_id].ptp_conf.range_en = FALSE;
++    ptp_action.action.ptp_conf[ptp_action_id].clk_mode = clk_mode;
++    ptp_action.action.ptp_conf[ptp_action_id].delaym_type = delay_type;
++    printf("Running vtss_phy_ts_egress_engine_action_set for port: %d\n", egr_port_no);
++    rc = vtss_phy_ts_egress_engine_action_set(inst, egr_port_no, eng_id, &ptp_action);
++    if (rc != VTSS_RC_OK) {
++      printf("vtss_phy_ts_egress_engine_action_set failed for port: %d\n", egr_port_no);
++      break;
++    }
++  } while (0);
++#else
++  (void)inst;
++  (void)port_no;
++#endif /* VTSS_FEATURE_PHY_TIMESTAMP */
++}
++
+ //Global socket fd for mdio ioctl calls
+ extern int g_fd;
++//Global setting to use datagram socket input instead of interactive interface
++extern char g_dgram_socket_path[255];
++//Global setting to run startup PTP configuration
++extern int g_ptp_init_port;
++//Global setting to enable startup SyncE output
++extern int g_synce_output_port;
++
+ /* ================================================================= *
+  *  START_OF_MAIN
+  * ================================================================= */
+@@ -2143,6 +2616,10 @@ printf(" Set to: PHY_MODE_10G_LAN\n");
+           printf("vtss_phy_10g_clause_37_control_set failed, port %d\n", port_no);
+         }
+     }
++
++    if (port_no == g_ptp_init_port) {
++      do_ptp_init(board->inst, port_no);
++    }
+   }  // End of For loop looping through channels for basic configuration
+ 
+   // Wait for the chip to stablize -- about 1 sec
+@@ -2215,8 +2692,45 @@ printf(" DEBUG: adding vtss_debug_info_print() \n");
+     vtss_debug_info_print(board->inst, (vtss_debug_printf_t) printf, &dbg_info);
+   }
+ 
++  printf("\n");
++
++  if (g_synce_output_port >= 0) {
++    vtss_appl_malibu_synce_cntrl(board->inst, g_synce_output_port);
++  }
++
+   fflush(stdout);
+ 
++  if (strlen(g_dgram_socket_path)) {
++    int sockfd, nbytes;
++    char msgbuf[256], respbuf[256];
++    struct sockaddr_un client_addr;
++    socklen_t socklen;
++
++    // Disable stdout buffering (for logging purposes)
++    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
++
++    printf("Initializing datagram socket interface: %s\n", g_dgram_socket_path);
++    sockfd = setup_dgram_sock_interface(g_dgram_socket_path);
++    if (sockfd >= 0) {
++      printf("Listening for messages...\n");
++      while (1) {
++        socklen = sizeof(client_addr);
++        nbytes = recvfrom(sockfd, msgbuf, sizeof(msgbuf) - 1, 0, (struct sockaddr*)&client_addr, &socklen);
++        if (nbytes < 0) {
++          perror("read() failed: ");
++          continue;
++        }
++        msgbuf[nbytes] = '\0';
++
++        // Handle request
++        handle_dgram_sock_msg(board->inst, msgbuf, nbytes, respbuf);
++
++        // Send response
++        sendto(sockfd, respbuf, strlen(respbuf), 0, (struct sockaddr*)&client_addr, socklen);
++      }
++      close(sockfd);
++    }
++  } else {
+     while (1) {
+         {
+             printf (" *************************************\n");
+@@ -2769,10 +3283,10 @@ printf(" DEBUG: adding vtss_debug_info_print() \n");
+             break;
+         }
+     } /* End of While (1) */
++  }
+ 
+ #endif /* VTSS_CHIP_10G_PHY */
+ 
+-
+ #ifdef _INCLUDE_DEBUG_FILE_PRINT_
+   fclose(fp);
+ #endif
+diff --git a/phy_demo_appl/appl/vtss_appl_board_malibu.c b/phy_demo_appl/appl/vtss_appl_board_malibu.c
+index 4efa380..05b61a5 100755
+--- a/phy_demo_appl/appl/vtss_appl_board_malibu.c
++++ b/phy_demo_appl/appl/vtss_appl_board_malibu.c
+@@ -158,6 +158,10 @@ struct mii_ioctl_data_C45 {
+ 
+ static int g_rw_dbg;
+ int g_fd;
++char g_dgram_socket_path[255];
++int g_ptp_init_port = -1;
++int g_synce_output_port = -1;
++
+ vtss_rc mmd_read_vsc8254_phy(const vtss_inst_t    inst,
+          const vtss_port_no_t port_no,
+                      const u8             mmd,
+@@ -627,6 +631,33 @@ int malibu_char_board_init(int argc, const char **argv, vtss_appl_board_t *board
+   for (i = 1; i < argc; i++) {
+     if (strcmp(argv[i], "--debug") == 0) {
+       g_rw_dbg = 1;
++    } else if (strncmp(argv[i], "--dgram-socket=", 15) == 0) {
++      strncpy(g_dgram_socket_path, argv[i]+15, strlen(argv[i])-15);
++    } else if (strncmp(argv[i], "--ptp-init=", 11) == 0) {
++      g_ptp_init_port = atoi(argv[i]+11);
++      if (g_ptp_init_port < VTSS_PORT_NO_START || g_ptp_init_port >= VTSS_PORT_NO_END) {
++        printf("\n invalid port_no='%d' given for --ptp-init\n", g_ptp_init_port);
++        return 1;
++      }
++    } else if (strncmp(argv[i], "--synce-output=", 15) == 0) {
++      g_synce_output_port = atoi(argv[i]+15);
++      if (g_synce_output_port < VTSS_PORT_NO_START || g_synce_output_port >= VTSS_PORT_NO_END) {
++        printf("\n invalid port_no='%d' given for --synce-output\n", g_synce_output_port);
++        return 1;
++      }
++    } else {
++      printf("\n");
++      printf("**************************************************************\n");
++      printf("\n");
++      printf("%s - VSC PHY (Malibu) Configuration Utility\n\n", argv[0]);
++      printf("Available options:\n");
++      printf("  --debug                   Enable custom debug logging\n");
++      printf("  --dgram-socket=<path>     Use datagram socket interface\n");
++      printf("  --ptp-init=<port_no>      Run PTP-TC configuration at startup\n");
++      printf("  --synce-output=<port_no>  Enable SyncE output (SCKOUT) from LINE{0,1} at startup\n");
++      printf("\n");
++      printf("**************************************************************\n");
++      return 1;
+     }
+   }
+ 
+@@ -703,11 +734,13 @@ int malibu_char_board_init(int argc, const char **argv, vtss_appl_board_t *board
+ // Function for initializing the hardware board.
+ int malibu_board_init(int argc, const char **argv, vtss_appl_board_t *board)
+ {
++  int rc;
++
+ #if defined(RPI_MIIM)
+-  rpi_malibu_board_init(argc, argv, board); // Use init function for Raspberry PI MIIM.
++  rc = rpi_malibu_board_init(argc, argv, board); // Use init function for Raspberry PI MIIM.
+ #else
+-  malibu_char_board_init(argc, argv, board); // Use init function for Rabbit MIIM.
++  rc = malibu_char_board_init(argc, argv, board); // Use init function for Rabbit MIIM.
+ #endif /* RPI_MIIM */
+ 
+-  return 0;
++  return rc;
+ }

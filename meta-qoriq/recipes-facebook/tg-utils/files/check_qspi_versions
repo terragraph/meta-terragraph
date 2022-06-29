@@ -1,0 +1,122 @@
+#!/bin/bash
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+usage() {
+  exec 1>&2
+  echo "Compare u-boot, MC, etc. partitions on QSPI flash to those in image."
+  echo "Print equal/differs message for every partition."
+  echo
+  echo "Exit status:"
+  echo "  0: All partitions are equal"
+  echo "  1: Some partitions differ"
+  echo "  2: Some other error (e.g., can't read a partition)"
+  echo
+  echo "Usage: $0 [options]"
+  echo "  -m DIR  Mountpoint of image. If not specified, compares QSPI with current/active image"
+  exit 2
+}
+
+# Returns path to qspi blob, or "" for unknown board revs
+get_puma_qspi_blob_path() {
+  board_rev=$(fdtget "/sys/bus/nvmem/devices/1-00540/nvmem" "/board/hw-ids" "hw-rev")
+  board_type=$(fdtget "/sys/bus/nvmem/devices/1-00540/nvmem" "/board/hw-ids" "hw-board")
+  if [ "NXP_LS1048A_MBH" = "$board_type" ] ; then
+    echo "/usr/share/u-boot/fb-ls1048a-mbh-qspi-fw-blob.bin"
+  else
+    case "${board_rev}" in
+      1.0)
+        echo "/usr/share/u-boot/fb-ls1048a-puma-qspi-fw-blob.bin"
+        ;;
+      2.*)
+        echo "/usr/share/u-boot/fb-ls1048a-puma2-qspi-fw-blob.bin"
+        ;;
+      *)
+        echo "ERROR: Unknown board revision ${board_rev}" 1>&2
+        ;;
+    esac
+  fi
+}
+
+check_all_partitions() {
+  # We want pipelines to fail if any command fails, not just last
+  set -o pipefail
+  qspi_blob=$(get_puma_qspi_blob_path)
+  if [ -z "${qspi_blob}" ]; then
+    return 2
+  fi
+  ret=0
+  qspi_blob="${rootdir}${qspi_blob}"
+  for mtdpath in /sys/class/mtd/mtd[0-9]*; do
+    # Skip mtdXro directories (that don't have /name)
+    [ -f "${mtdpath}/name" ] || continue
+    # Skip partitions not in this list
+    grep -qE '^(rcw|dpl|dpc|MC|u-boot)$' "${mtdpath}/name" || continue
+    # Get byte offset, size and name of partition on flash
+    offset=$(cat "${mtdpath}/offset")
+    size=$(cat "${mtdpath}/size")
+    mtd=$(basename "${mtdpath}")
+    name=$(cat "${mtdpath}/name")
+    # Extract data from QSPI blob file and compare to actual partition content
+    # dd arguments:
+    #   status=none - don't print speed/time stats
+    #   iflag=skip_bytes,count_bytes - the skip= and count= values are in bytes, not in bs= blocks
+    #   bs=4096 - use 4K blocks when reading (for speed), doesn't affect offsets due to iflag=
+    image_hash_command="dd if=${qspi_blob} bs=4096 skip=${offset} count=${size} iflag=skip_bytes,count_bytes status=none | sha256sum"
+    image_hash=$(eval "$image_hash_command" | cut -d' ' -f1)
+    if [ $? -ne 0 ]; then
+      echo "ERROR: Can't read ${size} bytes at ${offset} from ${qspi_blob} (${mtd} ${name}). Aborting."
+      return 2
+    fi
+    qspi_hash_command="sha256sum /dev/${mtd}"
+    qspi_hash=$(eval "$qspi_hash_command" | cut -d' ' -f1)
+    if [ $? -ne 0 ]; then
+      echo "ERROR: Can't read ${size} bytes at ${offset} from ${qspi_blob} (${mtd} ${name}). Aborting."
+      return 2
+    fi
+
+    if [ "$image_hash" != "$qspi_hash" ]; then
+      echo "Partition $mtd ($name) differs:"
+      echo "    QSPI  sha256: $qspi_hash"
+      echo "      $qspi_hash_command"
+      echo "    Image sha256: $image_hash"
+      echo "      $image_hash_command"
+      ret=1
+    else
+      echo "Partition $mtd ($name) identical on QSPI and in image (sha256sum: $qspi_hash)"
+    fi
+  done
+  return $ret
+}
+
+
+while getopts "m:" arg; do
+  case "$arg" in
+    m)
+      rootdir="$OPTARG"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+if [ "$#" -ne "0" ]; then
+  usage
+fi
+
+check_all_partitions
+ret=$?
+if [ $ret -eq 0 ]; then
+  echo
+  echo "All parititions are identical"
+elif [ $ret -eq 1 ]; then
+  echo
+  echo "Some partitions differ"
+fi
+exit $ret

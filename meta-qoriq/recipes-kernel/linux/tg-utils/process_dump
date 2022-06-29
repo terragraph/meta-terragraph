@@ -1,0 +1,3 @@
+#!/bin/sh
+
+ps -eo comm,pid,ppid,start_time,state,priority,wchan,vsize,size,tty,pcpu

@@ -1,0 +1,55 @@
+#! /bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+### BEGIN INIT INFO
+# Provides: Runit
+# Required-Start:
+# Required-Stop:
+# Default-Start: 1 2 3 4 5
+# Default-Stop: 0 6
+# Short-Description: Runit service for managing all init scripts
+### END INIT INFO
+
+# Hack to ensure all runit services run with UTF8 enabled
+export LC_ALL=en_US
+
+
+start(){
+  # read only rootfs.  Copy /etc/sv.bak to /var/run/sv to. A symbolic
+  # link exists from /etc/sv to /var/run/sv
+  /bin/cp -a /etc/sv.bak /var/run/sv
+  # put default finish script
+  for i in /var/run/sv/*; do
+	if [ ! -e "$i"/finish ]; then
+		/bin/cp /etc/init.d/runit.finish "$i"/finish
+	fi
+  done
+  # run all applications on last available core
+  cpumask=$((1 << ($(nproc)-1)))
+  taskset ${cpumask} runsvdir /etc/sv >/dev/null 2>&1 &
+}
+
+case "$1" in
+  start)
+    start
+    ;;
+  status)
+    for dir in $(find /etc/sv -mindepth 1 -maxdepth 1 -type d)
+    do
+      SVC=$(basename $dir)
+      sv status $SVC
+    done
+    ;;
+  stop)
+    ;;
+  *)
+    echo "Usage: runit { start | status }" >&1
+    exit 1
+    ;;
+esac
+
+exit 0

@@ -1,0 +1,100 @@
+From 3e4d20262dd6a415b27f92fc8606a758999f05c0 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 10 Mar 2020 13:44:23 -0700
+Subject: [PATCH] Set the 'router' flag in neighbor advertisements
+
+If the interface is configured to send router advertisements out,
+make sure that all neighbor advertisements from that interface do
+include the 'router' flag.  Otherwise the Neighbor Unreachability
+Detection, as described by RFC4861, has no chance of working.
+---
+ src/vnet/ip6-nd/ip6_nd.c  |  4 +++-
+ src/vnet/ip6-nd/ip6_ra.c  | 12 ++++++++++++
+ src/vnet/ip6-nd/ip6_ra.h  |  2 ++
+ src/vnet/l2/l2_arp_term.c |  5 ++++-
+ 4 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/src/vnet/ip6-nd/ip6_nd.c b/src/vnet/ip6-nd/ip6_nd.c
+index 917abddf7..5ab3d67bb 100644
+--- a/src/vnet/ip6-nd/ip6_nd.c
++++ b/src/vnet/ip6-nd/ip6_nd.c
+@@ -16,6 +16,7 @@
+  */
+ 
+ #include <vnet/ip6-nd/ip6_nd.h>
++#include <vnet/ip6-nd/ip6_ra.h>
+ 
+ #include <vnet/ip-neighbor/ip_neighbor.h>
+ #include <vnet/ip-neighbor/ip_neighbor_dp.h>
+@@ -275,7 +276,8 @@ icmp6_neighbor_solicitation_or_advertisement (vlib_main_t * vm,
+ 
+ 	      h0->advertisement_flags = clib_host_to_net_u32
+ 		(ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_SOLICITED
+-		 | ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_OVERRIDE);
++		 | ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_OVERRIDE
++		 | (icmp6_is_router(sw_if_index0) ? ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_ROUTER : 0));
+ 
+ 	      h0->icmp.checksum = 0;
+ 	      h0->icmp.checksum =
+diff --git a/src/vnet/ip6-nd/ip6_ra.c b/src/vnet/ip6-nd/ip6_ra.c
+index a3d95eee9..0f6b32358 100644
+--- a/src/vnet/ip6-nd/ip6_ra.c
++++ b/src/vnet/ip6-nd/ip6_ra.c
+@@ -204,6 +204,18 @@ ip6_ra_get_itf (u32 sw_if_index)
+   return (NULL);
+ }
+ 
++bool icmp6_is_router(u32 sw_if_index)
++{
++  ip6_ra_t *radv_info;
++
++  radv_info = ip6_ra_get_itf (sw_if_index);
++  if (radv_info != NULL)
++    return radv_info->send_radv;
++
++  return false;
++}
++
++
+ /* for "syslogging" - use elog for now */
+ #define foreach_log_level	     \
+   _ (DEBUG, "DEBUG")                 \
+diff --git a/src/vnet/ip6-nd/ip6_ra.h b/src/vnet/ip6-nd/ip6_ra.h
+index d09e8c0c9..f9ee87e2d 100644
+--- a/src/vnet/ip6-nd/ip6_ra.h
++++ b/src/vnet/ip6-nd/ip6_ra.h
+@@ -83,6 +83,8 @@ extern void ip6_ra_update_secondary_radv_info (ip6_address_t * address,
+ 					       u32 valid_time,
+ 					       u32 preferred_time);
+ 
++bool icmp6_is_router(u32 sw_if_index);
++
+ #endif /* included_ip6_neighbor_h */
+ 
+ /*
+diff --git a/src/vnet/l2/l2_arp_term.c b/src/vnet/l2/l2_arp_term.c
+index 3fcd9c1c8..31cbd517f 100644
+--- a/src/vnet/l2/l2_arp_term.c
++++ b/src/vnet/l2/l2_arp_term.c
+@@ -21,6 +21,8 @@
+ #include <vnet/l2/l2_input.h>
+ #include <vnet/l2/feat_bitmap.h>
+ 
++#include <vnet/ip6-nd/ip6_ra.h>
++
+ #include <vnet/ip/ip4_packet.h>
+ #include <vnet/ip/ip6_packet.h>
+ #include <vnet/ip/icmp6.h>
+@@ -222,7 +224,8 @@ vnet_ip6_nd_term (vlib_main_t * vm,
+ 	  ndh->icmp.type = ICMP6_neighbor_advertisement;
+ 	  ndh->advertisement_flags = clib_host_to_net_u32
+ 	    (ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_SOLICITED |
+-	     ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_OVERRIDE);
++	     ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_OVERRIDE |
++	     (icmp6_is_router(sw_if_index) ? ICMP6_NEIGHBOR_ADVERTISEMENT_FLAG_ROUTER : 0));
+ 	  ndh->icmp.checksum = 0;
+ 	  ndh->icmp.checksum =
+ 	    ip6_tcp_udp_icmp_compute_checksum (vm, p0, ip, &bogus_length);
+-- 
+2.30.2
+

@@ -1,0 +1,22 @@
+diff --git a/src/flb_engine.c b/src/flb_engine.c
+index 81ad9afbf..6fc79a13c 100644
+--- a/src/flb_engine.c
++++ b/src/flb_engine.c
+@@ -306,7 +306,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
+             flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
+ #endif
+             /* Notify about this failed retry */
+-            flb_warn("[engine] chunk '%s' cannot be retried: "
++            flb_trace("[engine] chunk '%s' cannot be retried: "
+                      "task_id=%i, input=%s > output=%s",
+                      flb_input_chunk_get_name(task->ic),
+                      task_id,
+@@ -341,7 +341,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
+         }
+         else {
+             /* Inform the user 'retry' has been scheduled */
+-            flb_warn("[engine] failed to flush chunk '%s', retry in %i seconds: "
++            flb_trace("[engine] failed to flush chunk '%s', retry in %i seconds: "
+                      "task_id=%i, input=%s > output=%s (out_id=%i)",
+                      flb_input_chunk_get_name(task->ic),
+                      retry_seconds,

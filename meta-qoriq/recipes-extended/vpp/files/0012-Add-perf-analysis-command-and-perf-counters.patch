@@ -1,0 +1,1047 @@
+From b874088ccdc3081c0cee0157bd34b8f229f9dbe1 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Fri, 14 Feb 2020 14:29:39 -0800
+Subject: [PATCH] Add perf analysis command and perf counters
+
+Include multi counter perf analysis
+---
+ src/plugins/dpdk/device/cli.c | 149 ++++++++++++++
+ src/vlib/main.c               |  33 +++
+ src/vlib/main.h               |  12 ++
+ src/vlib/node.h               |   5 +
+ src/vlib/node_cli.c           | 377 ++++++++++++++++++++++++++++++++++
+ src/vppinfra/CMakeLists.txt   |   1 +
+ src/vppinfra/pmc.c            | 148 +++++++++++++
+ src/vppinfra/pmc.h            | 148 +++++++++++++
+ 8 files changed, 873 insertions(+)
+ create mode 100644 src/vppinfra/pmc.c
+
+diff --git a/src/plugins/dpdk/device/cli.c b/src/plugins/dpdk/device/cli.c
+index 0f771c6ba..7f0eb9be2 100644
+--- a/src/plugins/dpdk/device/cli.c
++++ b/src/plugins/dpdk/device/cli.c
+@@ -353,6 +353,155 @@ VLIB_CLI_COMMAND (cmd_set_dpdk_if_desc,static) = {
+ };
+ /* *INDENT-ON* */
+ 
++static clib_error_t *
++set_dpdk_xstats (vlib_main_t * vm, unformat_input_t * input,
++		 vlib_cli_command_t * cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  dpdk_main_t *dm = &dpdk_main;
++  u32 hw_if_index = (u32) ~ 0;
++  vnet_hw_interface_t *hw;
++  dpdk_device_t *xd;
++  u32 flags = 0;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat
++	  (line_input, "%U", unformat_vnet_hw_interface, dm->vnet_main,
++	   &hw_if_index))
++	;
++      else if (unformat (line_input, "flags %x", &flags))
++	;
++      else
++	{
++	  error = clib_error_return (0, "parse error: '%U'",
++				     format_unformat_error, line_input);
++	  goto done;
++	}
++    }
++
++  if (hw_if_index == (u32) ~ 0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  hw = vnet_get_hw_interface (dm->vnet_main, hw_if_index);
++  xd = vec_elt_at_index (dm->devices, hw->dev_instance);
++
++  rte_eth_xstats_config (xd->port_id, flags);
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (cmd_set_dpdk_xstat, static) = {
++  .path = "set dpdk xstats",
++  .short_help = "set dpdk xstats <interface> flags <flags>",
++  .function = set_dpdk_xstats,
++};
++/* *INDENT-ON* */
++
++static u64 last_get_xstats = 0;
++
++static clib_error_t *
++get_dpdk_xstats (vlib_main_t * vm, unformat_input_t * input,
++		 vlib_cli_command_t * cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  dpdk_main_t *dm = &dpdk_main;
++  u32 hw_if_index = (u32) ~ 0;
++  vnet_hw_interface_t *hw;
++  dpdk_device_t *xd;
++
++  u64 now = rte_get_tsc_cycles () * 40;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat
++	  (line_input, "%U", unformat_vnet_hw_interface, dm->vnet_main,
++	   &hw_if_index))
++	;
++      else
++	{
++	  error = clib_error_return (0, "parse error: '%U'",
++				     format_unformat_error, line_input);
++	  goto done;
++	}
++    }
++
++  if (hw_if_index == (u32) ~ 0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  hw = vnet_get_hw_interface (dm->vnet_main, hw_if_index);
++  xd = vec_elt_at_index (dm->devices, hw->dev_instance);
++
++  dpdk_get_xstats (xd);
++
++  u8 *xs = 0;
++  u8 *s = 0;
++  u32 i = 0;
++  struct rte_eth_xstat *xstat;
++  struct rte_eth_xstat_name *xstat_names = 0;
++  int len = rte_eth_xstats_get_names (xd->port_id, NULL, 0);
++  vec_validate (xstat_names, len - 1);
++  rte_eth_xstats_get_names (xd->port_id, xstat_names, len);
++
++  vec_foreach_index (i, xd->xstats)
++  {
++    u64 delta = 0;
++    xstat = vec_elt_at_index (xd->xstats, i);
++    if (xstat->value)
++      {
++	/* format_c_identifier doesn't like c strings inside vector */
++	u8 *name = format (0, "%s", xstat_names[i].name);
++	xs = format (xs, "\n%-38U%16Lu", format_c_identifier, name, delta);
++	vec_free (name);
++      }
++  }
++
++  vec_free (xstat_names);
++
++  if (xs)
++    {
++      s = format (s, "\nextended stats (%lu nano):%v", now - last_get_xstats,
++		  xs);
++      vec_free (xs);
++    }
++
++  if (s)
++    {
++      vlib_cli_output (vm, s);
++    }
++  last_get_xstats = now;
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (cmd_get_dpdk_xstat, static) = {
++  .path = "get dpdk xstats",
++  .short_help = "get dpdk xstats <interface>",
++  .function = get_dpdk_xstats,
++};
++/* *INDENT-ON* */
++
+ static clib_error_t *
+ show_dpdk_version_command_fn (vlib_main_t * vm,
+ 			      unformat_input_t * input,
+diff --git a/src/vlib/main.c b/src/vlib/main.c
+index 27cbcb0df..8bbada022 100644
+--- a/src/vlib/main.c
++++ b/src/vlib/main.c
+@@ -670,6 +670,30 @@ vlib_node_runtime_update_stats (vlib_main_t * vm,
+   return r;
+ }
+ 
++static inline void
++vlib_node_runtime_pmc_counter (vlib_main_t * vm, u64 * counters)
++{
++  if (PREDICT_FALSE (vm->vlib_node_runtime_pmc_counter_cb != 0))
++    return ((*vm->vlib_node_runtime_pmc_counter_cb) (vm, counters));
++}
++
++static inline void
++vlib_node_runtime_pmc_counter_update (vlib_main_t * vm,
++				      vlib_node_runtime_t * r, u64 * counters)
++{
++  u64 pmc_counters_after[PMC_NUM_COUNTER];
++  if (PREDICT_FALSE (vm->vlib_node_runtime_pmc_counter_cb != 0))
++    {
++      vlib_node_t *n = vlib_get_node (vm, r->node_index);
++      ((*vm->vlib_node_runtime_pmc_counter_cb) (vm, pmc_counters_after));
++      for (int i = 0; i < PMC_NUM_COUNTER; i++)
++	{
++	  n->stats_total.pmc_counters[i] +=
++	    pmc_sub_counters (pmc_counters_after[i], counters[i]);
++	}
++    }
++}
++
+ always_inline void
+ vlib_process_update_stats (vlib_main_t * vm,
+ 			   vlib_process_t * p,
+@@ -1184,12 +1208,14 @@ dispatch_node (vlib_main_t * vm,
+ 
+   vm->cpu_time_last_node_dispatch = last_time_stamp;
+ 
++  u64 pmc_counters_before[PMC_NUM_COUNTER];
+   vlib_elog_main_loop_event (vm, node->node_index,
+ 			     last_time_stamp, frame ? frame->n_vectors : 0,
+ 			     /* is_after */ 0);
+ 
+   vlib_node_runtime_perf_counter (vm, node, frame, 0, last_time_stamp,
+ 				  VLIB_NODE_RUNTIME_PERF_BEFORE);
++  vlib_node_runtime_pmc_counter (vm, pmc_counters_before);
+ 
+   /*
+    * Turn this on if you run into
+@@ -1221,6 +1247,7 @@ dispatch_node (vlib_main_t * vm,
+ 
+   vlib_node_runtime_perf_counter (vm, node, frame, n, t,
+ 				  VLIB_NODE_RUNTIME_PERF_AFTER);
++  vlib_node_runtime_pmc_counter_update (vm, node, pmc_counters_before);
+ 
+   vlib_elog_main_loop_event (vm, node->node_index, t, n, 1 /* is_after */ );
+ 
+@@ -1780,6 +1807,12 @@ vlib_main_or_worker_loop (vlib_main_t * vm, int is_main)
+   vm->numa_node = clib_get_current_numa_node ();
+   os_set_numa_index (vm->numa_node);
+ 
++  /* Make sure the performance monitor counter is disabled */
++  for (int i = 0; i < PMC_NUM_COUNTER; i++)
++    {
++      vm->pmc_counter_id[i] = ~0;
++    }
++
+   /* Start all processes. */
+   if (is_main)
+     {
+diff --git a/src/vlib/main.h b/src/vlib/main.h
+index adfdc87bf..bd9cebd49 100644
+--- a/src/vlib/main.h
++++ b/src/vlib/main.h
+@@ -150,6 +150,10 @@ typedef struct vlib_main_t
+   /* Main loop hw / sw performance counters */
+   vlib_node_runtime_perf_callback_set_t vlib_node_runtime_perf_callbacks;
+ 
++  /* Multi counters, direct PMU access, Main loop hw / sw performance counters */
++  void (*vlib_node_runtime_pmc_counter_cb) (struct vlib_main_t *, u64 *);
++  int pmc_counter_id[PMC_NUM_COUNTER];
++
+   /* Every so often we switch to the next counter. */
+ #define VLIB_LOG2_MAIN_LOOPS_PER_STATS_UPDATE 7
+ 
+@@ -438,6 +442,14 @@ vlib_last_vectors_per_main_loop (vlib_main_t * vm)
+   return vm->internal_node_last_vectors_per_main_loop;
+ }
+ 
++/* Total ave vector count per iteration of main loop. */
++always_inline f64
++vlib_last_vectors_per_main_loop_as_f64 (vlib_main_t * vm)
++{
++  return (f64) vm->internal_node_last_vectors_per_main_loop
++    / (f64) (1 << VLIB_LOG2_MAIN_LOOPS_PER_STATS_UPDATE);
++}
++
+ always_inline void
+ vlib_node_runtime_perf_counter (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 				vlib_frame_t * frame, uword n, u64 t,
+diff --git a/src/vlib/node.h b/src/vlib/node.h
+index 6b9a2df95..8c11b4838 100644
+--- a/src/vlib/node.h
++++ b/src/vlib/node.h
+@@ -43,6 +43,7 @@
+ #include <vppinfra/cpu.h>
+ #include <vppinfra/longjmp.h>
+ #include <vppinfra/lock.h>
++#include <vppinfra/pmc.h>
+ #include <vlib/trace.h>		/* for vlib_trace_filter_t */
+ 
+ /* Forward declaration. */
+@@ -236,6 +237,7 @@ typedef struct
+   u64 calls, vectors, clocks, suspends;
+   u64 max_clock;
+   u64 max_clock_n;
++  u64 pmc_counters[PMC_NUM_COUNTER];
+ } vlib_node_stats_t;
+ 
+ #define foreach_vlib_node_state					\
+@@ -273,6 +275,9 @@ typedef struct vlib_node_t
+      Current values are always stats_total - stats_last_clear. */
+   vlib_node_stats_t stats_last_clear;
+ 
++  /* Used to print diffs values */
++  vlib_node_stats_t stats_last_print;
++
+   /* Type of this node. */
+   vlib_node_type_t type;
+ 
+diff --git a/src/vlib/node_cli.c b/src/vlib/node_cli.c
+index c5458b218..fe1de0931 100644
+--- a/src/vlib/node_cli.c
++++ b/src/vlib/node_cli.c
+@@ -42,6 +42,9 @@
+ #include <fcntl.h>
+ #include <vlib/vlib.h>
+ #include <vlib/threads.h>
++#include <vppinfra/pmc.h>
++
++#define NANO_PER_SEC 1000000000L
+ 
+ static int
+ node_cmp (void *a1, void *a2)
+@@ -489,6 +492,380 @@ VLIB_CLI_COMMAND (show_node_runtime_command, static) = {
+ };
+ /* *INDENT-ON* */
+ 
++static u8 *
++format_vlib_node_perf (u8 * s, va_list * va)
++{
++  vlib_main_t *vm = va_arg (*va, vlib_main_t *);
++  vlib_node_t *n = va_arg (*va, vlib_node_t *);
++  u64 diff_nano = va_arg (*va, u64);
++  f64 v;
++  u8 *ns;
++  u8 *misc_info = 0;
++  u64 c, p, d;
++  f64 x;
++  u32 indent;
++  u64 pmc_ticks[PMC_NUM_COUNTER];
++  u64 nano_per_clock, diff_clock;
++  if (!n)
++    {
++      s = format (s,
++		  "%=30s%=10s%=10s%=10s%=13s%=10s%=13s%=10s",
++		  "Name", "State", "   Calls", "   Packets",
++		  "  Nano/Pkt", "  Pkt/Call", "  Time(nano)", "   Percent");
++      for (int i = 0; i < PMC_NUM_COUNTER; i++)
++	{
++	  if (vm->pmc_counter_id[i] >= 0)
++	    {
++	      s = format (s, "%=18s:%=1u",
++			  get_perf_counter_name (vm->pmc_counter_id[i]), i);
++	    }
++	}
++      return s;
++    }
++
++  indent = format_get_indent (s);
++
++  nano_per_clock = NANO_PER_SEC / vm->clib_time.clocks_per_second;
++  diff_clock = n->stats_total.clocks - n->stats_last_print.clocks;
++  diff_clock = nano_per_clock * diff_clock;
++  n->stats_last_print.clocks = n->stats_total.clocks;
++
++  // calls
++  c = n->stats_total.calls - n->stats_last_print.calls;
++  n->stats_last_print.calls = n->stats_total.calls;
++
++  // vectors
++  p = n->stats_total.vectors - n->stats_last_print.vectors;
++  n->stats_last_print.vectors = n->stats_total.vectors;
++
++  d = n->stats_total.suspends - n->stats_last_clear.suspends;
++
++  for (int i = 0; i < PMC_NUM_COUNTER; i++)
++    {
++      pmc_ticks[i] = n->stats_total.pmc_counters[i] -
++	n->stats_last_print.pmc_counters[i];
++      n->stats_last_print.pmc_counters[i] = n->stats_total.pmc_counters[i];
++    }
++  /* Nano per packet, per call or per suspend. */
++  x = 0;
++  if (p > 0)
++    x = (double) diff_clock / (double) p;
++  else if (c > 0)
++    x = (double) diff_clock / (double) c;
++  else if (d > 0)
++    x = (double) diff_clock / (double) d;
++
++  if (c > 0)
++    v = (double) p / (double) c;
++  else
++    v = 0;
++
++  if (n->type == VLIB_NODE_TYPE_PROCESS)
++    {
++      vlib_process_t *p = vlib_get_process_from_node (vm, n);
++
++      /* Show processes with events pending.
++         This helps spot bugs where events are not being handled. */
++      if (!clib_bitmap_is_zero (p->non_empty_event_type_bitmap))
++	misc_info = format (misc_info, "events pending, ");
++    }
++  ns = n->name;
++
++  s = format (s, "%-30v%=10U%10Ld%10Ld%13.2f%10.2f", ns,
++	      format_vlib_node_state, vm, n, c /* call */ ,
++	      p /* vect */ , x /* nano/vect */ , v /* vect/call */ );
++
++  s = format (s, "%13Ld", diff_clock);
++
++  f64 percent_clock = (f64) (diff_clock * 100) / (f64) diff_nano;
++  s = format (s, "%10.2f", percent_clock);
++
++  for (int i = 0; i < PMC_NUM_COUNTER; i++)
++    {
++      if (vm->pmc_counter_id[i] != ~0)
++	{
++	  s = format (s, "%20u", pmc_ticks[i]);
++	}
++    }
++
++  if (ns != n->name)
++    vec_free (ns);
++
++  if (misc_info)
++    {
++      s = format (s, "\n%U%v", format_white_space, indent + 4, misc_info);
++      vec_free (misc_info);
++    }
++
++  return s;
++}
++
++static u64 last_stat_clock = 0;
++static clib_error_t *
++show_node_perf (vlib_main_t * vm,
++		unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  vlib_node_main_t *nm = &vm->node_main;
++  vlib_node_t *n;
++  u32 node_index;
++  vlib_node_t ***node_dups = 0;
++  f64 *vectors_per_main_loop = 0;
++  f64 *last_vector_length_per_node = 0;
++  u64 nano_per_clock;
++
++  u64 current_stat_clock = clib_cpu_time_now ();
++  u64 diff_nano = current_stat_clock - last_stat_clock;
++  nano_per_clock = NANO_PER_SEC / vm->clib_time.clocks_per_second;
++  diff_nano *= nano_per_clock;
++
++  last_stat_clock = current_stat_clock;
++
++  if (unformat (input, "%U", unformat_vlib_node, vm, &node_index))
++    {
++      n = vlib_get_node (vm, node_index);
++      vlib_node_sync_stats (vm, n);
++      vlib_cli_output (vm, "%U\n", format_vlib_node_perf, vm, 0, diff_nano);
++      vlib_cli_output (vm, "%U\n", format_vlib_node_perf, vm, n, diff_nano);
++    }
++  else
++    {
++      vlib_node_t **nodes;
++      uword i, j;
++      u64 c, d;
++      int brief = 1;
++      vlib_main_t **stat_vms = 0, *stat_vm;
++
++      for (i = 0; i < vec_len (vlib_mains); i++)
++	{
++	  stat_vm = vlib_mains[i];
++	  if (stat_vm)
++	    vec_add1 (stat_vms, stat_vm);
++	}
++
++      /*
++       * Barrier sync across stats scraping.
++       * Otherwise, the counts will be grossly inaccurate.
++       */
++      vlib_worker_thread_barrier_sync (vm);
++
++      for (j = 0; j < vec_len (stat_vms); j++)
++	{
++	  stat_vm = stat_vms[j];
++	  nm = &stat_vm->node_main;
++
++	  for (i = 0; i < vec_len (nm->nodes); i++)
++	    {
++	      n = nm->nodes[i];
++	      vlib_node_sync_stats (stat_vm, n);
++	    }
++
++	  nodes = vec_dup (nm->nodes);
++
++	  vec_add1 (node_dups, nodes);
++	  vec_add1 (vectors_per_main_loop,
++		    vlib_last_vectors_per_main_loop_as_f64 (stat_vm));
++	  vec_add1 (last_vector_length_per_node,
++		    vlib_internal_node_vector_rate (stat_vm));
++	}
++      vlib_worker_thread_barrier_release (vm);
++
++      for (j = 0; j < vec_len (stat_vms); j++)
++	{
++	  stat_vm = stat_vms[j];
++	  nodes = node_dups[j];
++
++	  vec_sort_with_function (nodes, node_cmp);
++
++	  if (vec_len (vlib_mains) > 1)
++	    {
++	      vlib_worker_thread_t *w = vlib_worker_threads + j;
++	      if (j > 0)
++		vlib_cli_output (vm, "---------------");
++
++	      if (w->cpu_id > -1)
++		vlib_cli_output (vm, "Thread %d %s (lcore %u)", j, w->name,
++				 w->cpu_id);
++	      else
++		vlib_cli_output (vm, "Thread %d %s", j, w->name);
++	    }
++
++	  vlib_cli_output (vm, "Diff(nano) %12lu", diff_nano);
++
++	  vlib_cli_output (vm, "%U", format_vlib_node_perf, stat_vm, 0,
++			   diff_nano);
++	  for (i = 0; i < vec_len (nodes); i++)
++	    {
++	      c =
++		nodes[i]->stats_total.calls -
++		nodes[i]->stats_last_clear.calls;
++	      d =
++		nodes[i]->stats_total.suspends -
++		nodes[i]->stats_last_clear.suspends;
++	      if (c || d || !brief)
++		{
++		  vlib_cli_output (vm, "%U", format_vlib_node_perf, stat_vm,
++				   nodes[i], diff_nano);
++		}
++	    }
++	  vec_free (nodes);
++	}
++      vec_free (stat_vms);
++      vec_free (node_dups);
++      vec_free (vectors_per_main_loop);
++      vec_free (last_vector_length_per_node);
++    }
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (show_node_perf_command, static) = {
++  .path = "show perf",
++  .short_help = "show per node perf measurement",
++  .function = show_node_perf,
++  .is_mp_safe = 1,
++};
++/* *INDENT-ON* */
++
++always_inline void
++pmc_read_counters (vlib_main_t * vm, u64 * counters)
++{
++  for (int i = 0; i < PMC_NUM_COUNTER; i++)
++    {
++      if (vm->pmc_counter_id[i] != ~0)
++	counters[i] = read_perf_counter (i);
++    }
++}
++
++always_inline void
++set_counter (vlib_main_t * vm)
++{
++  for (int i = 0; i < PMC_NUM_COUNTER; i++)
++    {
++      if (vm->pmc_counter_id[i] == ~0)
++	{
++	  disable_perf_counter (i);
++	}
++      else
++	{
++	  enable_perf_counter (i, vm->pmc_counter_id[i]);
++	}
++    }
++  clib_callback_enable_disable (vm->worker_thread_main_loop_callbacks,
++				vm->worker_thread_main_loop_callback_tmp,
++				vm->worker_thread_main_loop_callback_lock,
++				set_counter, 0 /* disable */ );
++}
++
++/*
++ * VPP currently supports only one counter, whereas underlying
++ * architecture may support multiple. Hence always read counter 0.
++ */
++static clib_error_t *
++set_node_perf (vlib_main_t * vm,
++	       unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  u32 cnt, type;
++  const char *name;
++  int ret;
++
++  if (unformat (input, "counter %u type %u", &cnt, &type))
++    {
++      if ((ret = enable_pmu ()) < 0)
++	{
++	  vlib_cli_output (vm, "Cannot enable Perf Monitoring Unit (%d).",
++			   ret);
++	  return 0;
++	}
++      name = get_perf_counter_name (type);
++      if (name == NULL)
++	{
++	  vlib_cli_output (vm, "Unknown counter.");
++	  return 0;
++	}
++      vlib_cli_output (vm, " Set perf counter %u to %s\n", cnt, name);
++
++      /* Configure counter 0 on main thread. */
++      vm->pmc_counter_id[cnt] = type;
++      enable_perf_counter (cnt, type);
++      vm->vlib_node_runtime_pmc_counter_cb = pmc_read_counters;
++
++      /* Configure counter 0 on workers threads. */
++      for (int i = 1; i < vec_len (vlib_mains); i++)
++	{
++	  vlib_mains[i]->pmc_counter_id[cnt] = type;
++	  clib_callback_enable_disable (vm->worker_thread_main_loop_callbacks,
++		vm->worker_thread_main_loop_callback_tmp,
++		vm->worker_thread_main_loop_callback_lock,
++		set_counter, 1 /* enable */ );
++	  vlib_mains[i]->vlib_node_runtime_pmc_counter_cb = pmc_read_counters;
++	}
++    }
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (set_node_perf_command, static) = {
++  .path = "set perf",
++  .short_help = "set perf counter",
++  .function = set_node_perf,
++  .is_mp_safe = 1,
++};
++/* *INDENT-ON* */
++
++void
++unset_perf_counter (vlib_main_t * vm, int cnt)
++{
++  /* Disable counter cnt on main thread. */
++  vm->pmc_counter_id[cnt] = ~0;
++  disable_perf_counter (cnt);
++  vm->vlib_node_runtime_pmc_counter_cb = NULL;
++
++  /* Disable counter 0 on worker threads. */
++  for (int i = 1; i < vec_len (vlib_mains); i++)
++    {
++      vlib_mains[i]->pmc_counter_id[cnt] = ~0;
++      clib_callback_enable_disable (vm->worker_thread_main_loop_callbacks,
++	vm->worker_thread_main_loop_callback_tmp,
++	vm->worker_thread_main_loop_callback_lock,
++	set_counter, 1 /* enable */ );
++      vlib_mains[i]->vlib_node_runtime_pmc_counter_cb = NULL;
++    }
++}
++
++static clib_error_t *
++unset_node_perf (vlib_main_t * vm,
++		 unformat_input_t * input, vlib_cli_command_t * cmd)
++{
++  int cnt = ~0;
++  if (unformat (input, "counter %u", &cnt))
++    {
++      vlib_cli_output (vm, " unset perf counter %u\n", cnt);
++    }
++  else
++    {
++      for (int i = 0; i < PMC_NUM_COUNTER; i++)
++	{
++	  unset_perf_counter (vm, i);
++	}
++      return 0;
++    }
++
++  if (cnt != ~0 && cnt < PMC_NUM_COUNTER)
++    {
++      unset_perf_counter (vm, cnt);
++    }
++  return 0;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (unset_node_perf_command, static) = {
++  .path = "unset perf",
++  .short_help = "unset perf counter",
++  .function = unset_node_perf,
++  .is_mp_safe = 1,
++};
++/* *INDENT-ON* */
++
+ static clib_error_t *
+ clear_node_runtime (vlib_main_t * vm,
+ 		    unformat_input_t * input, vlib_cli_command_t * cmd)
+diff --git a/src/vppinfra/CMakeLists.txt b/src/vppinfra/CMakeLists.txt
+index a972d9067..355a01b5d 100644
+--- a/src/vppinfra/CMakeLists.txt
++++ b/src/vppinfra/CMakeLists.txt
+@@ -68,6 +68,7 @@ set(VPPINFRA_SRCS
+   mpcap.c
+   pcap.c
+   pmalloc.c
++  pmc.c
+   pool.c
+   ptclosure.c
+   random_buffer.c
+diff --git a/src/vppinfra/pmc.c b/src/vppinfra/pmc.c
+new file mode 100644
+index 000000000..13515c3a7
+--- /dev/null
++++ b/src/vppinfra/pmc.c
+@@ -0,0 +1,148 @@
++
++#include <stdlib.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <linux/mempolicy.h>
++#include <linux/memfd.h>
++
++#include <vppinfra/format.h>
++#include <vppinfra/linux/syscall.h>
++#include <vppinfra/linux/sysfs.h>
++#include <vppinfra/mem.h>
++#include <vppinfra/hash.h>
++#include <vppinfra/pmalloc.h>
++#include <vppinfra/pmc.h>
++
++#if defined (__aarch64__)
++
++#define MAX_PERF_NUM_COUNTERS sizeof(perf_counter_names)/sizeof(char *)
++/**
++ * Counter type names as per ARMv8 ref architecture manual.
++ */
++const char * perf_counter_names[] = {
++  "sw_incr", /* [0] */
++  "l1i_cache_refill",
++  "l1i_tlb_refill",
++  "l1d_cache_refill",
++  "l1d_cache",
++  "l1d_tlb_refill", /* [5] */
++  "ld_retired",
++  "st_retired",
++  "inst_retired",
++  "exc_taken",
++  "exc_return", /* [10] */
++  "cid_write_retired",
++  "pc_write_retired",
++  "br_imm_retired",
++  "not_implemented",
++  "unaligned_ldst_retired", /* [15] */
++  "br_mis_pred",
++  "cpu_cycles",
++  "br_pred",
++  "mem_access",
++  "l1i_cache", /* [20] */
++  "l1d_cache_wb",
++  "l2d_cache",
++  "l2d_cache_refill",
++  "l2d_cache_wb",
++  "bus_access", /* [25] */
++  "mem_error",
++  "not_implemented",
++  "not_implemented",
++  "bus_cycle",
++  "chain" /* [30] */
++};
++
++/**
++ * Enable a performance counter.
++ *
++ * enable if type is between 0 and MAX_PERF_NUM_COUNTERS
++ * disable if type is < 0
++ *
++ * counter:     counter number, value must be between 0 and 5
++ * type:        type of counter as per ARMv8 arch reference
++ */
++__clib_export void
++enable_perf_counter (int counter, unsigned int type)
++{
++  u64 vct = 0;
++  if (type >= MAX_PERF_NUM_COUNTERS)
++    return;
++
++  asm volatile ("isb");
++  /* Disable counter. */
++  asm volatile ("msr pmcntenclr_el0, %0"::"r" (1 << counter));
++
++  if (type >= 0) {
++    /* Select current counter config. */
++    vct = read_perf_counter_type(counter);
++    write_perf_counter_type(counter, (type | ((u32)vct & 0xfffffe00)));
++
++    /* Enable counter. */
++    asm volatile ("msr pmcntenset_el0, %0"::"r" (1 << counter));
++  }
++}
++
++/**
++ * Disable a performance counter.
++ */
++__clib_export void
++disable_perf_counter (int counter)
++{
++  asm volatile ("isb");
++  /* Disable counter. */
++  asm volatile ("msr pmcntenclr_el0, %0"::"r" (1 << counter));
++}
++
++#define ENABLE_PMU_MODULE_NAME "enable_arm_pmu"
++
++/**
++ * return 0 if enable_arm_pmu is loaded.
++ */
++static int check_pmu(void) {
++  FILE *file;
++  char str[128];
++  file = fopen( "/proc/modules", "r" );
++  if (file == NULL) {
++    return -1;
++  }
++  while( fgets (str, 128, file) != NULL )
++    {
++      if (!strncmp(str, ENABLE_PMU_MODULE_NAME, strlen (ENABLE_PMU_MODULE_NAME))) {
++        return 0;
++      }
++    }
++  fclose(file);
++  return -2;
++}
++
++__clib_export int enable_pmu(void) {
++  int ret;
++
++  if (ret = check_pmu())
++    {
++      system("modprobe " ENABLE_PMU_MODULE_NAME);
++      ret = check_pmu();
++    }
++  return ret;
++}
++
++#else
++
++#define MAX_PERF_NUM_COUNTERS 0
++char * perf_counter_names[] = {};
++__clib_export int enable_pmu(void) { return -1; }
++__clib_export void
++enable_perf_counter (int counter, unsigned int type) {}
++__clib_export void
++disable_perf_counter (int counter) {}
++#endif
++
++__clib_export const char *get_perf_counter_name(unsigned int type) {
++ if (type < MAX_PERF_NUM_COUNTERS) {
++   return perf_counter_names[type];
++  }
++  return NULL;
++}
+diff --git a/src/vppinfra/pmc.h b/src/vppinfra/pmc.h
+index 258b92512..90e071370 100644
+--- a/src/vppinfra/pmc.h
++++ b/src/vppinfra/pmc.h
+@@ -18,6 +18,8 @@
+ 
+ #if defined (__x86_64__)
+ 
++#define PMC_NUM_COUNTER 0
++
+ always_inline u64
+ clib_rdpmc (int counter_id)
+ {
+@@ -27,14 +29,160 @@ clib_rdpmc (int counter_id)
+   return (u64) a + ((u64) d << (u64) 32);
+ }
+ 
++always_inline u64
++read_perf_counter (int cnt)
++{
++  return 0ULL;
++}
++
++always_inline u64
++pmc_sub_counters (u64 c1, u64 c2)
++{
++  return 0ULL;
++}
++
++#elif defined __aarch64__
++
++#define PMC_NUM_COUNTER 6
++
++always_inline u64
++clib_rdpmc (int counter_id)
++{
++  return 0ULL;
++}
++
++/**
++ * Write a performance counter type register.
++ */
++always_inline void
++write_perf_counter_type (unsigned int cnt, unsigned int val)
++{
++  switch (cnt)
++    {
++    case 0:
++      asm volatile ("msr pmevtyper0_el0, %0"::"r" (val));
++      break;
++    case 1:
++      asm volatile ("msr pmevtyper1_el0, %0"::"r" (val));
++      break;
++    case 2:
++      asm volatile ("msr pmevtyper2_el0, %0"::"r" (val));
++      break;
++    case 3:
++      asm volatile ("msr pmevtyper3_el0, %0"::"r" (val));
++      break;
++    case 4:
++      asm volatile ("msr pmevtyper4_el0, %0"::"r" (val));
++      break;
++    case 5:
++      asm volatile ("msr pmevtyper5_el0, %0"::"r" (val));
++      break;
++    }
++}
++
++/**
++ * Read a performance counter type register.
++ */
++always_inline u64
++read_perf_counter_type (unsigned int cnt)
++{
++  u64 vct;
++  switch (cnt)
++    {
++    case 0:
++      asm volatile ("mrs %0, pmevtyper0_el0":"=r" (vct));
++      break;
++    case 1:
++      asm volatile ("mrs %0, pmevtyper1_el0":"=r" (vct));
++      break;
++    case 2:
++      asm volatile ("mrs %0, pmevtyper2_el0":"=r" (vct));
++      break;
++    case 3:
++      asm volatile ("mrs %0, pmevtyper3_el0":"=r" (vct));
++      break;
++    case 4:
++      asm volatile ("mrs %0, pmevtyper4_el0":"=r" (vct));
++      break;
++    case 5:
++      asm volatile ("mrs %0, pmevtyper5_el0":"=r" (vct));
++      break;
++    default:
++      return 0;
++      break;
++    }
++  return vct;
++}
++
++/**
++ * Read a performance counter value.
++ */
++always_inline u64
++read_perf_counter (unsigned int cnt)
++{
++  u64 vct;
++  switch (cnt)
++    {
++    case 0:
++      asm volatile ("mrs %0, pmevcntr0_el0":"=r" (vct));
++      break;
++    case 1:
++      asm volatile ("mrs %0, pmevcntr1_el0":"=r" (vct));
++      break;
++    case 2:
++      asm volatile ("mrs %0, pmevcntr2_el0":"=r" (vct));
++      break;
++    case 3:
++      asm volatile ("mrs %0, pmevcntr3_el0":"=r" (vct));
++      break;
++    case 4:
++      asm volatile ("mrs %0, pmevcntr4_el0":"=r" (vct));
++      break;
++    case 5:
++      asm volatile ("mrs %0, pmevcntr5_el0":"=r" (vct));
++      break;
++    default:
++      return 0;
++      break;
++    }
++  return vct;
++}
++
++always_inline u64
++pmc_sub_counters (u64 c1, u64 c2)
++{
++  return c1 >= c2 ? c1 - c2 : 0x100000000ULL + c2 - c1;
++}
++
+ #else
++
++#define PMC_NUM_COUNTER 0
++
+ always_inline u64
+ clib_rdpmc (int counter_id)
+ {
+   return 0ULL;
+ }
++
++always_inline u64
++read_perf_counter (int cnt)
++{
++  return 0ULL;
++}
++
++always_inline u64
++pmc_sub_counters (u64 c1, u64 c2)
++{
++  return 0ULL;
++}
++
+ #endif /* __aarch64__ */
+ 
++extern void enable_perf_counter (int counter, unsigned int type);
++extern void disable_perf_counter (int counter);
++extern const char *get_perf_counter_name (unsigned int type);
++extern int enable_pmu (void);
++extern void disable_pmu (void);
+ #endif /* included_clib_pmc_h */
+ 
+ /*
+-- 
+2.30.2
+

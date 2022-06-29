@@ -1,0 +1,168 @@
+From f6e484c3c9176257836e82df6f5484dbeb9cdeb4 Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Thu, 12 Nov 2020 09:23:38 -0800
+Subject: [PATCH] Add link weighting
+
+---
+ app/cli-functions.c   | 25 ++++++++++++++++---------
+ app/pktgen-links.c    | 27 ++++++++++++++++++++-------
+ app/pktgen-links.h    |  2 ++
+ app/pktgen-port-cfg.h |  1 +
+ 4 files changed, 39 insertions(+), 16 deletions(-)
+
+diff --git a/app/cli-functions.c b/app/cli-functions.c
+index b866873..26c8c42 100644
+--- a/app/cli-functions.c
++++ b/app/cli-functions.c
+@@ -37,10 +37,11 @@
+ #include "copyright_info.h"
+ #include "pktgen-cmds.h"
+ #include "pktgen-main.h"
+-#include "lpktgenlib.h"
++#include "pktgen-links.h"
+ #include "pktgen-display.h"
+ #include "pktgen-random.h"
+ #include "pktgen-log.h"
++#include "lpktgenlib.h"
+ #include "pg_ether.h"
+ #if defined(RTE_LIBRTE_PMD_BOND) || defined(RTE_NET_BOND)
+ #include <rte_eth_bond.h>
+@@ -488,7 +489,7 @@ static struct cli_map set_map[] = {
+ 	{ 31, "set %P dst ip %4" },
+ 	{ 32, "set %P src ip %6" },
+ 	{ 33, "set %P dst ip %6" },
+-	{ 35, "set %P %|link|links %|" TG_LINKS " %|on|off" },
++	{ 35, "set %P %|link|links %|" TG_LINKS " %d" },
+ 	{ 40, "set ports_per_page %d" },
+ 	{ 50, "set %P qinqids %d %d" },
+ 	{ 60, "set %P rnd %d %d %s" },
+@@ -543,7 +544,7 @@ static const char *set_help[] = {
+     "		num-samples: number of samples.",
+     "		rate: sampling rate i.e., samples per second.",
+     "		outfile: path to output file to dump all sampled latencies",
+-	"set <portlist> link <0-15|all> <on|off> - Set the active TG links in a radio sector",
++	"set <portlist> link <0-15|all> <weight> - Set the weight for a TG link. Weight can vary 0-65535",
+ 	"set ports_per_page <value>         - Set ports per page value 1 - 6",
+ 	CLI_HELP_PAUSE,
+ 	NULL
+@@ -660,15 +661,20 @@ set_cmd(int argc, char **argv)
+ 			foreach_port(portlist,
+                 single_set_ipaddr(info, 'd', &ip, ip_ver));
+ 			break;
+-		case 35: {
+-			bool active = strcmp(argv[4], "off");
+-			if (!strcmp(argv[3], "all")){
+-				for (uint8_t link = 0; link < TG_LINKS_PER_PORT; link++) {
+-					foreach_port(portlist, pktgen_set_links(info, link, active));
++		case 35:
++		{
++			uint32_t weight = atoi(argv[4]);
++			if (weight > (1 << 16)) {
++				cli_printf("Max weight is 65535. Weight unchanged.\n");
++				break;
++			}
++			if (!strcmp(argv[3], "all")) {
++				for(uint8_t link = 0; link < TG_LINKS_PER_PORT; link++) {
++					foreach_port(portlist, pktgen_set_link_weight(info, link, weight));
+ 				}
+ 			} else {
+ 				uint32_t link = atoi(argv[3]) & 0xF;
+-				foreach_port(portlist, pktgen_set_links(info, link, active));
++				foreach_port(portlist, pktgen_set_link_weight(info, link, weight));
+ 			}
+ 			foreach_port(portlist, pktgen_update_links(info));
+ 			break;
+@@ -2036,6 +2042,7 @@ static struct cli_tree default_tree[] = {
+ 	c_cmd("port", 		misc_cmd, 	"Switch between ports"),
+ 	c_cmd("ping4", 		misc_cmd, 	"Send a ping packet for IPv4"),
+ 	c_cmd("ping6", 		misc_cmd,	"Send a ping packet for IPv6"),
++	c_cmd("show", 		misc_cmd,	"Show link information"),
+ 
+ 	c_cmd("sequence",	seq_cmd,	"sequence command"),
+ 	c_alias("seq",		"sequence",	"sequence command"),
+diff --git a/app/pktgen-links.c b/app/pktgen-links.c
+index 5d1c5e3..fcb5543 100644
+--- a/app/pktgen-links.c
++++ b/app/pktgen-links.c
+@@ -24,15 +24,18 @@ link_is_active(port_info_t *info, uint16_t idx)
+ uint8_t
+ pktgen_get_random_link(port_info_t *info)
+ {
+-    if (!info->links){
+-        return 0;
++    uint32_t weight_sum = 0;
++    for (uint16_t link_idx = 0; link_idx < TG_LINKS_PER_PORT; link_idx++) {
++        if (link_is_active(info, link_idx))
++            weight_sum += info->link_weights[link_idx];
+     }
+-    uint8_t link = rand() % hamming_weight(info->links) + 1;
++    if (weight_sum == 0)
++        return 0;
++    int32_t target_weight = rand() % weight_sum;
+     uint8_t link_idx;
+-    for (link_idx = 0; link > 0; link_idx++){
+-        if (link_is_active(info, link_idx)){
+-            link--;
+-        }
++    for (link_idx = 0; target_weight > -1; link_idx++) {
++        if (link_is_active(info, link_idx))
++            target_weight -= info->link_weights[link_idx];
+     }
+     return link_idx - 1;
+ }
+@@ -42,6 +45,7 @@ pktgen_link_up(struct rte_wigig_link_updown_info *link_info)
+ {
+     port_info_t *info = &pktgen.info[link_info->port_id];
+     pktgen_set_links(info, link_info->if_peer_id, true);
++    pktgen_set_link_weight(info, link_info->if_peer_id, 1);
+     pktgen_update_links(info);
+     pktgen_update_display();
+ }
+@@ -51,6 +55,7 @@ pktgen_link_down(struct rte_wigig_link_updown_info *link_info)
+ {
+     port_info_t *info = &pktgen.info[link_info->port_id];
+     pktgen_set_links(info, link_info->if_peer_id, false);
++    pktgen_set_link_weight(info, link_info->if_peer_id, 0);
+     pktgen_update_links(info);
+     pktgen_update_display();
+ }
+@@ -131,3 +136,11 @@ pktgen_update_links(port_info_t *info)
+         pktgen_setup_packets(info, info->q[qid].tx_mp, qid);
+     }
+ }
++
++void
++pktgen_set_link_weight(port_info_t *info, uint16_t link, uint16_t weight)
++{
++    if (link >= TG_LINKS_PER_PORT)
++        return;
++    info->link_weights[link] = weight;
++}
+diff --git a/app/pktgen-links.h b/app/pktgen-links.h
+index 0fd7ece..0d95387 100644
+--- a/app/pktgen-links.h
++++ b/app/pktgen-links.h
+@@ -29,6 +29,8 @@ void pktgen_set_links(port_info_t *info, uint16_t link, bool active);
+ 
+ void pktgen_update_links(port_info_t *info);
+ 
++void pktgen_set_link_weight(port_info_t *info, uint16_t link, uint16_t weight);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/app/pktgen-port-cfg.h b/app/pktgen-port-cfg.h
+index d364b4d..134a5a4 100644
+--- a/app/pktgen-port-cfg.h
++++ b/app/pktgen-port-cfg.h
+@@ -303,6 +303,7 @@ typedef struct port_info_s {
+     char user_pattern[USER_PATTERN_SIZE]; /**< User set pattern values */
+     fill_t fill_pattern_type;             /**< Type of pattern to fill with */
+     uint16_t links; /**< active links for this port's radio sector. bitwise flags*/
++    uint16_t link_weights[TG_LINKS_PER_PORT]; /**< User defined link weighting for differential P2MP transmition */
+     link_stats_t link_stats;
+ 
+     /* Latency sampling data */
+-- 
+2.30.2
+

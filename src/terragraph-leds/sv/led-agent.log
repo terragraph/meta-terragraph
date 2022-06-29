@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/led-agent
+exec svlogd /var/log/led-agent

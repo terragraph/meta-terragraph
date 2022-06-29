@@ -1,0 +1,53 @@
+--- a/RobloxPlugin/Minify.lua
++++ b/RobloxPlugin/Minify.lua
+@@ -1,3 +1,4 @@
++#!/usr/bin/env lua
+ 
+ --
+ -- Minify.lua
+@@ -1568,3 +1569,44 @@
+ 	if not st then return false, ast end
+ 	return true, Format_Mini(ast)
+ end
+\ No newline at end of file
++
++local function main()
++	if #arg < 1 then
++		print("Usage: <file_to_minify.lua>")
++		os.exit(1)
++	end
++
++	for i = 1, #arg do
++		local f = arg[i]
++
++		local inFile = io.open(f, "r")
++		if not inFile then
++			print("Failed to open source file for reading: " .. f)
++			os.exit(1)
++		end
++		local src = inFile:read("*a")
++		inFile:close()
++
++		local ret, out = Minify(src)
++		if not ret then
++			print(out)  -- ast
++			print("Failed to minify source file: " .. f)
++			os.exit(1)
++		end
++
++		local outFile = io.open(f, "w")
++		if not outFile then
++			print("Failed to open source file for writing: " .. f)
++			os.exit(1)
++		end
++		outFile:write(out)
++		outFile:close()
++
++		print("Minified " .. f)
++	end
++end
++
++if debug.getinfo(4) == nil then
++	main()	
++end
++

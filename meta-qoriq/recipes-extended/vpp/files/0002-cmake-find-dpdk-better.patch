@@ -1,0 +1,52 @@
+From 0b462be32cf797903ffbfb62e399d505c5032b95 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Mon, 30 Nov 2020 13:56:08 -0800
+Subject: [PATCH] cmake find dpdk better
+
+---
+ src/plugins/dpdk/CMakeLists.txt | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/src/plugins/dpdk/CMakeLists.txt b/src/plugins/dpdk/CMakeLists.txt
+index 57523457f..cb7fb0b5e 100644
+--- a/src/plugins/dpdk/CMakeLists.txt
++++ b/src/plugins/dpdk/CMakeLists.txt
+@@ -15,14 +15,22 @@
+ # Find lib and include files
+ ##############################################################################
+ find_path(DPDK_INCLUDE_DIR PATH_SUFFIXES dpdk NAMES rte_config.h)
+-vpp_plugin_find_library(dpdk DPDK_LIB "libdpdk.a")
+ 
+ if (NOT DPDK_INCLUDE_DIR)
+   message(WARNING "-- DPDK headers not found - dpdk plugin disabled")
+   return()
+ endif()
+ 
+-if (NOT DPDK_LIB)
++# Try pkg-config first to figure out how to link
++pkg_check_modules(DPDK libdpdk)
++if (NOT DPDK_FOUND)
++  find_library(DPDK_LIB NAMES "libdpdk.a")
++  if (NOT DPDK_LIB)
++    message(WARNING "-- libdpdk.a library not found")
++  endif()
++endif()
++
++if (NOT DPDK_FOUND AND NOT DPDK_LIB)
+   vpp_plugin_find_library(dpdk DPDK_SHLIB "libdpdk.so")
+   set(DPDK_IS_SHARED_LIB 1)
+   message(WARNING "-- linking dpdk plugin against DPDK shared libs")
+@@ -66,7 +74,9 @@ unset(DPDK_LINK_FLAGS)
+ message(STATUS "Found DPDK ${DPDK_VERSION} in ${DPDK_INCLUDE_DIR} CMAKE_PREFIX_PATH = ${CMAKE_PREFIX_PATH}")
+ include_directories (${DPDK_INCLUDE_DIR})
+ 
+-if(DPDK_IS_SHARED_LIB)
++if(DPDK_FOUND)
++  string(REPLACE ";" " " DPDK_LINK_FLAGS "-Wl,-Bstatic ${DPDK_STATIC_LDFLAGS}")
++elseif(DPDK_IS_SHARED_LIB)
+   get_filename_component(DPDK_LIB_DIR ${DPDK_SHLIB} DIRECTORY)
+   string_append(DPDK_LINK_FLAGS "-L${DPDK_LIB_DIR}")
+   list(APPEND DPDK_LINK_LIBRARIES ${DPDK_SHLIB})
+-- 
+2.30.2
+

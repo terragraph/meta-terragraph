@@ -1,0 +1,61 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f76ee5c33..419d16a61 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -124,7 +124,7 @@ if(lib_only OR build_all)
+     include(ThriftLibrary.cmake)
+   endif(lib_only)
+ 
+-  find_package(python-six)
++  #find_package(python-six)
+   if("${thriftpy}" STREQUAL "AUTO")
+     if(python-six_FOUND)
+       message(STATUS
+diff --git a/thrift/lib/py/CMakeLists.txt b/thrift/lib/py/CMakeLists.txt
+index 8ec4eeb34..dcb3c1fca 100644
+--- a/thrift/lib/py/CMakeLists.txt
++++ b/thrift/lib/py/CMakeLists.txt
+@@ -47,23 +47,23 @@ set(
+ # thrift_py has external dependencies on the "six" and "future" python
+ # packages.  It will use the "snappy" and "zstd" compression packages if they
+ # are available, but does not require them.
+-add_fb_python_library(
+-  thrift_py
+-  SOURCES ${THRIFT_PY_SRCS}
+-  NAMESPACE "thrift"
+-  DEPENDS python-six::python-six
+-)
+-install_fb_python_library(
+-  thrift_py
+-  EXPORT fbthrift-exports
+-)
+-
+-add_fb_python_library(
+-  thrift_py_inspect
+-  SOURCES "util/inspect.py"
+-  NAMESPACE "thrift"
+-)
+-install_fb_python_library(
+-  thrift_py_inspect
+-  EXPORT fbthrift-exports
+-)
++#add_fb_python_library(
++#  thrift_py
++#  SOURCES ${THRIFT_PY_SRCS}
++#  NAMESPACE "thrift"
++#  DEPENDS python-six::python-six
++#)
++#install_fb_python_library(
++#  thrift_py
++#  EXPORT fbthrift-exports
++#)
++#
++#add_fb_python_library(
++#  thrift_py_inspect
++#  SOURCES "util/inspect.py"
++#  NAMESPACE "thrift"
++#)
++#install_fb_python_library(
++#  thrift_py_inspect
++#  EXPORT fbthrift-exports
++#)

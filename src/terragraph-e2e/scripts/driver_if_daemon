@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# driver_if_daemon used to be its own binary, but is now merged into e2e_minion.
+
+/usr/sbin/e2e_minion --driver_if_only "$@"

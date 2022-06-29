@@ -1,0 +1,67 @@
+From 83cef52def57771ce2c3ad15e0f5fa2b65c4b547 Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Thu, 10 Sep 2020 14:44:50 -0700
+Subject: [PATCH] VxLAN QoS outer IPv6 marking for IPv4 packets
+
+Use inner IPv4 TOS for outer IPv6 TC in VxLAN IPv4-to-IPv6
+scenarios.
+---
+ src/vnet/vxlan/encap.c | 35 +++++++++++++++++++++++++++++------
+ 1 file changed, 29 insertions(+), 6 deletions(-)
+
+diff --git a/src/vnet/vxlan/encap.c b/src/vnet/vxlan/encap.c
+index 1a52b249d..00a74ebdc 100644
+--- a/src/vnet/vxlan/encap.c
++++ b/src/vnet/vxlan/encap.c
+@@ -271,10 +271,25 @@ vxlan_encap_inline (vlib_main_t * vm,
+ 	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
+ 	      ip6_header_t *inner_ip6_1 = underlay1 +
+ 	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
+-	      ip6_set_traffic_class_network_order(ip6_0,
+-	        ip6_traffic_class_network_order (inner_ip6_0));
+-	      ip6_set_traffic_class_network_order(ip6_1,
+-	        ip6_traffic_class_network_order (inner_ip6_1));
++
++	      /* Check for inner IPv4 or IPv6 header and set TC appropriately */
++	      if (clib_net_to_host_u32
++	        (inner_ip6_0->ip_version_traffic_class_and_flow_label) >> 28 == 6) {
++	        ip6_set_traffic_class_network_order(ip6_0,
++	          ip6_traffic_class_network_order (inner_ip6_0));
++	      } else {
++	        ip4_header_t *inner_ip4_0 = (ip4_header_t *) inner_ip6_0;
++	        ip6_set_traffic_class_network_order (ip6_0, inner_ip4_0->tos);
++	      }
++
++	      if (clib_net_to_host_u32
++	        (inner_ip6_1->ip_version_traffic_class_and_flow_label) >> 28 == 6) {
++	        ip6_set_traffic_class_network_order(ip6_1,
++	          ip6_traffic_class_network_order (inner_ip6_1));
++	      } else {
++	        ip4_header_t *inner_ip4_1 = (ip4_header_t *) inner_ip6_1;
++	        ip6_set_traffic_class_network_order (ip6_1, inner_ip4_1->tos);
++	      }
+ 
+ 	      l3_0 = (u8 *) ip6_0;
+ 	      l3_1 = (u8 *) ip6_1;
+@@ -457,8 +472,16 @@ vxlan_encap_inline (vlib_main_t * vm,
+ 
+ 	      ip6_header_t *inner_ip6 = underlay0 +
+ 	        sizeof (ip6_vxlan_header_t) + sizeof (ethernet_header_t);
+-	      ip6_set_traffic_class_network_order(ip6_0,
+-	        ip6_traffic_class_network_order (inner_ip6));
++
++	      /* Check for inner IPv4 or IPv6 header and set TC appropriately */
++	      if (clib_net_to_host_u32
++	        (inner_ip6->ip_version_traffic_class_and_flow_label) >> 28 == 6) {
++	        ip6_set_traffic_class_network_order(ip6_0,
++	          ip6_traffic_class_network_order (inner_ip6));
++	      } else {
++	        ip4_header_t *inner_ip4 = (ip4_header_t *) inner_ip6;
++	        ip6_set_traffic_class_network_order (ip6_0, inner_ip4->tos);
++	      }
+ 
+ 	      l3_0 = (u8 *) ip6_0;
+ 	      udp0 = &hdr->udp;
+-- 
+2.30.2
+

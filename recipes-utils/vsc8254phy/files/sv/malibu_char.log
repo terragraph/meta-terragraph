@@ -1,0 +1,11 @@
+#!/bin/sh
+
+mkdir -p /var/log/malibu_char
+
+# limit "current" size to 200KB (from 1MB) and max rotated logs to 1 (from 10)
+cat <<EOF >/var/log/malibu_char/config
+s200000
+n1
+EOF
+
+exec svlogd /var/log/malibu_char

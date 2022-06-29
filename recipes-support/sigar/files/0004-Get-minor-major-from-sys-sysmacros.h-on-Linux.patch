@@ -1,0 +1,26 @@
+From edfb3902b026e01d59f46dbd1acfea1c02c5729b Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Wed, 26 Dec 2018 11:36:32 -0500
+Subject: [PATCH] Get minor()/major() from sys/sysmacros.h on Linux
+
+Include sys/sysmacros.h. explicitly rather than relying on
+header contamination, which is not there with newer glibc's
+---
+ src/os/linux/linux_sigar.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/os/linux/linux_sigar.c b/src/os/linux/linux_sigar.c
+index 075b011e..86cb52a7 100644
+--- a/src/os/linux/linux_sigar.c
++++ b/src/os/linux/linux_sigar.c
+@@ -24,6 +24,7 @@
+ #include <sys/stat.h>
+ #include <sys/times.h>
+ #include <sys/utsname.h>
++#include <sys/sysmacros.h>
+ 
+ #include "sigar.h"
+ #include "sigar_private.h"
+-- 
+2.12.2
+

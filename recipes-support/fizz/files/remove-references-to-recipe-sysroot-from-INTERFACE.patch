@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Oliver Giles <oliver_g@radwin.com>
+Date: Wed, 28 Aug 2019 17:25:13 +0300
+Subject: [PATCH] remove references to recipe-sysroot from INTERFACE
+
+Yocto uses a private sysroot for each recipe. Fizz incorrectly
+saves the path to this sysroot in its target config file, and
+it is propagated to downstream targets. Fix this by restricting
+PUBLIC include/link declarations to named targets.
+---
+ fizz/CMakeLists.txt | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fizz/CMakeLists.txt b/fizz/CMakeLists.txt
+index bb3e15e5..53a64d09 100644
+--- a/fizz/CMakeLists.txt
++++ b/fizz/CMakeLists.txt
+@@ -240,11 +240,11 @@ target_include_directories(
+   PUBLIC
+     $<BUILD_INTERFACE:${FIZZ_BASE_DIR}>
+     $<INSTALL_INTERFACE:${INCLUDE_INSTALL_DIR}>
++  PRIVATE
+     ${FOLLY_INCLUDE_DIR}
+     ${OPENSSL_INCLUDE_DIR}
+     ${sodium_INCLUDE_DIR}
+     ${ZSTD_INCLUDE_DIR}
+-  PRIVATE
+     ${GLOG_INCLUDE_DIRS}
+     ${FIZZ_INCLUDE_DIRECTORIES}
+     ${DOUBLE_CONVERSION_INCLUDE_DIRS}
+@@ -253,13 +253,15 @@ target_include_directories(
+ 
+ target_link_libraries(fizz
+   PUBLIC
++    $<BUILD_INTERFACE:${FOLLY_LIBRARIES}> $<INSTALL_INTERFACE:folly>
++    crypto ssl Threads::Threads
++  PRIVATE
+     ${FOLLY_LIBRARIES}
+     ${OPENSSL_LIBRARIES}
+     sodium
+     Threads::Threads
+     ZLIB::ZLIB
+     ${ZSTD_LIBRARY}
+-  PRIVATE
+     ${GLOG_LIBRARIES}
+     ${GFLAGS_LIBRARIES}
+     ${FIZZ_LINK_LIBRARIES}
+@@ -334,6 +336,7 @@ add_library(fizz_test_support
+ target_link_libraries(fizz_test_support
+   PUBLIC
+     fizz
++  PRIVATE
+     ${LIBGMOCK_LIBRARIES}
+     ${GLOG_LIBRARY}
+ )
+-- 
+2.30.2
+

@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+VPP_DELAY=5
+START_DELAY=10
+
+while [ : ]; do
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  # wait for vpp to be running (if enabled)
+  if [ "${DPDK_ENABLED:-0}" -eq "1" ]; then
+    while ! pidof vpp > /dev/null; do
+      echo "Waiting for vpp"
+      sleep ${VPP_DELAY}
+    done
+  fi
+
+  # wait for config to be loaded
+  sleep ${START_DELAY}
+  exec /usr/sbin/tunnel_monitor
+done

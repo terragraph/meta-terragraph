@@ -1,0 +1,137 @@
+From 48a477c16c84a6226727b9434bdbfc950e08bb0a Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 3 Sep 2021 18:25:06 -0700
+Subject: [PATCH] dpdk: add dynfield for wil6210
+
+Add dynfield module for wil6210 in dpdk plugin. Terragraph uses
+an mbuf dynfield for wigig peers.
+---
+ src/plugins/dpdk/CMakeLists.txt      |  2 ++
+ src/plugins/dpdk/device/init.c       |  8 +++++
+ src/plugins/dpdk/dynfield/dynfield.c | 23 +++++++++++++++
+ src/plugins/dpdk/dynfield/dynfield.h | 44 ++++++++++++++++++++++++++++
+ 4 files changed, 77 insertions(+)
+ create mode 100644 src/plugins/dpdk/dynfield/dynfield.c
+ create mode 100644 src/plugins/dpdk/dynfield/dynfield.h
+
+diff --git a/src/plugins/dpdk/CMakeLists.txt b/src/plugins/dpdk/CMakeLists.txt
+index cb7fb0b5e..b2964dccd 100644
+--- a/src/plugins/dpdk/CMakeLists.txt
++++ b/src/plugins/dpdk/CMakeLists.txt
+@@ -148,6 +148,8 @@ add_vpp_plugin(dpdk
+   device/format.c
+   device/init.c
+   device/node.c
++  dynfield/dynfield.c
++  dynfield/dynfield.h
+   ipsec/cli.c
+   ipsec/crypto_node.c
+   ipsec/esp_decrypt.c
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index ac416b102..aa5eb2933 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -41,6 +41,8 @@
+ 
+ #include <dpdk/device/dpdk_priv.h>
+ 
++#include <dpdk/dynfield/dynfield.h>
++
+ #define ETHER_MAX_LEN   1518  /**< Maximum frame len, including CRC. */
+ 
+ dpdk_main_t dpdk_main;
+@@ -1538,6 +1540,12 @@ dpdk_config (vlib_main_t * vm, unformat_input_t * input)
+   ret = rte_eal_init (vec_len (conf->eal_init_args),
+ 		      (char **) conf->eal_init_args);
+ 
++  /* Get the mbuf dynfield offset for storing link id metadata. */
++  wigig_link_id_dynfield_offset =
++    rte_mbuf_dynfield_lookup (WIGIG_LINK_ID_DYNFIELD_NAME, NULL);
++  if (wigig_link_id_dynfield_offset < 0)
++    return clib_error_return (0, "Unable to find wigig link id dynfield");
++
+   /* lazy umount hugepages */
+   umount2 ((char *) huge_dir_path, MNT_DETACH);
+   rmdir ((char *) huge_dir_path);
+diff --git a/src/plugins/dpdk/dynfield/dynfield.c b/src/plugins/dpdk/dynfield/dynfield.c
+new file mode 100644
+index 000000000..0475f1c3b
+--- /dev/null
++++ b/src/plugins/dpdk/dynfield/dynfield.c
+@@ -0,0 +1,23 @@
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to
++ * deal in the Software without restriction, including without limitation the
++ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
++ * sell copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++int wigig_link_id_dynfield_offset = -1;
+diff --git a/src/plugins/dpdk/dynfield/dynfield.h b/src/plugins/dpdk/dynfield/dynfield.h
+new file mode 100644
+index 000000000..e9c5ae5ef
+--- /dev/null
++++ b/src/plugins/dpdk/dynfield/dynfield.h
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to
++ * deal in the Software without restriction, including without limitation the
++ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
++ * sell copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#ifndef __DPDK_DYNFIELD_H_INCLUDED__
++#define __DPDK_DYNFIELD_H_INCLUDED__
++
++#include <rte_mbuf_dyn.h>
++
++/* mbuf dynfield used for link_id to identify TG peers */
++#define WIGIG_LINK_ID_DYNFIELD_NAME "wil6210_dynfield_link_id"
++
++extern int wigig_link_id_dynfield_offset;
++
++static inline u16 wigig_mbuf_link_id_get (const struct rte_mbuf *mbuf)
++{
++  return *RTE_MBUF_DYNFIELD (mbuf, wigig_link_id_dynfield_offset, u16 *);
++}
++
++static inline void wigig_mbuf_link_id_set (const struct rte_mbuf *mbuf,
++                                           u16 link)
++{
++  *RTE_MBUF_DYNFIELD (mbuf, wigig_link_id_dynfield_offset, u16 *) = link;
++}
++
++#endif /* __DPDK_DYNFIELD_H_INCLUDED__ */
+-- 
+2.30.2
+

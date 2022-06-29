@@ -1,0 +1,156 @@
+From 73cf7aa62b577b23a9a263cde277ce00eae1e546 Mon Sep 17 00:00:00 2001
+From: Pierre Vandwalle <vandwalle@fb.com>
+Date: Sun, 5 Jul 2020 13:05:37 -0700
+Subject: [PATCH] wil6210: do not map/unmap buffers on cache coherent platforms
+
+Add compile flag which allows for specifying whether the CPU is cache
+coherent (which is the case for instance for NXP LS1046/1048/1088) CPUs.
+
+In this case, the wil6210 kernel driver doesn't need to map and unmap
+the packet buffers on Transmit and Receive.
+
+Signed-off-by: Pierre Vandwalle <vandwalle@fb.com>
+Signed-off-by: Frank Li <frankli1@fb.com>
+Signed-off-by: Michael Callahan <michaelcallahan@fb.com>
+---
+ wil6210/dvpp_txrx.c | 30 ++++++++++++++++++++++++++----
+ 1 file changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/wil6210/dvpp_txrx.c b/wil6210/dvpp_txrx.c
+index a6bd1c3..bc0bb6e 100644
+--- a/wil6210/dvpp_txrx.c
++++ b/wil6210/dvpp_txrx.c
+@@ -51,7 +51,9 @@ dvpp_platform_ops_t *dvpp_p_ops = &stub_dvpp_platform_ops;
+ static int dvpp_ring_alloc_buf_edma(struct wil6210_priv *wil,
+ 				    struct wil_ring *ring, u32 i)
+ {
++#ifndef CACHE_COHERENT
+ 	struct device *dev = wil_to_dev(wil);
++#endif
+ 	unsigned int sz = wil->rx_buf_len;
+ 	dma_addr_t pa;
+ 	u16 buff_id;
+@@ -91,6 +93,9 @@ static int dvpp_ring_alloc_buf_edma(struct wil6210_priv *wil,
+ 		}
+ 	}
+ 
++#ifdef CACHE_COHERENT
++	pa = virt_to_phys(mini->data + mini->seg.offset);
++#else
+ 	pa = dma_map_single(dev, (void*)(mini->data + mini->seg.offset),
+ 			wil->rx_buf_len, DMA_FROM_DEVICE);
+ 
+@@ -102,6 +107,7 @@ static int dvpp_ring_alloc_buf_edma(struct wil6210_priv *wil,
+ 		}
+ 		return -ENOMEM;
+ 	}
++#endif
+ 
+ 	/* Get the buffer ID - the index of the rx buffer in the buff_arr */
+ 	rx_buff = list_first_entry(free, struct wil_rx_buff, list);
+@@ -118,8 +124,10 @@ static int dvpp_ring_alloc_buf_edma(struct wil6210_priv *wil,
+ 
+ 	*_d = *d;
+ 
++#ifndef CACHE_COHERENT
+ 	/* Save the physical address for later use in dma_unmap */
+ 	buff_arr[buff_id].pa = pa;
++#endif
+ 
+ 	return 0;
+ }
+@@ -264,7 +272,9 @@ static int
+ dvpp_sring_reap_rx_edma(struct wil6210_priv *wil, struct wil_status_ring *sring,
+ 			dvpp_desc_t *mini, int n_seg)
+ {
++#ifndef CACHE_COHERENT
+ 	struct device *dev = wil_to_dev(wil);
++#endif
+ 	struct wil_rx_status_extended msg1;
+ 	void *msg = &msg1;
+ 	u16 buff_id;
+@@ -348,8 +358,10 @@ dvpp_sring_reap_rx_edma(struct wil6210_priv *wil, struct wil_status_ring *sring,
+ 
+ 		wil_rx_status_reset_buff_id(sring);
+ 		wil_sring_advance_swhead(sring);
++#ifndef CACHE_COHERENT
+ 		dma_unmap_single(dev, wil->rx_buff_mgmt.buff_arr[buff_id].pa + \
+ 			_mini.seg.offset, sz, DMA_FROM_DEVICE);
++#endif
+ 
+ 		dmalen = le16_to_cpu(wil_rx_status_get_length(msg));
+ 
+@@ -477,14 +489,16 @@ int dvpp_tx_sring_handler(struct wil6210_priv *wil,
+ 			 struct wil_status_ring *sring)
+ {
+ 	struct net_device *ndev;
++#ifndef CACHE_COHERENT
+ 	struct device *dev = wil_to_dev(wil);
++	struct wil_tx_enhanced_desc *_d;
++#endif
+ 	struct wil_ring *ring = NULL;
+ 	struct wil_ring_tx_data *txdata;
+ 	/* Total number of completed descriptors in all descriptor rings */
+ 	int desc_cnt = 0;
+ 	int cid;
+ 	struct wil_net_stats *stats;
+-	struct wil_tx_enhanced_desc *_d;
+ 	unsigned int ring_id;
+ 	unsigned int num_descs, num_statuses = 0;
+ 	int i;
+@@ -544,14 +558,16 @@ int dvpp_tx_sring_handler(struct wil6210_priv *wil,
+ 
+ 		for (i = 0 ; i < num_descs; ++i) {
+ 			struct wil_ctx *ctx = &ring->ctx[ring->swtail];
+-			struct wil_tx_enhanced_desc dd, *d = &dd;
+ 			u16 dmalen;
+ 
++#ifndef CACHE_COHERENT
++			struct wil_tx_enhanced_desc dd, *d = &dd;
+ 			_d = (struct wil_tx_enhanced_desc *)
+ 				&ring->va[ring->swtail].tx.enhanced;
+ 			*d = *_d;
++#endif
+ 
+-			dmalen = le16_to_cpu(d->dma.length);
++			dmalen = ctx->desc.seg.len;
+ 
+ 			if (wil->dvpp_status.dbg & DVPP_PORT_DBG_TX) {
+ 				trace_wil6210_tx_status(&msg, ring->swtail, dmalen);
+@@ -566,9 +582,11 @@ int dvpp_tx_sring_handler(struct wil6210_priv *wil,
+ 			if (WIL_CTX_FLAGS(ctx) & WIL_CTX_FLAG_RESERVED_USED)
+ 				txdata->tx_reserved_count++;
+ 
++#ifndef CACHE_COHERENT
+ 			wil_tx_desc_unmap_edma(dev,
+ 					       (union wil_tx_desc *)d,
+ 					       ctx);
++#endif
+ 
+ 			/*
+ 			 * TODO: sanitize stats:
+@@ -757,6 +775,9 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_seg,
+ 		_d = &ring->va[swhead].tx.legacy;
+ 
+ 		data += b->seg.offset;
++#ifdef CACHE_COHERENT
++		pa = virt_to_phys(data);
++#else
+ 		pa = dma_map_single(dev, data, len, DMA_TO_DEVICE);
+ 
+ 		if (unlikely(dma_mapping_error(dev, pa))) {
+@@ -764,9 +785,10 @@ int dvpp_tx_batch(void *p, u32 pipe, dvpp_desc_t *bufs, u32 n_seg,
+ 			wil_info(wil, "dma_mapping_error !!\n");
+ 			break;
+ 		}
++		ring->ctx[swhead].desc.seg.mflags = wil_mapped_as_single;
++#endif
+ 
+ 		ring->ctx[swhead].desc = *b;
+-		ring->ctx[swhead].desc.seg.mflags = wil_mapped_as_single;
+ 		ring->ctx[swhead].desc.seg.flags = 0; //ctx_flags;
+ 
+ 		if (nr_segs == 1) {
+-- 
+2.24.1
+

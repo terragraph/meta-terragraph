@@ -1,0 +1,742 @@
+#!/bin/bash
+
+# These image parameter definitions must remain within the first 1KB of this file.
+HDRSIZE=%%HDRSIZE%%
+PREAMBLE_BLOCK_SIZE=%%PREAMBLE_BLOCK_SIZE%%
+METASIZE=%%METASIZE%%
+IMGTYPE=%%IMGTYPE%%
+MD5=%%MD5%%
+METAMD5=%%METAMD5%%
+IMGSIZE=%%IMGSIZE%%
+
+NETCONFIG=/etc/network/interfaces
+RECOVERY_PARTITION=2
+MINUBOOTVERFILE=/usr/share/u-boot/min_uboot_version
+UPGRADE_LOCKFILE=/var/volatile/upgrade.lock
+MAX_BAD_ERASE_BLOCKS=50
+UPGRADE_LOG_FILE=/data/upgrade.log
+NAND_SCAN_FILE=/var/volatile/nandscan.log
+FLASH_UBOOT=/usr/sbin/flash_uboot
+
+usage () {
+	echo "Usage: $0 [-h] [-cgmprstuwx]"
+  echo "          -c    Verify checksum and verify h/w model"
+	echo "          -g    Update the recovery partition"
+	echo "                (requires -u)"
+	echo "          -m    Show meta information"
+	echo "          -p    Preserve /etc/network/interfaces"
+	echo "          -r    Reboot after update"
+	echo "          -s    Skip u-boot version checks (use with extreme caution)"
+	echo "          -t    Prepare u-boot environment for testcoding"
+	echo "                the update image. (requires -w)"
+	echo "          -u    Perform an update, including u-boot when necessary"
+	echo "          -w    Same as -u but leave the primary boot partition unchanged"
+	echo "                (does not work with -u)"
+	echo "          -x    When flash scrub is required, mark ECC corrected blocks as bad"
+	echo "                and fail if too many bad blocks remain after the 2nd flash"
+	echo "                (requires -u or -w)"
+	exit 64
+}
+
+format_version () {
+	echo "$@" | awk -F. '{ printf("%03d%03d\n", $1, $2);}'
+}
+
+uboot_version () {
+	ubootfile=$1
+	ver=$(strings "${ubootfile}" | grep 'Terragraph Uboot Version:')
+	if [ -n "${ver}" ]; then
+		ubootVer=$(echo "$ver" | sed -r 's/Terragraph Uboot Version: ([0-9]+\.[0-9]+)/\1/')
+	fi
+	echo "${ubootVer}"
+}
+
+# Reference: http://www.kfirlavi.com/blog/2012/11/06/elegant-locking-of-bash-program/
+# Similar lock() function is also used by the watchdog scripts, but we are
+# duplicating it here to make this script more independent.
+lock () {
+	local fd=100
+
+	# create lock file
+	eval "exec $fd>$UPGRADE_LOCKFILE"
+
+	# acquire the lock, fail if we can't
+	flock -n "$fd" && return 0 || return 1
+}
+
+prog_ext4_image () {
+	local target=/dev/mmcblk0p$1
+	echo "Updating EXT4 Partition ${target} with the new image"
+	dd if="${imgname}" bs="${HDRSIZE}" skip=1 2> /dev/null \
+		| zstdcat | dd of=${target} obs=4M oflag=direct conv=sync
+	if [ $? -ne 0 ]; then
+		echo "FAILED Updating EXT4 Partition ${target} with the new image"
+		exit 1
+	fi
+	sync
+	sync
+	return 0
+}
+
+cleanup () {
+	/bin/rm -f "${NAND_SCAN_FILE}" 2> /dev/null
+}
+
+fw_setenv() {
+	if [ -z "$IGNORE_FW_SETENV" ]; then
+		command fw_setenv "$@"
+	else
+		echo "Not running 'fw_setenv $@'"
+	fi
+}
+
+#
+# Flash the image. Fail if too many bad erase blocks are present afterwards.
+#
+flash_ubi() {
+	local target=$1
+	ubidetach -m ${target} 2>/dev/null
+	if [ $? -eq 0 ]; then
+		echo "Unexpected: /dev/mtd${target} was attached"
+	fi
+	echo "Updating MTD${target} with the new image"
+	dd if="${imgname}" bs="${HDRSIZE}" skip=1 2>/dev/null \
+		| ubiformat /dev/mtd${target} -q -y -S ${IMGSIZE} -f-
+	if [ $? -ne 0 ]; then
+		echo "Error flashing MTD${target}! ubiformat failed."
+		return 1
+	fi
+	bad_blocks=$(nandtest -p 0 /dev/mtd${target} | grep "Bad blocks" \
+		| cut -d ":" -f 2 | tr -d ' ')
+	echo "Found ${bad_blocks} bad erase blocks after flashing MTD${target}"
+	if [ "${bad_blocks}" -gt "${MAX_BAD_ERASE_BLOCKS}" ]; then
+		echo "Bad erase block count exceeds max=${MAX_BAD_ERASE_BLOCKS}!"
+		return 2
+	fi
+	return 0
+}
+
+# Flash the image, if necessary scrub and re-try once.
+# Note: flash() return values:
+#   0-ok, 1-ubiformat failed, 2-too many bad blocks after successful ubiformat
+prog_ubi_image() {
+
+	local target=$1
+	local fret
+
+	flash_ubi ${target}
+	fret=$?
+	if [ ${fret} -eq 0 ]; then
+		return 0
+	fi
+
+	# First try failed.  Check nand health scrub  and try
+	if [ -z "$(nandtest -h | grep scrub)" ]; then
+		if [ ${fret} -eq 1 ]; then
+			echo "Error. nandtest does not have scrub option. Giving up."
+			exit 1
+		fi
+		echo "Possibly too many bad blocks, but we can't scrub, so not giving up."
+	else
+		echo "Scrubbing MTD${target}"
+		nandtest -c /dev/mtd${target}
+		if [ "$?" -ne 0 ]; then
+			echo "Error. Scrubbing MTD${target} failed."
+			exit 1
+		fi
+		echo "Scrub successful"
+		echo "Scanning MTD${target} for bad blocks and ECC corrected blocks"
+		echo "Scan will take a few minutes..."
+		nandtest -m -r 4 /dev/mtd${target} | tee "${NAND_SCAN_FILE}"
+		if [ x"${strictscrub}" != x ]; then
+			echo "Marking ECC corrected blocks as bad"
+			grep 'ECC corrected at' "${NAND_SCAN_FILE}" | awk '{print $6}' | uniq \
+				| egrep '^[[:xdigit:]]{8}$' \
+				| xargs -I{} nandtest -b 0x{} /dev/mtd${target}
+		fi
+
+		flash_ubi "${target}"
+		fret=$?
+		if [ ${fret} -eq 1 ]; then
+			echo "Error. Second attempt to flash MTD${target} failed."
+			exit 1
+		fi
+		if [ ${fret} -eq 2 ] && [ x"${strictscrub}" != x ]; then
+			echo "Error. Too many bad blocks remain after the flash retry."
+			exit 1
+		fi
+	fi
+
+	return 0
+}
+
+find_ubi_partition_to_flash () {
+
+	 local  __result=$1
+	 local curmtd
+	 local mtds
+	 local mtdslen
+	 local nextmtd
+	 local nextidx
+	 local mytarget
+
+ 	# get next mtd partition
+	curmtd=$(sed -E 's/^.* +ubi\.mtd=([0-9]+),[0-9]+ .*/\1/g' /proc/cmdline)
+	if [ $? -ne 0 ]; then
+		echo "Unable to determine the current MTD partition!"
+		exit 1
+	fi
+	echo "Current MTD: ${curmtd}"
+
+	mtds=($(sed -E -n 's/mtd([0-9]+):.*"rootfs[0-9]+"/\1/p' /proc/mtd))
+	if [[ ! ${mtds[@]} =~ ${curmtd} && ${curmtd} -ne ${RECOVERY_PARTITION} ]]; then
+		echo "Cannot find the current rootfs MTD partition, aborting!"
+		exit 1
+	fi
+	mtdslen=${#mtds[@]}
+	if [[ ${mtdslen} == 1 ]]; then
+		echo "Cannot find rootfs MTD partition not used, aborting!"
+		exit 1
+	fi
+	for i in "${!mtds[@]}"; do
+		if [ "${curmtd}" -eq ${RECOVERY_PARTITION} ]; then
+			# Booted off recovery, just chose first partition as the next
+			nextmtd=${mtds[0]}
+			echo "Booted from recovery. Choosing ${nextmtd} as next partition"
+			break
+		fi
+		if [[ "${mtds[i]}" == "${curmtd}" ]]; then
+			nextidx=$(( ( i + 1 ) % ${mtdslen} ))
+			nextmtd=${mtds[nextidx]}
+			break
+		fi
+	done
+	if [ x"${recovery}" != x ]; then
+		mytarget=$(sed -E -n 's/mtd([0-9]+):.*"recovery"/\1/p' /proc/mtd)
+		if [[ -z "${mytarget}" ]]; then
+			echo "Cannot find the recovery MTD partition, aborting!"
+			exit 1
+		fi
+	else
+		mytarget=$nextmtd
+	fi
+
+	eval "$__result"="${mytarget}"
+	return
+}
+
+
+find_ext4_partition_to_flash  () {
+	local  __result=$1
+
+	local curpart
+	local parts
+	local partslen
+	local mytarget
+	local nextidx
+
+	curpart=$(sed -E 's:.*root=/dev/mmcblk0p([0-9]+).*:\1:g' /proc/cmdline)
+	if [ $? -ne 0 ]; then
+		echo "Unable to determine the current partition!"
+		exit 1
+	fi
+	echo "Current Partition: ${curpart}"
+
+	parts=($(sgdisk -p /dev/mmcblk0  | sed -E -n 's/[[:space:]]*([0-9]+)[[:space:]].*root.*/\1/p'))
+	if [[ ! ${parts[@]} =~ ${curpart} ]]; then
+		echo "Cannot find the current rootfs partition, aborting!"
+		exit 1
+	fi
+	partslen=${#parts[@]}
+	if [[ ${partslen} == 1 ]]; then
+		echo "Cannot find rootfs partition not used, aborting!"
+		exit 1
+	fi
+	for i in "${!parts[@]}"; do
+		if [[ "${parts[i]}" == "${curpart}" ]]; then
+			nextidx=$(( ( i + 1 ) % ${partslen} ))
+			mytarget="${parts[nextidx]}"
+			break
+		fi
+	done
+
+	eval "$__result"="${mytarget}"
+
+	return
+}
+
+#
+# Postupdate actions
+#
+postupdate_ubi () {
+	local mtd=$1
+
+	local ubinum=15
+	local tmpdir
+	local ubootfile
+	local rmtd
+	local ubootFileVer
+	local currentVer
+
+	echo "Checking the MTD${mtd} partition"
+	ubiattach -m ${mtd} -d ${ubinum} || return 1
+	tmpdir=$(mktemp -d /tmp/mnt.XXXX)
+	if [ $? -ne 0 ]; then
+		echo "Cannot make a temporary directory at /tmp/mnt.XXXX!"
+		ubidetach -m ${mtd}
+		return 1
+	fi
+
+	mount -t ubifs /dev/ubi${ubinum}_0 "${tmpdir}"
+	if [ $? -ne 0 ]; then
+		echo "Cannot mount /dev/ubi${ubinum}_0!"
+		ubidetach -m ${mtd}
+		return 1
+	fi
+
+	# Preserve /etc/network/interfaces if requested
+	if [ x"${preservenetconfig}" != x ]; then
+		echo "Copying ${NETCONFIG}"
+		cp "${NETCONFIG}" "${tmpdir}/${NETCONFIG}"
+	fi
+
+	if [ -f "/usr/sbin/get_hw_info" ]; then
+		hw_rev=$(/usr/sbin/get_hw_info HW_REV)
+	fi
+
+	# For backward compatability (when get_hw_info is missing or hw_rev is empty)
+	if [ -z "$hw_rev" ]; then
+		hw_rev=$(cat /proc/device-tree/model | tr '\0' '\n' | sed -E 's/^.*([0-9]+\.[0-9])$/\1\n/')
+	fi
+
+	if [ "${hw_rev}" = "2.0" ] || [ "${hw_rev}" = "1.2" ] ; then
+		ubootfile="${tmpdir}/usr/share/u-boot/u-boot-EVT${hw_rev}.bin"
+	else
+		echo "Unsupported board type: board rev ${hw_rev}"
+	fi
+
+	if [ x"${ubootfile}" = x ]; then
+		echo "Error! Missing u-boot binaries."
+		umount "${tmpdir}"
+		ubidetach -m ${mtd}
+		return 1
+	fi
+
+	if [ x"${skipubootversionchecks}" != x ]; then
+		echo "Skipping u-boot version checks"
+	else
+		# Upgrade u-boot when
+		#
+		#  (1) Using the new flash partitioning scheme.
+		#  (2) /usr/share/u-boot/min_uboot-version file is in the image
+		#  (3) Flashed u-boot version < min required u-boot version for the
+		#      image being flashed.
+		echo "Checking if u-boot update is necessary"
+		rmtd=$(cat /proc/mtd | grep recovery)
+		ubootFileVer=$(uboot_version "${ubootfile}")
+		currentVer=$(uboot_version /dev/mtd0)
+		if [ -e "${tmpdir}${MINUBOOTVERFILE}" ]; then
+			minVersion=$(cat "${tmpdir}${MINUBOOTVERFILE}")
+		fi
+		if [ -z "${minVersion}" ]; then
+			echo "Error! Minimum u-boot version file not found"
+			unset ubootfile
+		elif [ -z "${rmtd}" ]; then
+			echo "Error! Old flash partitioning scheme. Skipping u-boot update"
+			unset ubootfile
+		elif [ -z "${ubootFileVer}" -o \
+			$(format_version "${ubootFileVer}") -lt $(format_version "${minVersion}") ]; then
+			# Wrong u-boot image packed with the image. Should not happen.
+			echo "Error! Unexpected u-boot image found"
+			unset ubootfile
+		elif [ -n "${currentVer}" -a \
+			$(format_version "${currentVer}") -ge $(format_version "${minVersion}") ]; then
+			echo "u-boot is already up to date"
+			unset ubootfile
+		else
+			echo "u-boot update is necessary"
+		fi
+	fi
+
+	if [ x"${ubootfile}" != x ]; then
+		# force so that no prompts from flash_uboot
+		echo "Flashing ${ubootfile}"
+		"${tmpdir}/${FLASH_UBOOT}" "${ubootfile}" force
+	fi
+
+	umount "${tmpdir}"
+	ubidetach -m "${mtd}"
+
+	return 0
+}
+
+# Returns path to qspi blob, or "" for unknown board revs
+get_puma_qspi_blob_path() {
+	board_rev=$(fdtget "/sys/bus/nvmem/devices/1-00540/nvmem" "/board/hw-ids" "hw-rev")
+	board_type=$(fdtget "/sys/bus/nvmem/devices/1-00540/nvmem" "/board/hw-ids" "hw-board")
+	if [ "NXP_LS1048A_MBH" = "$board_type" ] ; then
+		echo "/usr/share/u-boot/fb-ls1048a-mbh-qspi-fw-blob.bin"
+	else
+		case "${board_rev}" in
+			1.0)
+				echo "/usr/share/u-boot/fb-ls1048a-puma-qspi-fw-blob.bin"
+				;;
+			2.*)
+				echo "/usr/share/u-boot/fb-ls1048a-puma2-qspi-fw-blob.bin"
+				;;
+			*)
+				echo "ERROR: Unknown board revision ${board_rev}" 1>&2
+				;;
+		esac
+	fi
+}
+
+postupdate_ext4 () {
+	local partition=/dev/mmcblk0p$1
+	local tmpdir
+
+	echo "Checking the ${partition} partition"
+	e2fsck -f -y "${partition}"
+	tmpdir=$(mktemp -d /tmp/mnt.XXXX)
+	if [ $? -ne 0 ]; then
+		echo "Cannot make a temporary directory at /tmp/mnt.XXXX!"
+		return 1
+	fi
+	trap '/bin/rmdir "${tmpdir}"' RETURN
+
+	mount -t ext4 "${partition}" "${tmpdir}"
+	if [ $? -ne 0 ]; then
+		echo "Cannot mount ${partition}!"
+		return 1
+	fi
+	trap 'umount "${tmpdir}"' RETURN
+
+	# Check if old partitioning scheme
+	tg_mtdparts=$(fw_printenv -n tg_mtdparts)
+	if ! echo "${tg_mtdparts}" | grep -qF '4096K@0(allboot)'; then
+		# Old layout -> Change allboot to 4096K
+		# The old size was 1944K, which is smaller than the new image we need to write.
+		# It's impossible to change the kernel's view of the partition layout without
+		# a reboot, so we do it in 2 steps. This step changes allboot size to 4096K
+		# (the whole flash), and will be applied after a reboot. The next step (upon
+		# another update to the same or newer image), will actualy flash the new
+		# QSPI blob, and as a side effect apply the new layout.
+		echo "******"
+		echo "This board is using an old partition layout. To update to the"
+		echo "new layout, please reboot and run the update script again."
+		echo "******"
+		tg_newparts=$(echo $tg_mtdparts | sed 's/[0-9]\+K@0(allboot)/4096K@0(allboot)/')
+		fw_setenv tg_mtdparts "$tg_newparts"
+	elif echo "${tg_mtdparts}" | grep -qF '(ppa)'; then
+		# Old layout, but allboot already set to 4096K -> Flash QSPI (this changes layout)
+		echo "This board is using an old partition layout. Updating to current."
+		allboot=$(awk -F':' '/"allboot"/{print $1}' /proc/mtd)
+		if ! [ -e "/dev/${allboot}" ]; then
+			echo "Can't find allboot partition /dev/${allboot}"
+			return 1
+		fi
+		qspi_blob=$(get_puma_qspi_blob_path)
+		if [ -z "${qspi_blob}" ]; then
+			echo "ERROR: Partition layout not updated"
+			return 1
+		fi
+		qspi_blob="${tmpdir}${qspi_blob}"
+		flashcp -v "${qspi_blob}" "/dev/${allboot}"
+		# Disable fw_printenv and fw_setenv until reboot, since they'll write to
+		# the old locations on flash. The variable disables it for the rest of this
+		# script, and emptying fw_env.config disables it until reboot (the file is
+		# on tmpfs). After reboot, its contents will be regenerated with the correct
+		# offsets based on the new layouts.
+		IGNORE_FW_SETENV=1
+		> /etc/fw_env.config
+	else
+		# New layout -> Update differing partitions
+		qspi_blob=$(get_puma_qspi_blob_path)
+		if [ -z "${qspi_blob}" ]; then
+			echo "ERROR: QSPI flash not updated"
+			return 1
+		fi
+		qspi_blob="${tmpdir}${qspi_blob}"
+		for mtdpath in /sys/class/mtd/mtd[0-9]*; do
+			# Skip mtdXro directories (that don't have /name)
+			[ -f "${mtdpath}/name" ] || continue
+			# Skip partitions not in this list
+			grep -qE '^(rcw|dpl|dpc|MC|u-boot)$' "${mtdpath}/name" || continue
+			# Get byte offset, size and name of partition on flash
+			offset=$(cat "${mtdpath}/offset")
+			size=$(cat "${mtdpath}/size")
+			mtd=$(basename "${mtdpath}")
+			name=$(cat "${mtdpath}/name")
+			# Extract data from QSPI blob file and compare to actual partition content
+			# dd arguments:
+			#   status=none - don't print speed/time stats
+			#   iflag=skip_bytes,count_bytes - the skip= and count= values are in bytes, not in bs= blocks
+			#   bs=4096 - use 4K blocks when reading (for speed), doesn't affect offsets due to iflag=
+			if ! dd if="${qspi_blob}" of=/tmp/mtdpart bs=4096 skip=${offset} count=${size} iflag=skip_bytes,count_bytes status=none; then
+				echo "ERROR: Can't read ${size} bytes at ${offset} from ${qspi_blob} (${mtd} ${name}). Aborting."
+				return 1
+			fi
+			if [ "$(stat -c %s /tmp/mtdpart)" != "${size}" ]; then
+				echo "ERROR: Tried to extract ${size} bytes from ${qspi_blob}, got $(stat -c %s /tmp/mtdpart) (${mtd} ${name}). Aborting."
+				return 1
+			fi
+			if ! cmp -s /tmp/mtdpart "/dev/${mtd}"; then
+				# They differ, update
+				echo "Partition $mtd ($name) differs, updating"
+				# Ignore interruptions so as not to brick the board
+				trap '' SIGHUP SIGINT
+				flashcp -v /tmp/mtdpart "/dev/${mtd}"
+				trap cleanup SIGHUP SIGINT
+			fi
+		done
+		rm -f /tmp/mtdpart
+	fi
+
+	return 0
+}
+
+trap cleanup EXIT SIGINT SIGTERM SIGHUP SIGQUIT
+
+while getopts ":cgmprstuwx" opt; do
+	case $opt in
+	c)
+		verify=1
+		;;
+	g)
+		recovery=1
+		;;
+	m)
+		showmeta=1
+		;;
+	p)
+		preservenetconfig=1
+		;;
+	r)
+		reboot=1
+		;;
+	s)
+		skipubootversionchecks=1
+		;;
+	t)
+		testcode=1
+		;;
+	u)
+		update=1
+		;;
+	w)
+		writeimage=1
+		;;
+	x)
+		strictscrub=1
+		;;
+	\?)
+		usage
+		;;
+	:)
+		echo "-$OPTARG requires an argument!" >&2
+		usage
+		;;
+	esac
+done
+
+if [ ${IMGTYPE} != "ubifs" ] && [  ${IMGTYPE} != "ext4fs" ] ; then
+	echo "Bad image type  ${IMGTYPE}"
+	usage
+fi
+
+if [ x"${verify}" = x ] && [ x"${showmeta}" = x ] && [ x"${update}" = x ] && \
+    [ x"${writeimage}" = x ]; then
+	usage
+fi
+
+if [ x"${writeimage}" != x ] && [ x"${update}" != x ]; then
+	echo "-w and -u cannot be given together"
+	usage
+fi
+
+if [ x"${testcode}" != x ] && [ x"${writeimage}" = x ]; then
+	echo "-t requires -w"
+	usage
+fi
+
+if [ -n "${writeimage}" ] && [ -n "${reboot}" ] && [ -z "${testcode}" ]; then
+	echo "No point booting the active image again. Consider -w or -wrt."
+	usage
+fi
+
+if [ x"${recovery}" != x ] && [ x"${update}" = x ]; then
+	echo "-g requires -u"
+	usage
+fi
+
+if [ x"${strictscrub}" != x ] && [ x"${update}" = x ] && [ x"${writeimage}" = x ]; then
+	echo "-x requires -u or -w"
+	usage
+fi
+
+imgname=$0
+
+meta=$(dd if="$0" skip=${PREAMBLE_BLOCK_SIZE} bs=1 count=${METASIZE} 2>/dev/null)
+if [ x"${showmeta}" != x ]; then
+	echo "${meta}"
+fi
+
+if [ x"${verify}" = x ] && [ x"${update}" = x ] && [ x"${writeimage}" = x ]; then
+	# Nothing else to do
+	exit 0
+fi
+
+checksum=$(dd if="$0" skip=1 bs=${HDRSIZE} 2>/dev/null | md5sum | cut -d' ' -f1)
+metachecksum=$(dd if="$0" skip=${PREAMBLE_BLOCK_SIZE} bs=1 count=${METASIZE} 2>/dev/null | \
+ 								md5sum | cut -d' ' -f1)
+if [ "${checksum}" != "${MD5}" ]; then
+	echo "Checksum of image mismatch"
+	exit 1
+elif [ "${metachecksum}" != "${METAMD5}" ]; then
+	echo "Checksum of image meta file mismatch"
+	exit 1
+else
+	echo "Checksum ok"
+fi
+
+hw_board_id=""
+hw_model=""
+
+if [ -f /usr/sbin/get_hw_info ]; then
+	hw_board_id=$(/usr/sbin/get_hw_info HW_BOARD_ID)
+fi
+
+# For backward compatability (when get_hw_info is missing or hw_board_id is empty)
+if [ -z "${hw_board_id}" ] && [ -f /proc/device-tree/model ]; then
+	hw_model=$(cat /proc/device-tree/model | tr '\0' '\n') # Strip NULL byte
+fi
+
+if [ x"${verify}" == x ] || ( [ -z "${hw_board_id}" ] && [ -z "${hw_model}" ] ); then
+  : # echo "Skipping hw model check"
+else
+	modelok=0
+	if [ ! -z "${hw_board_id}" ]; then
+		# check against hw_board_id list
+	  META_BOARDS=$(dd if="$0" skip=${PREAMBLE_BLOCK_SIZE} bs=1 count=${METASIZE} 2>/dev/null | \
+	               grep "hardwareBoardIds" | sed 's/".*":\[\(.*\)\],\?/\1/' | sed 's/,/\n/g')
+		# read JSON array elements (i.e. each board ID) line-by-line
+	  while read -r META_BOARD_ID; do
+			# strip surrounding quotes
+	    META_BOARD_ID="${META_BOARD_ID%\"}"
+	    META_BOARD_ID="${META_BOARD_ID#\"}"
+	    if [ "${hw_board_id}" = "${META_BOARD_ID}" ]; then
+	      modelok=1
+	      break
+	    fi
+	  done <<< "${META_BOARDS}"
+	else
+		# check against hw_model substring (backward compatibility)
+	  META_MODEL=$(dd if="$0" skip=${PREAMBLE_BLOCK_SIZE} bs=1 count=${METASIZE} 2>/dev/null | \
+	               grep "model" | sed 's/".*":"\(.*\)",\?/\1/')
+	  if [[ "${hw_model}" =~ "${META_MODEL}" ]]; then
+			modelok=1
+		fi
+	fi
+	if [ "${modelok}" -eq "1" ]; then
+		echo "h/w model ok"
+	else
+		echo "h/w model mismatch"
+		exit 1
+	fi
+fi
+
+if [ x"${update}" = x ] && [ x"${writeimage}" = x ]; then
+	# Nothing else to do
+	exit 0
+fi
+
+lock
+if [ $? -ne 0 ]; then
+	echo "Error! Upgrade already in progress."
+	exit 1
+fi
+
+# find next partition to program
+if [ ${IMGTYPE} == "ubifs" ] ; then
+	find_ubi_partition_to_flash target
+else
+	find_ext4_partition_to_flash target
+fi
+
+if [ x"${writeimage}" != x ] || [ x"${update}" != x ]; then
+
+	echo "Performing the update"
+	/bin/mv "${UPGRADE_LOG_FILE}" "${UPGRADE_LOG_FILE}".bak 2> /dev/null
+	exec > >(tee -a "${UPGRADE_LOG_FILE}") 2>&1
+
+	# Log args and time of update
+	echo -n "Performing flash update: "
+	date
+
+	if [ ${IMGTYPE} == "ubifs" ] ; then
+		prog_ubi_image "${target}"
+	else
+		prog_ext4_image "${target}"
+	fi
+
+	if [ x"${recovery}" != x ] ; then
+		# if updating recovery image we are done
+		if [ x"${reboot}" != x ]; then
+			echo "Rebooting the system"
+			/sbin/reboot
+		fi
+		exit 0
+	fi
+
+	# Run postupdate checks and actions
+	if [ ${IMGTYPE} == "ubifs" ] ; then
+		postupdate_ubi "${target}"
+	else
+		postupdate_ext4 "${target}"
+	fi
+	if [ $? -ne 0 ]; then
+		echo "Image partition ${target} verification failed!"
+		exit 1
+	fi
+
+	echo Done!
+fi
+
+# should not have mtd in the testcode variable names below since nxp boards
+# use mmc, but leave it as is for now.
+if [ x"${writeimage}" != x ] && [ x"${testcode}" = x ]; then
+	# Note: mtd_to_commit is only consumed by older (pre M20) images during
+	#       the inband commit phase. It should eventually go away.
+	fw_setenv mtd_to_commit "${target}"
+	if [ $? -ne 0 ]; then
+		echo "Cannot set u-boot variable mtd_to_commit!"
+		exit 1
+	fi
+	# no further action should be taken here
+	exit 0
+fi
+
+if [ x"${testcode}" != x ]; then
+	echo "Preparing u-boot environment for testcoding partition ${target}"
+	fw_setenv tg_testcode "${target}"
+	if [ $? -ne 0 ]; then
+		echo "Unable to set tg_testcode!"
+		exit 1
+	fi
+else
+	echo "Setting the primary boot partition to partition ${target}"
+	fw_setenv tg_rootfs_mtd "${target}"
+	if [ $? -ne 0 ]; then
+		echo "Unable to set the primary boot partition!"
+		exit 1
+	fi
+fi
+
+if [ x"${reboot}" != x ]; then
+	echo "Rebooting the system"
+	/sbin/reboot
+fi
+
+sleep 2
+
+exit 0

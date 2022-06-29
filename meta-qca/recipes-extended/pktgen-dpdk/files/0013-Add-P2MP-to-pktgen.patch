@@ -1,0 +1,453 @@
+From 733bddaca4f2416272744366a7e93b9343456d09 Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Fri, 23 Oct 2020 07:58:16 -0700
+Subject: [PATCH] Add P2MP to pktgen
+
+---
+ app/cli-functions.c    |  18 ++++++
+ app/meson.build        |   2 +-
+ app/pktgen-cmds.c      |   2 +
+ app/pktgen-cmds.h      |   4 ++
+ app/pktgen-constants.h |   3 +-
+ app/pktgen-display.c   |   1 +
+ app/pktgen-links.c     | 141 +++++++++++++++++++++++++++++++++++++++++
+ app/pktgen-links.h     |  36 +++++++++++
+ app/pktgen-main.c      |   3 +
+ app/pktgen-port-cfg.h  |   1 +
+ app/pktgen-stats.c     |   5 ++
+ app/pktgen.c           |   7 +-
+ app/pktgen.h           |   1 +
+ 13 files changed, 221 insertions(+), 3 deletions(-)
+ create mode 100644 app/pktgen-links.c
+ create mode 100644 app/pktgen-links.h
+
+diff --git a/app/cli-functions.c b/app/cli-functions.c
+index a14fdb2..b866873 100644
+--- a/app/cli-functions.c
++++ b/app/cli-functions.c
+@@ -11,6 +11,7 @@
+ #include <stdio.h>
+ #include <termios.h>
+ #include <string.h>
++#include <stdbool.h>
+ #include <unistd.h>
+ #include <sys/types.h>
+ #include <signal.h>
+@@ -472,6 +473,8 @@ range_cmd(int argc, char **argv)
+ 			"seqcnt|"		/* 13 */ \
+ 			"ttl"			/* 14 */
+ 
++#define TG_LINKS "0|1|2|3|3|4|5|5|6|7|8|9|10|11|12|13|14|15|all"
++
+ static struct cli_map set_map[] = {
+ 	{ 10, "set %P %|" set_types " %d" },
+ 	{ 11, "set %P jitter %D" },
+@@ -485,6 +488,7 @@ static struct cli_map set_map[] = {
+ 	{ 31, "set %P dst ip %4" },
+ 	{ 32, "set %P src ip %6" },
+ 	{ 33, "set %P dst ip %6" },
++	{ 35, "set %P %|link|links %|" TG_LINKS " %|on|off" },
+ 	{ 40, "set ports_per_page %d" },
+ 	{ 50, "set %P qinqids %d %d" },
+ 	{ 60, "set %P rnd %d %d %s" },
+@@ -539,6 +543,7 @@ static const char *set_help[] = {
+     "		num-samples: number of samples.",
+     "		rate: sampling rate i.e., samples per second.",
+     "		outfile: path to output file to dump all sampled latencies",
++	"set <portlist> link <0-15|all> <on|off> - Set the active TG links in a radio sector",
+ 	"set ports_per_page <value>         - Set ports per page value 1 - 6",
+ 	CLI_HELP_PAUSE,
+ 	NULL
+@@ -655,6 +660,19 @@ set_cmd(int argc, char **argv)
+ 			foreach_port(portlist,
+                 single_set_ipaddr(info, 'd', &ip, ip_ver));
+ 			break;
++		case 35: {
++			bool active = strcmp(argv[4], "off");
++			if (!strcmp(argv[3], "all")){
++				for (uint8_t link = 0; link < TG_LINKS_PER_PORT; link++) {
++					foreach_port(portlist, pktgen_set_links(info, link, active));
++				}
++			} else {
++				uint32_t link = atoi(argv[3]) & 0xF;
++				foreach_port(portlist, pktgen_set_links(info, link, active));
++			}
++			foreach_port(portlist, pktgen_update_links(info));
++			break;
++		}
+ 		case 40:
+ 			pktgen_set_page_size(atoi(argv[2]));
+ 			break;
+diff --git a/app/meson.build b/app/meson.build
+index 4bf8388..ac5ef04 100644
+--- a/app/meson.build
++++ b/app/meson.build
+@@ -5,7 +5,7 @@ sources = files(
+ 	'pktgen-port-cfg.c', 'pktgen-ipv6.c', 'pktgen-ipv4.c', 'pktgen-arp.c',
+ 	'pktgen-gre.c', 'pktgen-ether.c', 'pktgen-tcp.c', 'pktgen-udp.c', 'pktgen-vlan.c',
+ 	'pktgen-random.c', 'pktgen-display.c', 'pktgen-log.c', 'pktgen-stat-log.c',
+-	'pktgen-gtpu.c', 'pktgen-latency.c', 'pktgen-rate.c'
++	'pktgen-gtpu.c', 'pktgen-latency.c', 'pktgen-rate.c', 'pktgen-links.c'
+ )
+ 
+ if get_option('enable_gui')
+diff --git a/app/pktgen-cmds.c b/app/pktgen-cmds.c
+index ed806b2..b370a13 100644
+--- a/app/pktgen-cmds.c
++++ b/app/pktgen-cmds.c
+@@ -17,6 +17,8 @@
+ 
+ #include "pktgen-display.h"
+ 
++#include "pktgen-links.h"
++
+ #include <pg_delay.h>
+ 
+ #if __RTE_VERSION >= RTE_VERSION_NUM(17, 2, 0, 0)
+diff --git a/app/pktgen-cmds.h b/app/pktgen-cmds.h
+index 2e1633f..a6d51d8 100644
+--- a/app/pktgen-cmds.h
++++ b/app/pktgen-cmds.h
+@@ -8,6 +8,8 @@
+ #ifndef _PKTGEN_CMDS_H_
+ #define _PKTGEN_CMDS_H_
+ 
++#include <stdbool.h>
++
+ #include <inttypes.h>
+ #include <rte_version.h>
+ 
+@@ -200,6 +202,8 @@ void pktgen_set_cos_tos_seq(port_info_t *info, uint32_t seqnum,
+ 				uint32_t cos, uint32_t tos);
+ void pktgen_set_vxlan_seq(port_info_t *info, uint32_t seqnum,
+ 			uint32_t flag, uint32_t gid, uint32_t vid);
++void pktgen_set_links(port_info_t *info, uint16_t link, bool active);
++void pktgen_update_links(port_info_t *info);
+ 
+ /* Pattern */
+ void pattern_set_type(port_info_t *info, char *str);
+diff --git a/app/pktgen-constants.h b/app/pktgen-constants.h
+index d370c2e..1feede7 100644
+--- a/app/pktgen-constants.h
++++ b/app/pktgen-constants.h
+@@ -32,7 +32,8 @@ enum {
+ 
+ 	DEFAULT_PRIV_SIZE       = 0,
+ 
+-	NUM_Q                   = 16,	/**< Number of cores per port. */
++	TG_LINKS_PER_PORT       = 16,
++	NUM_Q                   = TG_LINKS_PER_PORT,	/**< Number of queues per port. */
+ };
+ #define DEFAULT_MBUF_SIZE	(PG_ETHER_MAX_JUMBO_FRAME_LEN + RTE_PKTMBUF_HEADROOM) /* See: http://dpdk.org/dev/patchwork/patch/4479/ */
+ 
+diff --git a/app/pktgen-display.c b/app/pktgen-display.c
+index 404c718..4726c3c 100644
+--- a/app/pktgen-display.c
++++ b/app/pktgen-display.c
+@@ -128,6 +128,7 @@ theme_color_map_t theme_color_map[] = {
+ 	{ "stats.bdf",          SCRN_BLUE,       SCRN_NO_CHANGE,  SCRN_OFF     },
+ 	{ "stats.mac",          SCRN_GREEN,      SCRN_NO_CHANGE,  SCRN_OFF     },
+ 	{ "stats.ip",           SCRN_CYAN,       SCRN_NO_CHANGE,  SCRN_OFF     },
++	{ "stats.links",        SCRN_RED,        SCRN_NO_CHANGE,  SCRN_OFF     },
+ 
+ 	/*
+ 	 * Misc.
+diff --git a/app/pktgen-links.c b/app/pktgen-links.c
+new file mode 100644
+index 0000000..413c8e0
+--- /dev/null
++++ b/app/pktgen-links.c
+@@ -0,0 +1,141 @@
++/*-
++ * Copyright (c) <2010-2019>, Intel Corporation. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++/* Created 2010 by Keith Wiles @ intel.com */
++
++#include <stdlib.h>
++
++#include "pktgen.h"
++#include "pktgen-links.h"
++#include "pktgen-cmds.h"
++
++static __inline__
++uint16_t hamming_weight(uint16_t x)
++{
++      x = ((x & 0xAAAAAAAA) >> 1)  + (x & 0x55555555);
++      x = ((x & 0xCCCCCCCC) >> 2)  + (x & 0x33333333);
++      x = ((x & 0xF0F0F0F0) >> 4)  + (x & 0x0F0F0F0F);
++      x = ((x & 0xFF00FF00) >> 8)  + (x & 0x00FF00FF);
++      x = ((x & 0xFFFF0000) >> 16) + (x & 0x0000FFFF);
++      return (int) x;
++}
++
++__inline__ bool
++link_is_active(port_info_t *info, uint16_t idx)
++{
++    return (info->links >> idx) & 0x1;
++}
++
++uint8_t
++pktgen_get_random_link(port_info_t *info)
++{
++    if (!info->links){
++        return 0;
++    }
++    uint8_t link = rand() % hamming_weight(info->links) + 1;
++    uint8_t link_idx;
++    for (link_idx = 0; link > 0; link_idx++){
++        if (link_is_active(info, link_idx)){
++            link--;
++        }
++    }
++    return link_idx - 1;
++}
++
++static void
++pktgen_link_up(struct rte_wigig_link_updown_info *link_info)
++{
++    port_info_t *info = &pktgen.info[link_info->port_id];
++    pktgen_set_links(info, link_info->if_peer_id, true);
++    pktgen_update_links(info);
++    pktgen_update_display();
++}
++
++static void
++pktgen_link_down(struct rte_wigig_link_updown_info *link_info)
++{
++    port_info_t *info = &pktgen.info[link_info->port_id];
++    pktgen_set_links(info, link_info->if_peer_id, false);
++    pktgen_update_links(info);
++    pktgen_update_display();
++}
++
++static void
++pktgen_recovery(struct rte_wigig_recovery_info *recovery_info)
++{
++}
++
++static struct rte_wigig_client_ops callbacks = {
++    .link_down = pktgen_link_down,
++    .link_up = pktgen_link_up,
++    .wigig_recovery = pktgen_recovery,
++    .wigig_down = pktgen_recovery
++};
++
++/**
++ *
++ * pktgen_setup_link_callbacks - Set the links field of port_info_t
++ *
++ *
++ * DESCRIPTION
++ * Sets pktgen callbacks in the wigig driver. When a link comes up or down, pktgen_link_up and
++ * pktgen_link_down arecalled respectively.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++void
++pktgen_setup_link_callbacks(port_info_t *info)
++{
++    rte_wigig_get_ops()->set_client_ops(&rte_eth_devices[info->pid], &callbacks);
++}
++
++/**
++ *
++ * pktgen_set_links - Set the links field of port_info_t
++ *
++ *
++ * DESCRIPTION
++ * Sets the link field of port_info_t. links contains bitwise flags which indicate the * active links
++ * in the radio sector for the port. If active is true, the link's flag is set.  Otherwise, the flag
++ * is cleared.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++
++void
++pktgen_set_links(port_info_t *info, uint16_t link, bool active)
++{
++    info->links &= ~(0x1 << link);
++    info->links |= (active << link);
++}
++
++/**
++ *
++ * pktgen_update_links - Update the tx memory pools based on selected links
++ *
++ *
++ * DESCRIPTION
++ * Regenerates mbufs in the tx memory pool of the specified port
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++
++void
++pktgen_update_links(port_info_t *info)
++{
++    pktgen_stop_transmitting(info);
++    for (uint16_t lid_idx = 0; lid_idx < get_port_nb_lids(pktgen.l2p, info->pid); ++lid_idx){
++        uint16_t lid = get_port_lid(pktgen.l2p, info->pid, lid_idx);
++        uint16_t qid = get_txque(pktgen.l2p, lid, info->pid);
++        pktgen_setup_packets(info, info->q[qid].tx_mp, qid);
++    }
++}
+diff --git a/app/pktgen-links.h b/app/pktgen-links.h
+new file mode 100644
+index 0000000..0fd7ece
+--- /dev/null
++++ b/app/pktgen-links.h
+@@ -0,0 +1,36 @@
++/*-
++ * Copyright (c) <2010-2019>, Intel Corporation. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++/* Created 2010 by Keith Wiles @ intel.com */
++
++#ifndef _PKTGEN_LINKS_H_
++#define _PKTGEN_LINKS_H_
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include "rte_wigig_api.h"
++
++#include "pktgen-port-cfg.h"
++#include "pktgen-cmds.h"
++#include "pktgen.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++uint8_t pktgen_get_random_link(port_info_t *info);
++
++void pktgen_setup_link_callbacks(port_info_t *info);
++
++void pktgen_set_links(port_info_t *info, uint16_t link, bool active);
++
++void pktgen_update_links(port_info_t *info);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif  /* _PKTGEN_LINKS_H_ */
+diff --git a/app/pktgen-main.c b/app/pktgen-main.c
+index e063e64..7eeeabc 100644
+--- a/app/pktgen-main.c
++++ b/app/pktgen-main.c
+@@ -24,6 +24,7 @@
+ #include "lauxlib.h"
+ #endif
+ #include "pktgen-cmds.h"
++#include "pktgen-links.h"
+ #include "pktgen-cpu.h"
+ #include "pktgen-display.h"
+ #include "pktgen-log.h"
+@@ -578,6 +579,8 @@ main(int argc, char **argv)
+ 		pktgen_gui_main(argc, argv);
+ #endif
+ 	}
++	pktgen_log_info("=== Setup WiGig link callbacks\n");
++	forall_ports(pktgen_setup_link_callbacks(info));
+ 
+ 	pktgen_log_info("=== Run CLI\n");
+ 	pktgen_cli_start();
+diff --git a/app/pktgen-port-cfg.h b/app/pktgen-port-cfg.h
+index e20db9a..d18e5ce 100644
+--- a/app/pktgen-port-cfg.h
++++ b/app/pktgen-port-cfg.h
+@@ -302,6 +302,7 @@ typedef struct port_info_s {
+     struct rte_eth_dev_info dev_info;     /**< PCI info + driver name */
+     char user_pattern[USER_PATTERN_SIZE]; /**< User set pattern values */
+     fill_t fill_pattern_type;             /**< Type of pattern to fill with */
++    uint16_t links; /**< active links for this port's radio sector. bitwise flags*/
+ 
+     /* Latency sampling data */
+     /* Depending on MAX_LATENCY_ENTRIES, this could blow up static array memory usage
+diff --git a/app/pktgen-stats.c b/app/pktgen-stats.c
+index dacc7ab..da6e376 100644
+--- a/app/pktgen-stats.c
++++ b/app/pktgen-stats.c
+@@ -109,6 +109,7 @@ pktgen_print_static_data(void)
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "Pkt Type:VLAN ID");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "802.1p CoS/DSCP/RAW");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "VxLAN Flg/Grp/vid");
++    scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "Active Links");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "IP  Destination");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "    Source");
+     scrn_printf(row++, 1, "%-*s", COLUMN_WIDTH_0, "MAC Destination");
+@@ -172,6 +173,10 @@ pktgen_print_static_data(void)
+         snprintf(buff, sizeof(buff), "%04x/%5d/%5d", pkt->vni_flags, pkt->group_id, pkt->vxlan_id);
+         scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1, buff);
+ 
++        pktgen_display_set_color("stats.links");
++        snprintf(buff, sizeof(buff), "0x%04X", info->links);
++        scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1, buff);
++
+         pktgen_display_set_color("stats.ip");
+         if (pkt->ethType == PG_ETHER_TYPE_IPv6) {
+             scrn_printf(row++, col, "%*s", COLUMN_WIDTH_1,
+diff --git a/app/pktgen.c b/app/pktgen.c
+index f8f5957..d245429 100644
+--- a/app/pktgen.c
++++ b/app/pktgen.c
+@@ -34,6 +34,7 @@
+ #include "pktgen-gtpu.h"
+ #include "pktgen-cfg.h"
+ #include "pktgen-rate.h"
++#include "pktgen-links.h"
+ 
+ #include <pthread.h>
+ #include <sched.h>
+@@ -1024,6 +1025,9 @@ pktgen_setup_cb(struct rte_mempool *mp,
+ 	d->buf_len = m->buf_len;
+ 	d->data_len = m->data_len;
+ 
++	/* Select a WiGig peer-id by randomly selecting a random link. */
++	wigig_mbuf_link_id_set(m, pktgen_get_random_link(info));
++
+ 	switch(pkt->ethType) {
+ 	case PG_ETHER_TYPE_IPv4:
+ 		if (info->dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
+@@ -1070,7 +1074,7 @@ pktgen_setup_cb(struct rte_mempool *mp,
+  * SEE ALSO:
+  */
+ 
+-static __inline__ void
++void
+ pktgen_setup_packets(port_info_t *info, struct rte_mempool *mp, uint16_t qid)
+ {
+ 	pkt_data_t pkt_data;
+@@ -1348,6 +1352,7 @@ port_map_info(uint8_t lid, port_info_t **infos, uint8_t *qids,
+ 	}
+ 
+ 	pktgen_log_info("%s", buf);
++	forall_ports(pktgen_setup_link_callbacks);
+ }
+ 
+ /**
+diff --git a/app/pktgen.h b/app/pktgen.h
+index a941b04..c4cda42 100644
+--- a/app/pktgen.h
++++ b/app/pktgen.h
+@@ -400,6 +400,7 @@ pkt_seq_t *pktgen_find_matching_ipdst(port_info_t *info, uint32_t addr);
+ int pktgen_launch_one_lcore(void *arg);
+ uint64_t pktgen_wire_size(port_info_t *info);
+ void pktgen_input_start(void);
++void pktgen_setup_packets(port_info_t *info, struct rte_mempool *mp, uint16_t qid);
+ void stat_timer_dump(void);
+ void stat_timer_clear(void);
+ void rte_timer_setup(void);
+-- 
+2.30.2
+

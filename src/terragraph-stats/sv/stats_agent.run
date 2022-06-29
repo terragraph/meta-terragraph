@@ -1,0 +1,35 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+if [ "$OPENR_ENABLED" = "0" ]; then
+  echo "ERROR: OPENR_ENABLED must be set in order to auto start stats_agent"
+  sleep ${DELAY}
+  continue
+fi
+
+RUN_STATS_AGENT="/usr/sbin/stats_agent"
+
+if [ ! -z "$STATS_AGENT_VERBOSE" ]; then
+  RUN_STATS_AGENT="$RUN_STATS_AGENT -v $STATS_AGENT_VERBOSE"
+else
+  RUN_STATS_AGENT="$RUN_STATS_AGENT -v 2"
+fi
+
+if [ ! -z "$E2E_AGGREGATOR_HOST" ]; then
+  RUN_STATS_AGENT="$RUN_STATS_AGENT -aggregator_host $E2E_AGGREGATOR_HOST"
+fi
+
+exec $RUN_STATS_AGENT -logtostderr 2>&1
+
+sleep ${DELAY}
+
+done

@@ -1,0 +1,69 @@
+From 2e09983567c7e06528d5a40eb9a83b1a50583b3c Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Sat, 11 Sep 2021 04:14:38 -0700
+Subject: [PATCH] Fix build
+
+Include rte_config.h header:
+https://lore.kernel.org/dpdk-dev/20210609101755.20769-1-michael.pfeiffer@tu-ilmenau.de/T/
+
+Set static: true for dpdk.
+
+Remove other unnecessary libraries.
+---
+ app/meson.build | 6 +-----
+ meson.build     | 9 ++-------
+ 2 files changed, 3 insertions(+), 12 deletions(-)
+
+diff --git a/app/meson.build b/app/meson.build
+index a67f2c9..52defa2 100644
+--- a/app/meson.build
++++ b/app/meson.build
+@@ -27,10 +27,6 @@ if get_option('enable_gui')
+     cflags += '-DGUI'
+ endif
+ 
+-deps += [cc.find_library('rte_net_i40e', required: false)]
+-deps += [cc.find_library('rte_net_ixgbe', required: false)]
+-deps += [cc.find_library('rte_net_ice', required: false)]
+-
+ deps += [dependency('threads')]
+ deps += [cc.find_library('numa', required: true)]
+ deps += [cc.find_library('pcap', required: true)]
+@@ -51,4 +47,4 @@ pktgen = executable('dpdk-pktgen',
+ 		sources,
+ 		c_args: cflags,
+ 		install: true,
+-		dependencies: [pmd_deps, deps, lua_dep, dpdk_bond])
++		dependencies: [pmd_deps, deps, lua_dep])
+diff --git a/meson.build b/meson.build
+index 3de9147..2e7bbdc 100644
+--- a/meson.build
++++ b/meson.build
+@@ -17,7 +17,7 @@ pktgen_conf = configuration_data()
+ # set up some global vars for compiler, platform, configuration, etc.
+ cc = meson.get_compiler('c')
+ 
+-add_project_arguments('-march=native', language: 'c')
++add_project_arguments('-include', 'rte_config.h', language: 'c')
+ 
+ if get_option('enable-avx') and cc.has_argument('-mavx')
+     add_project_arguments('-mavx', language: 'c')
+@@ -59,14 +59,9 @@ else
+ 	lua_dep = dependency('', required: false)
+ endif
+ 
+-dpdk = dependency('libdpdk', required: true)
++dpdk = dependency('libdpdk', static: true, required: true)
+ # message('prefix: ' + get_option('prefix') + ' libdir: ' + get_option('libdir'))
+ 
+-dpdk_libs_path = join_paths(get_option('prefix'), get_option('libdir'))
+-# message('DPDK lib path: ' + dpdk_libs_path)
+-
+-dpdk_bond = cc.find_library('librte_net_bond', dirs: [dpdk_libs_path], required: false)
+-
+ subdir('tools')
+ 
+ subdir('lib')
+-- 
+2.30.2
+

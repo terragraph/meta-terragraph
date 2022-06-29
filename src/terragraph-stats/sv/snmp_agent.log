@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/snmp_agent
+exec svlogd /var/log/snmp_agent

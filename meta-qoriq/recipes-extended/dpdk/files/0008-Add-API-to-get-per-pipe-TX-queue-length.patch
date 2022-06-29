@@ -1,0 +1,112 @@
+From 93f810283e203a93bb3e46c91abdaf9c8927ef07 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Mon, 8 Jun 2020 18:06:16 -0700
+Subject: [PATCH] Add API to get per-pipe TX queue length
+
+---
+ lib/librte_ethdev/rte_ethdev.h      | 51 +++++++++++++++++++++++++++++
+ lib/librte_ethdev/rte_ethdev_core.h |  6 ++++
+ lib/librte_ethdev/version.map       |  1 +
+ 3 files changed, 58 insertions(+)
+
+diff --git a/lib/librte_ethdev/rte_ethdev.h b/lib/librte_ethdev/rte_ethdev.h
+index 395d137e5a..cbfc130ba6 100644
+--- a/lib/librte_ethdev/rte_ethdev.h
++++ b/lib/librte_ethdev/rte_ethdev.h
+@@ -5239,6 +5239,57 @@ rte_eth_get_tx_feedback(uint16_t port_id, uint16_t queue_id,
+ 	return rc;
+ }
+ 
++/**
++ * Get Tx pipe size on a transmit queue of an Ethernet device.
++ *
++ * This function may be used so as to obtain per pipe HW size,
++ * on a transmit queue.
++ *
++ * It is assumed that one given Tx queue may support multiple unit of credits,
++ * or multiple Traffic Pipes/Flows.
++ * This is because Tx queues may include prioritizations for various Traffic Flows
++ * or Traffic Classes. As well, not every Ethernet device implements its TX queues
++ * as single RTE rings that represent one continuous stream of packets.
++ *
++ * Because individual pipes/flows of a transmit queues might lincude different
++ * TX speeds (due to different link budget capabilities), it is also assumed
++ * that they may not be configured with identical depth.
++ *
++ * @param port_id
++ *   The port identifier of the Ethernet device.
++ * @param queue_id
++ *   The index of the transmit queue through which output packets must be
++ *   sent.
++ *   The value must be in the range [0, nb_tx_queue - 1] previously supplied
++ *   to rte_eth_dev_configure().
++ * @param size
++ *   The pointer to per-flow data: driver to provide either number of packets,
++ *   or number of rte_mbuf segment that can be enqueued for this Tx Flow.
++ *   See RTE_ETH_DEV_CAPA_RUNTIME_TX_FEEDBACK_SEG flag.
++ *   Write 0 if the TX pipe isn't configured.
++ * @param num_flows
++ *   The number of traffic flows on which Tx feedback is requested.
++ *   This corresponds to the size of the "avail" and "pending" arrays
++ *   passed to the driver.
++ * @return
++ *   0 on success, negative otherwise.
++ */
++__rte_experimental
++static inline int
++rte_eth_get_tx_pipe_size(uint16_t port_id, uint16_t queue_id,
++		uint16_t *size, uint32_t num_flows)
++{
++	int rc = -ENOTSUP;
++#ifdef RTE_LIBRTE_ETHDEV_DEBUG
++	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
++#endif
++	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
++	if (dev->tx_get_pipe_size)
++		rc = (*dev->tx_get_pipe_size)(dev->data->tx_queues[queue_id],
++			size, num_flows);
++	return rc;
++}
++
+ /**
+  * Send real time Tx pending statistics on a transmit queue of an Ethernet device.
+  *
+diff --git a/lib/librte_ethdev/rte_ethdev_core.h b/lib/librte_ethdev/rte_ethdev_core.h
+index 5b70074078..05a1a790f1 100644
+--- a/lib/librte_ethdev/rte_ethdev_core.h
++++ b/lib/librte_ethdev/rte_ethdev_core.h
+@@ -47,6 +47,11 @@ typedef int (*eth_tx_feedback_t)(void *txq,
+ 			  uint32_t nb_flows);
+ /**< @internal Get transmit feedback on a transmit queue from an Ethernet device. */
+ 
++typedef int (*eth_tx_get_pipe_size_t)(void *txq,
++			  uint16_t *size,
++			  uint32_t nb_flows);
++/**< @internal Get transmit pipe size on a transmit queue from an Ethernet device. */
++
+ typedef int (*eth_tx_send_pending_stats_t)(void *txq,
+ 				   struct rte_eth_tx_pending_stats *pending,
+ 				   uint32_t nb_flows);
+@@ -95,6 +100,7 @@ struct rte_eth_dev {
+ 	eth_tx_burst_t tx_pkt_burst; /**< Pointer to PMD transmit function. */
+ 	eth_tx_prep_t tx_pkt_prepare; /**< Pointer to PMD transmit prepare function. */
+ 	eth_tx_feedback_t tx_get_feedback; /**< Pointer to PMD transmit get feedback function. */
++	eth_tx_get_pipe_size_t tx_get_pipe_size; /**< Pointer to PMD transmit get pipe size function. */
+ 	eth_tx_send_pending_stats_t tx_send_pending_stats;
+ 	/**< Pointer to PMD tx send pending stats function. */
+ 
+diff --git a/lib/librte_ethdev/version.map b/lib/librte_ethdev/version.map
+index 978f50c4d7..4cc26fe8b8 100644
+--- a/lib/librte_ethdev/version.map
++++ b/lib/librte_ethdev/version.map
+@@ -243,6 +243,7 @@ EXPERIMENTAL {
+ 
+ 	rte_eth_xstats_config;
+ 	rte_eth_get_tx_feedback;
++	rte_eth_get_tx_pipe_size;
+ 	rte_eth_send_tx_pending_stats;
+ };
+ 
+-- 
+2.30.2
+

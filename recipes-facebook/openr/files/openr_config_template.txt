@@ -1,0 +1,82 @@
+{
+    "node_name": "$NODE_NAME",
+    "domain": "$DOMAIN",
+    "areas": [
+        {
+            "area_id": "0",
+            "neighbor_regexes": [
+                ".*"
+            ],
+            "include_interface_regexes": [
+                "$IFACE_REGEX_INCLUDE"
+            ],
+            "exclude_interface_regexes": [],
+            "redistribute_interface_regexes": [
+                "lo"
+            ]
+        }
+    ],
+    "listen_addr": "::",
+    "openr_ctrl_port": 2018,
+    "enable_v4": false,
+    "v4_over_v6_nexthop": true,
+    "thrift_server": {
+        "listen_addr": "::1"
+    },
+    "assume_drained": false,
+    "enable_netlink_fib_handler": $ENABLE_NETLINK_FIB_HANDLER,
+    "eor_time_s": 20,
+    "prefix_forwarding_type": 0,
+    "prefix_forwarding_algorithm": 0,
+    "kvstore_config": {
+        "key_ttl_ms": 600000,
+        "ttl_decrement_ms": 1,
+        "enable_flood_optimization": true
+    },
+    "link_monitor_config": {
+        "linkflap_initial_backoff_ms": $LINK_FLAP_INITIAL_BACKOFF_MS,
+        "linkflap_max_backoff_ms": $LINK_FLAP_MAX_BACKOFF_MS,
+        "use_rtt_metric": $ENABLE_RTT_METRIC
+    },
+    "spark_config": {
+        "neighbor_discovery_port": 6666,
+        "hello_time_s": 20,
+        "fastinit_hello_time_ms": 500,
+        "keepalive_time_s": 2,
+        "hold_time_s": 10,
+        "graceful_restart_time_s": 30,
+        "step_detector_conf": {
+            "fast_window_size": 10,
+            "slow_window_size": 60,
+            "lower_threshold": 2,
+            "upper_threshold": 5,
+            "ads_threshold": 500
+        },
+        "enable_spark2": $ENABLE_SPARK2
+    },
+    "enable_watchdog": true,
+    "watchdog_config": {
+        "interval_s": 20,
+        "thread_timeout_s": 300,
+        "max_memory_mb": 512
+    },
+    "enable_prefix_allocation": $ENABLE_PREFIX_ALLOC,
+    "prefix_allocation_config": {
+      "prefix_allocation_mode": $PREFIX_ALLOC_MODE,
+      "set_loopback_addr": $SET_LOOPBACK_ADDR,
+      "override_loopback_addr": $OVERRIDE_LOOPBACK_ADDR
+    },
+    "fib_port": 60100,
+    "enable_rib_policy": false,
+    "monitor_config": {
+        "max_event_log": 100,
+        "enable_event_log_submission": true
+    },
+    "enable_best_route_selection": true,
+    "prefix_hold_time_s": 15,
+    "mpls_route_delete_delay_s": 10,
+    "enable_new_gr_behavior": false,
+    "adj_hold_time_s": 4,
+    "enable_bgp_peering": false,
+    "bgp_config": {}
+}

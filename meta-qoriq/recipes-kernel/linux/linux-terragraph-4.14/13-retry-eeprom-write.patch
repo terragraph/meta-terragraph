@@ -1,0 +1,49 @@
+From dc1e8a19f89911120e835363bcd9448062ed4f88 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Mon, 18 Jun 2018 16:27:06 -0700
+Subject: [PATCH] Accessing eeprom is sometimes timing out (at least on
+ the board I am working with). Trying it a few more times seems to work till
+ now.
+
+---
+ drivers/misc/eeprom/at24.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/misc/eeprom/at24.c b/drivers/misc/eeprom/at24.c
+index f8cfcd063649..23cc35d2db82 100644
+--- a/drivers/misc/eeprom/at24.c
++++ b/drivers/misc/eeprom/at24.c
+@@ -507,6 +507,7 @@ static ssize_t at24_eeprom_write_i2c(struct at24_data *at24, const char *buf,
+ 	struct i2c_msg msg;
+ 	ssize_t status = 0;
+ 	int i = 0;
++	int iter = 0;
+ 
+ 	client = at24_translate_offset(at24, &offset);
+ 	count = at24_adjust_write_count(at24, offset, count);
+@@ -523,6 +524,7 @@ static ssize_t at24_eeprom_write_i2c(struct at24_data *at24, const char *buf,
+ 	memcpy(&msg.buf[i], buf, count);
+ 	msg.len = i + count;
+ 
++try_again:
+ 	timeout = jiffies + msecs_to_jiffies(write_timeout);
+ 	do {
+ 		/*
+@@ -544,6 +546,14 @@ static ssize_t at24_eeprom_write_i2c(struct at24_data *at24, const char *buf,
+ 		usleep_range(1000, 1500);
+ 	} while (time_before(write_time, timeout));
+ 
++	if (iter++ < 5) {
++		/* we seem to timeout sometimes.  Just try few more before
++		 * giving up
++		 */
++		goto try_again;
++	}
++
++
+ 	return -ETIMEDOUT;
+ }
+ 
+-- 
+2.17.1
+

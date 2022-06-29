@@ -1,0 +1,44 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# kills bgp daemon before the connectivity is lost to the bgp router to signal
+# the POP node will go down by sending BGP cease notification to the peer, and
+# make sure advertised paths are withdrawn now instead of only by keepalive time
+# expiration.
+# also remove the default route injection to open/r to avoid other nodes try to
+# send traffic through this one
+# leave 1-2 seconds before commencing so transit traffic can drain from the links
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+GRACEPERIOD=2  # time to leave for traffic to drain in seconds
+
+if [ "$POP_BGP_ROUTING" != "1" ]; then
+  exit 0
+fi
+
+if ! /usr/sbin/bgp_wrapper.sh status | grep -q "^run"; then
+  exit 0  # no BGP daemon is running, just exit
+fi
+
+case "$1" in
+  stop)
+    # stop bgp related processes
+    /usr/sbin/bgp_wrapper.sh softshut
+
+    # remove default route fron open/r
+    /usr/bin/breeze prefixmgr withdraw ::/0
+
+    /bin/sleep $GRACEPERIOD
+    ;;
+   *)
+    echo only stop is implemented
+    exit
+    ;;
+esac

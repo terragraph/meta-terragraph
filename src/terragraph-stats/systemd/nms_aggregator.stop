@@ -1,0 +1,16 @@
+#!/bin/sh
+NMS_ROOTFS="$1"
+if [ -z "${NMS_ROOTFS}" ] || [ ! -d "${NMS_ROOTFS}" ]; then
+  echo "You must specify the NMS rootfs path as the first argument"
+  exit 1
+fi
+
+# unmount /data if no other process is using the rootfs
+if [ -z "$(ps aux | grep -E -e "${NMS_ROOTFS}.*\.start$")" ]; then
+  # use the resolved symlink when checking the mount
+  NMS_ROOTFS=$(realpath $NMS_ROOTFS)
+  # loop over 'umount' because multiple scripts could have mounted /data
+  while [ ! -z "$(mount | grep ${NMS_ROOTFS}/data)" ]; do
+    umount -v "${NMS_ROOTFS}/data" || (echo "Unmount failed, sleeping 1s..."; sleep 1)
+  done
+fi

@@ -1,0 +1,31 @@
+From 9248b5f0aaae6127a1c963d45f727e4535b0ada3 Mon Sep 17 00:00:00 2001
+From: Sreedev Sreedev <ssreedev@fb.com>
+Date: Thu, 5 Mar 2020 17:15:57 -0800
+Subject: [PATCH 28/28] Deassert RESETn of 88E1545 (QSGMII)
+
+---
+ board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c b/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c
+index 7398b0fedb..89daa92bc8 100644
+--- a/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c
++++ b/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c
+@@ -319,10 +319,14 @@ int board_init(void)
+ #define GPS_1PPS_OUT	GPIO(4,24)	/* 120 */
+ 
+ #define SFP_TX_EN	GPIO(4, 8)	/* 104 */
++#define PHY3_RSTN  GPIO(3, 30) /* 94 */
+ 
+ 	/* SFP TX_EN set low */
+ 	gpio_direction_output(SFP_TX_EN, 0);
+ 
++	/* Set QSGMII RESETn to high */
++	gpio_direction_output(PHY3_RSTN, 1);
++
+ 	/* BB1/BB2/BB3/BB4 Wake# */
+ 	gpio_direction_input(BB1_RF_WAKE);
+ 	gpio_direction_input(BB2_RF_WAKE);
+-- 
+2.17.1
+

@@ -1,0 +1,385 @@
+From 27d1894d6b3bc5b9929a9ff40213f811674f9621 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Sun, 11 Feb 2018 17:15:09 -0800
+Subject: [PATCH 15/20] ls1048atg ddr 2100 rev2
+
+---
+ board/freescale/ls1048a/Makefile     |   2 +-
+ board/freescale/ls1048a/uboot_ddr1.c | 323 +++++++++++++++++++++++++++
+ drivers/ddr/fsl/fsl_ddr_gen4.c       |   1 +
+ include/configs/ls1048atg.h          |   3 +-
+ 4 files changed, 326 insertions(+), 3 deletions(-)
+ create mode 100644 board/freescale/ls1048a/uboot_ddr1.c
+
+diff --git a/board/freescale/ls1048a/Makefile b/board/freescale/ls1048a/Makefile
+index cca2cbbfe0..b7c5740cde 100644
+--- a/board/freescale/ls1048a/Makefile
++++ b/board/freescale/ls1048a/Makefile
+@@ -3,7 +3,7 @@
+ # Copyright 2017 NXP
+ 
+ obj-y += ls1048a.o
+-obj-y += ../ls1088a/ddr.o
++obj-y += uboot_ddr1.o
+ ifndef CONFIG_SPL_BUILD
+ obj-$(CONFIG_TARGET_LS1048ATG) += eth_ls1048atg.o
+ endif
+diff --git a/board/freescale/ls1048a/uboot_ddr1.c b/board/freescale/ls1048a/uboot_ddr1.c
+new file mode 100644
+index 0000000000..ff8a05719f
+--- /dev/null
++++ b/board/freescale/ls1048a/uboot_ddr1.c
+@@ -0,0 +1,323 @@
++/*
++**      DDR controller #1 initialization code
++**      Use this code to integrate the DDR controller initialization code into a boot loader code
++**
++**     Copyright : 2016 Freescale Semiconductor, Inc. All Rights Reserved.
++**     SOURCE DISTRIBUTION PERMISSIBLE as directed in End User License Agreement.
++**
++**     http      : www.nxp.com
++**     mail      : support@nxp.com
++*/
++
++#include <common.h>
++#include <fsl_ddr_sdram.h>
++#include <fsl_ddr_dimm_params.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++
++/*
++typedef unsigned int uint32_t;
++
++typedef struct ddr_cs
++{
++        uint32_t bnds;
++        uint32_t config;
++        uint32_t config_2;
++} ddr_cs_t;
++
++typedef struct ddr_cfg_regs
++{
++        ddr_cs_t cs[4];
++        uint32_t timing_cfg_0;
++        uint32_t timing_cfg_1;
++        uint32_t timing_cfg_2;
++        uint32_t timing_cfg_3;
++        uint32_t timing_cfg_4;
++        uint32_t timing_cfg_5;
++
++        uint32_t timing_cfg_6;
++        uint32_t timing_cfg_7;
++        uint32_t timing_cfg_8;
++        uint32_t sdram_cfg;
++        uint32_t sdram_cfg_2;
++
++        uint32_t sdram_cfg_3;
++        uint32_t sdram_mode;
++        uint32_t sdram_mode_2;
++        uint32_t sdram_mode_3;
++        uint32_t sdram_mode_4;
++        uint32_t sdram_mode_5;
++        uint32_t sdram_mode_6;
++        uint32_t sdram_mode_7;
++        uint32_t sdram_mode_8;
++        uint32_t sdram_mode_9;
++        uint32_t sdram_mode_10;
++        uint32_t sdram_mode_11;
++        uint32_t sdram_mode_12;
++        uint32_t sdram_mode_13;
++        uint32_t sdram_mode_14;
++        uint32_t sdram_mode_15;
++        uint32_t sdram_mode_16;
++        uint32_t sdram_md_cntl;
++        uint32_t sdram_interval;
++        uint32_t sdram_data_init;
++        uint32_t sdram_clk_cntl;
++        uint32_t init_addr;
++        uint32_t init_ext_addr;
++        uint32_t zq_cntl;
++        uint32_t wrlvl_cntl;
++        uint32_t wrlvl_cntl_2;
++        uint32_t wrlvl_cntl_3;
++        uint32_t sdram_rcw_1;
++        uint32_t sdram_rcw_2;
++        uint32_t sdram_rcw_3;
++        uint32_t sdram_rcw_4;
++        uint32_t sdram_rcw_5;
++        uint32_t sdram_rcw_6;
++        uint32_t sdram_cdr_1;
++        uint32_t sdram_cdr_2;
++        uint32_t err_disable;
++        uint32_t err_int_en;
++        uint32_t err_sbe;
++        uint32_t deskew_cntl;
++} ddr_cfg_regs_t;
++
++typedef struct fixed_ddr_param
++{
++        uint32_t data_rate_low;
++        uint32_t data_rate_high;
++        ddr_cfg_regs_t* p_ddr_cfg;
++} fixed_ddr_param_t;
++
++*/
++
++#define DATARATE_300MHZ        300000000
++#define DATARATE_400MHZ        400000000
++#define DATARATE_500MHZ        500000000
++#define DATARATE_600MHZ        600000000
++#define DATARATE_700MHZ        700000000
++#define DATARATE_800MHZ        800000000
++#define DATARATE_900MHZ        900000000
++#define DATARATE_1000MHZ      1000000000
++#define DATARATE_1200MHZ      1200000000
++#define DATARATE_1300MHZ      1300000000
++#define DATARATE_1400MHZ      1400000000
++#define DATARATE_1500MHZ      1500000000
++#define DATARATE_1600MHZ      1600000000
++#define DATARATE_1700MHZ      1700000000
++#define DATARATE_1800MHZ      1800000000
++#define DATARATE_1900MHZ      1900000000
++#define DATARATE_2000MHZ      2000000000
++#define DATARATE_2100MHZ      2100000000
++#define DATARATE_2200MHZ      2200000000
++#define DATARATE_2300MHZ      2300000000
++#define DATARATE_2400MHZ      2400000000
++
++/* swaps the bits [i.e. changes endianess] of a 32-bit value */
++#define SWAP(x)  ( \
++    (((x) >> 24) & 0xFF) \
++  | (((x) << 8) & 0xFF0000) \
++  | (((x) >> 8) & 0xFF00) \
++  | (((x) << 24) & 0xFF000000) \
++)
++
++/*
++#define VALUE_OF(x) \
++        SWAP(x)
++        */
++#define VALUE_OF(x) x
++
++#define DDRmc1_CS0_BNDS                 VALUE_OF(0xFF)
++#define DDRmc1_CS1_BNDS         VALUE_OF(0x0100013F)
++#define DDRmc1_CS0_CONFIG       VALUE_OF(0x80010412)
++#define DDRmc1_CS1_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS0_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS1_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS2_BNDS         VALUE_OF(0x0140017F)
++#define DDRmc1_CS3_BNDS         VALUE_OF(0x018001BF)
++#define DDRmc1_CS2_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS3_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS2_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS3_CONFIG_2     VALUE_OF(0x00)
++
++#define DDRmc1_TIMING_CFG_3         VALUE_OF(0x02161100)
++#define DDRmc1_TIMING_CFG_0         VALUE_OF(0x80770010)
++#define DDRmc1_TIMING_CFG_1         VALUE_OF(0xF8FC8265)
++#define DDRmc1_TIMING_CFG_2         VALUE_OF(0x005951A0)
++#define DDRmc1_SDRAM_CFG                        VALUE_OF(0x65200000)
++#define DDRmc1_SDRAM_CFG2       VALUE_OF(0x00401050)
++#define DDRmc1_MODE_1           VALUE_OF(0x01010631)
++#define DDRmc1_MODE_2           VALUE_OF(0x00100000)
++#define DDRmc1_MODE_3           VALUE_OF(0x00)
++#define DDRmc1_MODE_4           VALUE_OF(0x00)
++#define DDRmc1_MODE_5           VALUE_OF(0x00)
++#define DDRmc1_MODE_6           VALUE_OF(0x00)
++#define DDRmc1_MODE_7           VALUE_OF(0x00)
++#define DDRmc1_MODE_8           VALUE_OF(0x00)
++
++#define DDRmc1_MODE_CONTROL     VALUE_OF(0x00)
++#define DDRmc1_INTERVAL         VALUE_OF(0x1FFE07FF)
++#define DDRmc1_MEM_INIT_VALUE   VALUE_OF(0xDEADBEEF)
++#define DDRmc1_CLK_CTRL         VALUE_OF(0x02800000)
++#define DDRmc1_INIT_ADDR        VALUE_OF(0x00)
++#define DDRmc1_INIT_EXT_ADDR    VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_4         VALUE_OF(0x00220002)
++#define DDRmc1_TIMING_CFG_5         VALUE_OF(0x06401400)
++#define DDRmc1_ZQ_CNTL          VALUE_OF(0x8A090705)
++#define DDRmc1_WRLVL_CNTL       VALUE_OF(0x86750608)
++#define DDRmc1_WRLVL_CNTL_2     VALUE_OF(0x08080807)
++#define DDRmc1_WRLVL_CNTL_3     VALUE_OF(0x07060608)
++#define DDRmc1_RCW_1            VALUE_OF(0x00)
++#define DDRmc1_RCW_2            VALUE_OF(0x00)
++#define DDRmc1_CDR_1            VALUE_OF(0x80040000)
++#define DDRmc1_CDR_2            VALUE_OF(0xA181)
++#define DDRmc1_SDRAM_CFG_3              VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_6             VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_7             VALUE_OF(0x20000000)
++#define DDRmc1_TIMING_CFG_8             VALUE_OF(0x05226A00)
++#define DDRmc1_DESKEW_CNTL              VALUE_OF(0x00)
++#define DDRmc1_DQ_MAP0                  VALUE_OF(0x56C12D30)
++#define DDRmc1_DQ_MAP1                  VALUE_OF(0xD95D95D8)
++#define DDRmc1_DQ_MAP2                  VALUE_OF(0x57643558)
++#define DDRmc1_DQ_MAP3                  VALUE_OF(0xD55D8000)
++#define DDRmc1_RCW_3            VALUE_OF(0x00)
++#define DDRmc1_RCW_4            VALUE_OF(0x00)
++#define DDRmc1_RCW_5            VALUE_OF(0x00)
++#define DDRmc1_RCW_6            VALUE_OF(0x00)
++#define DDRmc1_MODE_9           VALUE_OF(0x0500)
++#define DDRmc1_MODE_10          VALUE_OF(0x08800000)
++#define DDRmc1_MODE_11          VALUE_OF(0x00)
++#define DDRmc1_MODE_12           VALUE_OF(0x00)
++#define DDRmc1_MODE_13           VALUE_OF(0x00)
++#define DDRmc1_MODE_14           VALUE_OF(0x00)
++#define DDRmc1_MODE_15           VALUE_OF(0x00)
++#define DDRmc1_MODE_16           VALUE_OF(0x00)
++#define DDRmc1_ERR_DISABLE      VALUE_OF(0x00)
++#define DDRmc1_ERR_INT_EN               VALUE_OF(0x1D)
++#define DDRmc1_ERR_SBE                  VALUE_OF(0x00010000)
++
++
++#define CLK_ADJ_MASK           0x07C00000
++#define CLK_ADJ_OFFSET         22
++#define WRLVL_START_MASK       0x0000001F
++#define HSE_MASK               0x00000008
++#define HSE_OFFSET             3
++
++#define CLK_ADJ                ((0x02800000 & CLK_ADJ_MASK) >> CLK_ADJ_OFFSET)
++#define WRLVL_START            (0x86750608 & WRLVL_START_MASK)
++#define HALF_STRENGTH_ENABLE   ((0x65200000 & HSE_MASK) >> HSE_OFFSET)
++
++
++fsl_ddr_cfg_regs_t ddr_cfg_regs_1 = {
++
++        .cs[0].bnds = DDRmc1_CS0_BNDS,
++        .cs[1].bnds = DDRmc1_CS1_BNDS,
++        .cs[0].config = DDRmc1_CS0_CONFIG,
++        .cs[1].config = DDRmc1_CS1_CONFIG,
++        .cs[0].config_2 = DDRmc1_CS0_CONFIG_2,
++        .cs[1].config_2 =  DDRmc1_CS1_CONFIG_2,
++        .cs[2].bnds = DDRmc1_CS2_BNDS,
++        .cs[3].bnds = DDRmc1_CS3_BNDS,
++        .cs[2].config = DDRmc1_CS2_CONFIG,
++        .cs[3].config = DDRmc1_CS3_CONFIG,
++        .cs[2].config_2 =  DDRmc1_CS2_CONFIG_2,
++        .cs[3].config_2 =  DDRmc1_CS3_CONFIG_2,
++        .timing_cfg_0 = DDRmc1_TIMING_CFG_0,
++        .timing_cfg_1 = DDRmc1_TIMING_CFG_1,
++        .timing_cfg_2 = DDRmc1_TIMING_CFG_2,
++        .timing_cfg_3 = DDRmc1_TIMING_CFG_3,
++        .timing_cfg_4 = DDRmc1_TIMING_CFG_4,
++        .timing_cfg_5 = DDRmc1_TIMING_CFG_5,
++        .timing_cfg_6 = DDRmc1_TIMING_CFG_6,
++        .timing_cfg_7 = DDRmc1_TIMING_CFG_7,
++        .timing_cfg_8 = DDRmc1_TIMING_CFG_8,
++        .ddr_sdram_cfg = DDRmc1_SDRAM_CFG,
++        .ddr_sdram_cfg_2 = DDRmc1_SDRAM_CFG2,
++        .ddr_sdram_cfg_3 = DDRmc1_SDRAM_CFG_3,
++        .ddr_sdram_mode = DDRmc1_MODE_1,
++        .ddr_sdram_mode_2 = DDRmc1_MODE_2,
++        .ddr_sdram_mode_3 = DDRmc1_MODE_3,
++        .ddr_sdram_mode_4 = DDRmc1_MODE_4,
++        .ddr_sdram_mode_5 = DDRmc1_MODE_5,
++        .ddr_sdram_mode_6 = DDRmc1_MODE_6,
++        .ddr_sdram_mode_7 = DDRmc1_MODE_7,
++        .ddr_sdram_mode_8 = DDRmc1_MODE_8,
++        .ddr_sdram_mode_9 = DDRmc1_MODE_9,
++        .ddr_sdram_mode_10 = DDRmc1_MODE_10,
++        .ddr_sdram_mode_11 = DDRmc1_MODE_11,
++        .ddr_sdram_mode_12 = DDRmc1_MODE_12,
++        .ddr_sdram_mode_13 = DDRmc1_MODE_13,
++        .ddr_sdram_mode_14 = DDRmc1_MODE_14,
++        .ddr_sdram_mode_15 = DDRmc1_MODE_15,
++        .ddr_sdram_mode_16 = DDRmc1_MODE_16,
++        .ddr_sdram_md_cntl = DDRmc1_MODE_CONTROL,
++        .ddr_sdram_interval = DDRmc1_INTERVAL,
++        .ddr_data_init = DDRmc1_MEM_INIT_VALUE,
++        .ddr_sdram_clk_cntl = DDRmc1_CLK_CTRL,
++        .ddr_init_addr = DDRmc1_INIT_ADDR,
++        .ddr_init_ext_addr = DDRmc1_INIT_EXT_ADDR,
++        .ddr_zq_cntl = DDRmc1_ZQ_CNTL,
++        .ddr_wrlvl_cntl = DDRmc1_WRLVL_CNTL,
++        .ddr_wrlvl_cntl_2 = DDRmc1_WRLVL_CNTL_2,
++        .ddr_wrlvl_cntl_3 = DDRmc1_WRLVL_CNTL_3,
++        .ddr_sdram_rcw_1 = DDRmc1_RCW_1,
++        .ddr_sdram_rcw_2 = DDRmc1_RCW_2,
++        .ddr_sdram_rcw_3 = DDRmc1_RCW_3,
++        .ddr_sdram_rcw_4 = DDRmc1_RCW_4,
++        .ddr_sdram_rcw_5 = DDRmc1_RCW_5,
++        .ddr_sdram_rcw_6 = DDRmc1_RCW_6,
++        .dq_map_0 =  DDRmc1_DQ_MAP0,
++        .dq_map_1 =  DDRmc1_DQ_MAP1,
++        .dq_map_2 =  DDRmc1_DQ_MAP2,
++        .dq_map_3 =  DDRmc1_DQ_MAP3,
++      /*  .deskew_cntl = DDRmc1_DESKEW_CNTL, TODO */
++        .ddr_cdr1 = DDRmc1_CDR_1,
++        .ddr_cdr2 = DDRmc1_CDR_2,
++        .err_disable = DDRmc1_ERR_DISABLE,
++        .err_int_en = DDRmc1_ERR_INT_EN,
++       /* .err_sbe = DDRmc1_ERR_SBE TODO */
++};
++
++/*
++ * Fixed sdram init -- doesn't use serial presence detect.
++ */
++phys_size_t fixed_sdram(void)
++{
++        int i;
++        char buf[32];
++        fsl_ddr_cfg_regs_t *ddr_cfg_regs;
++        phys_size_t ddr_size;
++        ulong ddr_freq, ddr_freq_mhz;
++
++        ddr_freq = get_ddr_freq(0);
++        ddr_freq_mhz = ddr_freq / 1000000;
++
++        printf("Configuring DDR for %s MT/s data rate\n",
++               strmhz(buf, ddr_freq));
++
++        ddr_cfg_regs = &ddr_cfg_regs_1;
++        ddr_size = (phys_size_t) CONFIG_SYS_SDRAM_SIZE * 1024 * 1024;
++        fsl_ddr_set_memctl_regs(ddr_cfg_regs, 0, 0);
++
++        printf("Ram size: %08lX\n", ddr_size);
++        return ddr_size;
++}
++
++int fsl_initdram(void)
++{
++        phys_size_t dram_size;
++
++#if defined(CONFIG_SPL_BUILD) || !defined(CONFIG_SPL)
++        puts("Initializing DDR....\n");
++        dram_size = fixed_sdram();
++#else
++        dram_size =  CONFIG_SYS_SDRAM_SIZE * 1024 * 1024;
++#endif
++        gd->ram_size = dram_size;
++        printf("Ram size: %08lX\n", gd->ram_size);
++
++        return 0;
++}
++
++
+diff --git a/drivers/ddr/fsl/fsl_ddr_gen4.c b/drivers/ddr/fsl/fsl_ddr_gen4.c
+index 30f7863b39..d2b043939e 100644
+--- a/drivers/ddr/fsl/fsl_ddr_gen4.c
++++ b/drivers/ddr/fsl/fsl_ddr_gen4.c
+@@ -291,6 +291,7 @@ void fsl_ddr_set_memctl_regs(const fsl_ddr_cfg_regs_t *regs,
+ 
+ #ifdef CONFIG_SYS_FSL_ERRATUM_A010165
+ 	temp32 = get_ddr_freq(ctrl_num) / 1000000;
++	debug("DDR FREQ %lu %lu MHz .\n", temp32, get_ddr_freq(ctrl_num));
+ 	if ((temp32 > 1900) && (temp32 < 2300)) {
+ 		temp32 = ddr_in32(&ddr->debug[28]);
+ 		ddr_out32(&ddr->debug[28], temp32 | 0x000a0000);
+diff --git a/include/configs/ls1048atg.h b/include/configs/ls1048atg.h
+index e13eee30ed..1d06c34c22 100644
+--- a/include/configs/ls1048atg.h
++++ b/include/configs/ls1048atg.h
+@@ -62,9 +62,8 @@
+ #define CONFIG_DDR_ECC
+ #define CONFIG_ECC_INIT_VIA_DDRCONTROLLER
+ #define CONFIG_MEM_INIT_VALUE		0xdeadbeef
++#define CONFIG_SYS_SDRAM_SIZE          4096
+ #endif
+-#define SPD_EEPROM_ADDRESS	0x51
+-#define CONFIG_SYS_SPD_BUS_NUM	0	/* SPD on I2C bus 0 */
+ #define CONFIG_DIMM_SLOTS_PER_CTLR	1
+ 
+ /* I2C Addresses */
+-- 
+2.17.1
+

@@ -1,0 +1,43 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+node_id=$(/usr/sbin/get_hw_info NODE_ID)
+
+while [ : ]; do
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if Open/R is enabled
+if [ -z "$OPENR_ENABLED" ] || [ "$OPENR_ENABLED" -ne "1" ]; then
+  echo "open/r disabled"
+  sleep "${DELAY}"
+  continue
+fi
+
+# Required params to start Open/R
+if [ -z "$node_id" ]; then
+  echo "No node id to start open/r"
+  sleep ${DELAY}
+  continue
+fi
+
+# node_id is a mac address and is used for node-name
+NODE_NAME=$(echo "node-$node_id" | sed -e "s/:/./g")
+HOST_NAME=$(echo "node-$node_id" | sed -e "s/:/-/g")
+echo "Using Node name : ${NODE_NAME}"
+
+hostname "$HOST_NAME"
+# Set HOSTNAME variable before calling run_openr.sh as it is used by it
+HOSTNAME=$NODE_NAME
+
+# call the openr startup script
+# shellcheck source=/dev/null
+. /usr/sbin/run_openr.sh 2>&1
+
+done

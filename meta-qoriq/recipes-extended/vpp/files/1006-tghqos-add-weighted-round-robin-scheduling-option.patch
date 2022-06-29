@@ -1,0 +1,266 @@
+From 86aa8cd2d152346184ba22d6c63939185021f324 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 12 Aug 2021 17:00:58 -0700
+Subject: [PATCH] tghqos: add weighted round robin scheduling option
+
+Weighted round robin with priority levels. Traffic classes at a
+higher priority level are served before traffic classes at a
+lower priority level. Traffic classes at the same priority level
+are served in accordance to assigned weight. Each traffic class
+must have a non-zero weight in one priority level.
+---
+ src/plugins/dpdk/tghqos/sched/tghqos_sched.c | 95 +++++++++++++++++++-
+ src/plugins/dpdk/tghqos/sched/tghqos_sched.h | 25 +++++-
+ src/plugins/dpdk/tghqos/tghqos.c             | 32 ++++++-
+ src/plugins/dpdk/tghqos/tghqos.h             |  5 ++
+ 4 files changed, 150 insertions(+), 7 deletions(-)
+
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_sched.c b/src/plugins/dpdk/tghqos/sched/tghqos_sched.c
+index 4c6f719ea..5d83b14b8 100644
+--- a/src/plugins/dpdk/tghqos/sched/tghqos_sched.c
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_sched.c
+@@ -440,9 +440,100 @@ static u32 tghqos_sched_port_dequeue_pipe_strict (tghqos_sched_port_t *port,
+   return num_pkts;
+ }
+ 
++/**
++ * @brief Use weighted round robin scheduling by priority to dequeue packets
++ * from a specific port and pipe.
++ *
++ * @param port Pointer to port
++ * @param pipe Pipe index
++ * @param pkts Array used for storing dequeued packets
++ * @param n_seg Maximum number of packet segments to dequeue
++ * @return Number of packets successfully dequeued
++ */
++static u32 tghqos_sched_port_dequeue_pipe_wrr (tghqos_sched_port_t *port,
++                                               u32 pipe_id,
++                                               struct rte_mbuf **pkts,
++                                               u32 n_seg)
++{
++  tghqos_sched_pipe_t *pipe = &port->pipes[pipe_id];
++  tghqos_sched_queue_t *queue;
++  u16 qlen;
++  u32 i, j, qsize, pkt_len, num_pkts = 0;
++  u32 weight, weight_sum, tc_segs, n_seg_pri;
++  int pri_has_pkts_rem = 0;
++  struct rte_mbuf *m;
++
++  for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++    {
++      if (n_seg == 0)
++        break;
++      /* WRR within each priority level */
++      n_seg_pri = n_seg;
++      weight_sum = port->wrr_weight_sum[i];
++      for (j = 0; j < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; j++)
++        {
++          weight = port->wrr_weights[i][j];
++          if (weight == 0)
++            continue;
++
++          /*
++           * The proportion of this TC's weight to the sum of weights for this
++           * priority determines the proportion of packet segments this TC can
++           * transmit right now. Do normal rounding in this calculation, and
++           * give minimum 1 segment when weight > 0.
++           */
++          tc_segs = (n_seg_pri * weight + (weight_sum / 2)) / weight_sum;
++          if (tc_segs == 0)
++            tc_segs = 1;
++
++          // TODO: Only works for 1 queue
++          queue = &pipe->tcs[j].queues[0];
++          qsize = queue->size;
++          qlen = queue->enq - queue->deq;
++          while (n_seg && qlen && tc_segs)
++            {
++              m = queue->mbufs[queue->deq & (qsize - 1)];
++              RTE_VERIFY (m != NULL);
++              if (m->nb_segs > n_seg)
++                {
++                  /* Not enough space for this packet, skip it */
++                  port->counters.incomplete_dequeue += 1;
++                  break;
++                }
++              /* Advance port time */
++              pkt_len = rte_pktmbuf_pkt_len (m);
++              port->time += pkt_len + port->frame_overhead;
++
++              /* Dequeue current packet */
++              queue->mbufs[queue->deq & (qsize - 1)] = 0;
++              queue->deq++;
++              *pkts++ = m;
++              n_seg -= m->nb_segs;
++              tc_segs -= m->nb_segs;
++              num_pkts++;
++              qlen--;
++              if (qlen == 0)
++                {
++                  tghqos_red_mark_queue_empty (&queue->red, port->time);
++                }
++              tghqos_sched_update_stats_dequeue (pipe, pkt_len);
++            }
++
++          if (n_seg == 0)
++            break;
++        }
++    }
++
++  return num_pkts;
++}
++
+ u32 tghqos_sched_port_dequeue_pipe (tghqos_sched_port_t *port, u32 pipe,
+                                     struct rte_mbuf **pkts, u32 n_seg)
+ {
+-  /* TODO: add WRR option */
+-  return tghqos_sched_port_dequeue_pipe_strict (port, pipe, pkts, n_seg);
++  if (port->sched_alg == TGHQOS_STRICT)
++    return tghqos_sched_port_dequeue_pipe_strict (port, pipe, pkts, n_seg);
++  else if (port->sched_alg == TGHQOS_WRR)
++    return tghqos_sched_port_dequeue_pipe_wrr (port, pipe, pkts, n_seg);
++
++  return 0;
+ }
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+index 5630e53c0..04c7d577b 100644
+--- a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+@@ -13,9 +13,10 @@
+  *     2. Pipe:
+  *           - WiGig peers
+  *     3. Traffic class:
+- *           - Traffic classes handled in strict priority order
++ *           - Traffic classes handled in strict priority order or weighted
++ *             round robin with priorities.
+  *     4. Queue:
+- *           - Only one queue is used per traffic class (TODO: WRR)
++ *           - Only one queue is used per traffic class
+  *
+  * Packets can be enqueued by port and dequeued by port-pipe.
+  */
+@@ -51,6 +52,8 @@
+ #define TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE 4
+ #define TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS 1
+ 
++#define TGHQOS_SCHED_PRIORITY_LEVELS TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE
++
+ #define TGHQOS_SCHED_MAX_QUEUE_SIZE 4096
+ 
+ /* Scaling for cycles_per_byte calculation
+@@ -82,6 +85,16 @@ typedef enum
+   TGHQOS_COLORS
+ } tghqos_colors_t;
+ 
++/**
++ * HQoS scheduling algorithms
++ */
++typedef enum
++{
++  TGHQOS_STRICT = 0,
++  TGHQOS_WRR,
++  TGHQOS_SCHED_ALG_INVALID
++} tghqos_sched_alg_t;
++
+ /**
+  * Port-level counters distinct from packet/byte statistics
+  */
+@@ -173,6 +186,12 @@ typedef struct
+                   * hqos threads */
+   u8 is_initialized; /* Flag to be set only when port is initialized */
+   u8 *device_name; /* Name of the device */
++  tghqos_sched_alg_t sched_alg; /* Scheduling algorithm for this port */
++  /* Weighted round robin weights for each traffic class by priority level */
++  u32 wrr_weights[TGHQOS_SCHED_PRIORITY_LEVELS]
++                 [TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE];
++  /* Sum of all weight values for each priority level, from wrr_weights */
++  u32 wrr_weight_sum[TGHQOS_SCHED_PRIORITY_LEVELS];
+ 
+   /* The minimum number of credits that must be available in the tx ring
+    * before a packet can be pushed, used to reduce the number of packets
+@@ -184,9 +203,7 @@ typedef struct
+   /* Configuration used by RED dropper */
+   struct tghqos_red_config red_config[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
+                                      [TGHQOS_COLORS];
+-
+   tghqos_sched_port_counters_t counters;
+-
+   tghqos_sched_pipe_t pipes[TGHQOS_SCHED_PIPES_PER_PORT];
+ } tghqos_sched_port_t;
+ 
+diff --git a/src/plugins/dpdk/tghqos/tghqos.c b/src/plugins/dpdk/tghqos/tghqos.c
+index 632c2bb27..4e1f38572 100644
+--- a/src/plugins/dpdk/tghqos/tghqos.c
++++ b/src/plugins/dpdk/tghqos/tghqos.c
+@@ -117,6 +117,16 @@ static tghqos_port_config_t tghqos_port_params_default = {
+     .burst_deq = 32,
+     .burst_enq = 32,
+     .swq_size = 4096,
++    .sched_alg = TGHQOS_STRICT,
++    .wrr_weights =
++        {
++            /* TC0 with strictly higher priority, TC1-3 at same priority.
++             * Each TC must have a non-zero weight in one priority level. */
++            {1, 0, 0, 0},
++            {0, 1, 3, 4},
++            {0, 0, 0, 0},
++            {0, 0, 0, 0},
++        },
+     .queue_size =
+         {
+             /* Traffic Class 0 */
+@@ -290,7 +300,8 @@ clib_error_t *tghqos_port_init (u16 dpdk_port_id, u32 hw_if_index,
+   int worker_thread_count = 0;
+   uword *p;
+   vlib_thread_registration_t *tr;
+-  int i;
++  int i, j;
++  int count;
+   char name[64];
+   tghqos_port_thread_data_t *thread_data;
+ 
+@@ -327,6 +338,25 @@ clib_error_t *tghqos_port_init (u16 dpdk_port_id, u32 hw_if_index,
+   port->frame_overhead = config->frame_overhead;
+   port->burst_deq = config->burst_deq;
+   port->burst_enq = config->burst_enq;
++  port->sched_alg = config->sched_alg;
++  clib_memcpy_fast (&port->wrr_weights, &config->wrr_weights,
++                    sizeof (config->wrr_weights));
++  /* A traffic class must have a non-zero weight in only 1 priority level.
++   * Validate this even if using strict priority since the scheduling algorithm
++   * can be changed via CLI at runtime */
++  for (j = 0; j < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; j++)
++    {
++      count = 0;
++      for (i = 0; i < TGHQOS_SCHED_PRIORITY_LEVELS; i++)
++        {
++          if (config->wrr_weights[i][j] > 0)
++            count++;
++        }
++      if (count != 1)
++        return clib_error_return (0,
++                                  "Invalid WRR weights, each TC must have a "
++                                  "non-zero weight in 1 priority level\n");
++    }
+ 
+   /* Set up thread data when using hqos threads */
+   if (tm->cpu_count > 0)
+diff --git a/src/plugins/dpdk/tghqos/tghqos.h b/src/plugins/dpdk/tghqos/tghqos.h
+index 121c1e48c..745fce622 100644
+--- a/src/plugins/dpdk/tghqos/tghqos.h
++++ b/src/plugins/dpdk/tghqos/tghqos.h
+@@ -47,6 +47,11 @@ typedef struct
+                   * enqueue when using hqos threads */
+   u32 swq_size;  /* Size of software queue used to hand off packet segments to
+                   * hqos threads */
++  /* Scheduling algorithm to use */
++  tghqos_sched_alg_t sched_alg;
++  /* Weighted round robin weights for each traffic class by priority level */
++  u32 wrr_weights[TGHQOS_SCHED_PRIORITY_LEVELS]
++                 [TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE];
+ 
+   /* Queue sizes per traffic class and queue index */
+   u32 queue_size[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
+-- 
+2.30.2
+

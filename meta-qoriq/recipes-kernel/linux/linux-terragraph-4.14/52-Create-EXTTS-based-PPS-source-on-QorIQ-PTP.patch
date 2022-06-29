@@ -1,0 +1,92 @@
+From dac039524d8b9e0b5345e8c6e191a357fbf26f77 Mon Sep 17 00:00:00 2001
+From: Jeffrey Han <jeffreyhan@fb.com>
+Date: Tue, 10 Dec 2019 11:39:11 -0800
+Subject: [PATCH] Create EXTTS-based PPS source on QorIQ PTP
+
+---
+ drivers/staging/fsl-dpaa2/rtc/dpaa2-ptp.c | 39 +++++++++++++++++++++--
+ include/linux/fsl/ptp_qoriq.h             |  1 +
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/staging/fsl-dpaa2/rtc/dpaa2-ptp.c b/drivers/staging/fsl-dpaa2/rtc/dpaa2-ptp.c
+index 0eee8c7f5e93..3a349d70a83d 100644
+--- a/drivers/staging/fsl-dpaa2/rtc/dpaa2-ptp.c
++++ b/drivers/staging/fsl-dpaa2/rtc/dpaa2-ptp.c
+@@ -147,11 +147,23 @@ static irqreturn_t dpaa2_ptp_irq_handler_thread(int irq, void *priv)
+ 
+ 	}
+ 
+-	if (status & DPRTC_EVENT_ETS1)
++	if (status & DPRTC_EVENT_ETS1) {
++		struct pps_event_time evt;
++
++		pps_get_ts(&evt);
++		pps_event(ptp_qoriq->extts_pps_source, &evt, PPS_CAPTUREASSERT, NULL);
++
+ 		extts_clean_up(ptp_qoriq, 0, true);
++	}
++
++	if (status & DPRTC_EVENT_ETS2) {
++		struct pps_event_time evt;
++
++		pps_get_ts(&evt);
++		pps_event(ptp_qoriq->extts_pps_source, &evt, PPS_CAPTUREASSERT, NULL);
+ 
+-	if (status & DPRTC_EVENT_ETS2)
+ 		extts_clean_up(ptp_qoriq, 1, true);
++	}
+ 
+ 	err = dprtc_clear_irq_status(mc_dev->mc_io, 0, mc_dev->mc_handle,
+ 				     DPRTC_IRQ_INDEX, status);
+@@ -171,6 +183,8 @@ static int dpaa2_ptp_probe(struct fsl_mc_device *mc_dev)
+ 	struct device_node *node;
+ 	void __iomem *base;
+ 	int err;
++	struct pps_source_info pps;
++	struct ptp_clock_request rq;
+ 
+ 	ptp_qoriq = devm_kzalloc(dev, sizeof(*ptp_qoriq), GFP_KERNEL);
+ 	if (!ptp_qoriq)
+@@ -237,9 +251,30 @@ static int dpaa2_ptp_probe(struct fsl_mc_device *mc_dev)
+ 	if (err)
+ 		goto err_free_mc_irq;
+ 
++	/* Register a second pps_source based on EXTTS */
++	memset(&pps, 0, sizeof(pps));
++	strcpy(pps.name, "extts");
++	pps.mode =
++		PPS_CAPTUREASSERT | PPS_OFFSETASSERT | PPS_CANWAIT | PPS_TSFMT_TSPEC;
++	pps.owner = ptp_qoriq->caps.owner;
++	ptp_qoriq->extts_pps_source = pps_register_source(&pps,
++							  PPS_CAPTUREASSERT |
++							  PPS_OFFSETASSERT);
++	if (!ptp_qoriq->extts_pps_source) {
++		dev_err(dev, "pps_register_source(): failed to register pps source\n");
++		goto err_free_mc_irq;
++	}
++
+ 	dpaa2_phc_index = ptp_qoriq->phc_index;
+ 	dev_set_drvdata(dev, ptp_qoriq);
+ 
++	/* Enable EXTTS 1 by default */
++	memset(&rq, 0, sizeof(rq));
++	rq.type = PTP_CLK_REQ_EXTTS;
++	err = dpaa2_ptp_enable(&ptp_qoriq->caps, &rq, 1);
++	if (err)
++		dev_err(dev, "dpaa2_ptp_enable(): %d\n", err);
++
+ 	return 0;
+ 
+ err_free_mc_irq:
+diff --git a/include/linux/fsl/ptp_qoriq.h b/include/linux/fsl/ptp_qoriq.h
+index 992bf9fa1729..e83f9924d1cc 100644
+--- a/include/linux/fsl/ptp_qoriq.h
++++ b/include/linux/fsl/ptp_qoriq.h
+@@ -143,6 +143,7 @@ struct ptp_qoriq {
+ 	spinlock_t lock; /* protects regs */
+ 	struct ptp_clock *clock;
+ 	struct ptp_clock_info caps;
++	struct pps_device *extts_pps_source;
+ 	struct resource *rsrc;
+ 	struct dentry *debugfs_root;
+ 	struct device *dev;

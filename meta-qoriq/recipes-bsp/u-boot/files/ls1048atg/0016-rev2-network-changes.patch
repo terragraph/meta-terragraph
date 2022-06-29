@@ -1,0 +1,41 @@
+From 1cdef7bca79b127c692ddf7426279514e808f4fb Mon Sep 17 00:00:00 2001
+From: Anand Singh <anandsingh@fb.com>
+Date: Wed, 19 Jun 2019 22:26:52 -0700
+Subject: [PATCH 16/20] rev2 network changes
+
+---
+ board/freescale/ls1048a/eth_ls1048atg.c | 4 ++--
+ include/configs/ls1048atg.h             | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/board/freescale/ls1048a/eth_ls1048atg.c b/board/freescale/ls1048a/eth_ls1048atg.c
+index 9360505490..e91287bd61 100644
+--- a/board/freescale/ls1048a/eth_ls1048atg.c
++++ b/board/freescale/ls1048a/eth_ls1048atg.c
+@@ -48,8 +48,8 @@ int board_eth_init(bd_t *bis)
+ 		 * a MAC has no PHY address, we give a PHY address to XFI
+ 		 * MAC error.
+ 		 */
+-		wriop_set_phy_address(WRIOP1_DPMAC2, 0, 1);
+-		wriop_set_phy_address(WRIOP1_DPMAC7, 0, 2);
++		wriop_set_phy_address(WRIOP1_DPMAC2, 0, 2);  /* XFI */
++		wriop_set_phy_address(WRIOP1_DPMAC7, 0, 1);  /* SGMII */
+ 
+ 		break;
+ 	default:
+diff --git a/include/configs/ls1048atg.h b/include/configs/ls1048atg.h
+index 1d06c34c22..524c6b92b5 100644
+--- a/include/configs/ls1048atg.h
++++ b/include/configs/ls1048atg.h
+@@ -182,7 +182,7 @@
+ #define CONFIG_PHY_GIGE
+ #define CONFIG_PHYLIB
+ 
+-#define CONFIG_PHY_REALTEK
++#define CONFIG_PHY_MARVELL
+ #define PHY_ADDR			0x2
+ 
+ #define CONFIG_ETHPRIME		"DPMAC7@sgmii"
+-- 
+2.17.1
+

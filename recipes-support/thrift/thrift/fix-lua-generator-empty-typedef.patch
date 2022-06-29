@@ -1,0 +1,17 @@
+Fix syntax errors in generated Lua code when trying to create typedefs to
+unnamed types.
+
+Upstream-Status: Accepted
+
+--- a/compiler/cpp/src/thrift/generate/t_lua_generator.cc
++++ b/compiler/cpp/src/thrift/generate/t_lua_generator.cc
+@@ -197,6 +197,9 @@
+  * Generate a typedef (essentially a constant)
+  */
+ void t_lua_generator::generate_typedef(t_typedef* ttypedef) {
++  if (ttypedef->get_type()->get_name().empty()) {
++    return;
++  }
+   f_types_ << endl << endl << indent() << ttypedef->get_symbolic() << " = "
+            << ttypedef->get_type()->get_name();
+ }

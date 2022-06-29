@@ -1,0 +1,747 @@
+From fc518a24759318056580f459533045f04fd6afe7 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Wed, 1 Sep 2021 17:44:40 -0700
+Subject: [PATCH] wil6210-dpdk: Upgrade to DPDK 20.11.2
+
+---
+ dpdk/dpdk_version                             |  2 +
+ .../wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c     |  7 +--
+ dpdk/drivers/wil6210/meson.build              |  2 +
+ dpdk/drivers/wil6210/wil6210/wil6210.h        |  2 -
+ dpdk/drivers/wil6210/wil6210_api.c            |  4 +-
+ dpdk/drivers/wil6210/wil6210_compat.c         | 31 +-----------
+ dpdk/drivers/wil6210/wil6210_compat.h         | 12 ++---
+ dpdk/drivers/wil6210/wil6210_control.c        |  8 ++--
+ dpdk/drivers/wil6210/wil6210_ethdev.c         | 31 +++++++-----
+ dpdk/drivers/wil6210/wil6210_ethdev.h         |  2 +
+ dpdk/drivers/wil6210/wil6210_fw_trace.c       |  2 +-
+ dpdk/drivers/wil6210/wil6210_mbuf_dyn.h       | 48 +++++++++++++++++++
+ dpdk/drivers/wil6210/wil6210_nl60g.c          |  2 +-
+ dpdk/drivers/wil6210/wil6210_pcidev.c         | 32 ++++++++++++-
+ dpdk/drivers/wil6210/wil6210_txrx.c           |  8 ++--
+ dpdk/drivers/wil6210/wil6210_txrx_edma.c      | 16 +++----
+ dpdk/examples/wil6210-test/main.c             | 37 +++++++++++---
+ dpdk/examples/wil6210-test/meson.build        |  2 +-
+ 18 files changed, 163 insertions(+), 85 deletions(-)
+ create mode 100644 dpdk/dpdk_version
+ create mode 100644 dpdk/drivers/wil6210/wil6210_mbuf_dyn.h
+
+diff --git a/dpdk/dpdk_version b/dpdk/dpdk_version
+new file mode 100644
+index 0000000..041ce1a
+--- /dev/null
++++ b/dpdk/dpdk_version
+@@ -0,0 +1,2 @@
++20.11.2
++
+diff --git a/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c b/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c
+index e8dcc46..0bd5607 100644
+--- a/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c
++++ b/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c
+@@ -35,6 +35,7 @@
+ #include "dpdk-dhd-ctrl.h"
+ 
+ #include <wil6210_compat.h>
++#include <wil6210_mbuf_dyn.h>
+ 
+ /* Compatibility with DPDK */
+ #ifndef RTE_LOG
+@@ -584,7 +585,7 @@ dhd_rx_burst(void *qdata, struct rte_mbuf **bufs, uint16_t nb_pkts)
+ 		memcpy(rte_pktmbuf_mtod(mbuf, void *), pbuf, rte_pktmbuf_data_len(mbuf));
+ 
+ 		mbuf->port = rxq->in_port;
+-		mbuf->udata64 = dhd->dhd_peer_link_id[pkthdr->peer_index];
++		wil_mbuf_link_id_set(mbuf, dhd->dhd_peer_link_id[pkthdr->peer_index]);
+ 
+ 		bufs[i] = mbuf;
+ 		num_rx++;
+@@ -663,7 +664,7 @@ dhd_tx_burst(void *qdata, struct rte_mbuf **bufs, uint16_t nb_pkts)
+ 		pkthdr = (struct dhd_data_header *)&ehdr[1];
+ 
+ 		/* Fill in the terraX unit number */
+-		pkthdr->peer_index = (int)mbuf->udata64;
++		pkthdr->peer_index = (int)wil_mbuf_link_id_get(mbuf);
+ 
+ 		pbuf += hdrlen;
+ 
+@@ -885,7 +886,7 @@ dhd_start_poll_worker(struct dhd_state *dhd)
+ 
+ 	/* Run control threads on master lcore and set its name */
+ 	CPU_ZERO(&cpuset);
+-	CPU_SET(rte_get_master_lcore(), &cpuset);
++	CPU_SET(rte_get_main_lcore(), &cpuset);
+ 	rc = pthread_setaffinity_np(dhd->dhd_poll_thread, sizeof(cpuset),
+ 	    &cpuset);
+ 	if (rc != 0) {
+diff --git a/dpdk/drivers/wil6210/meson.build b/dpdk/drivers/wil6210/meson.build
+index 9222631..702cff9 100644
+--- a/dpdk/drivers/wil6210/meson.build
++++ b/dpdk/drivers/wil6210/meson.build
+@@ -32,6 +32,8 @@ rte_pmd_wil6210 = static_library('rte_pmd_wil6210',
+ 		'-D_GNU_SOURCE',
+ 		'-DWIL6210_PMD',
+ 		'-DCONFIG_WIL6210_ISR_COR',
++		'-DALLOW_INTERNAL_API',
++		'-DALLOW_EXPERIMENTAL_API',
+ 		'-Wno-deprecated',
+ 		'-Wno-unused-parameter',
+ 		'-Wno-unused-value',
+diff --git a/dpdk/drivers/wil6210/wil6210/wil6210.h b/dpdk/drivers/wil6210/wil6210/wil6210.h
+index 2ebabf5..dbb4ec5 100644
+--- a/dpdk/drivers/wil6210/wil6210/wil6210.h
++++ b/dpdk/drivers/wil6210/wil6210/wil6210.h
+@@ -1540,6 +1540,4 @@ int wil_wmi2spec_ch(u8 wmi_ch, u8 *spec_ch);
+ int wil_spec2wmi_ch(u8 spec_ch, u8 *wmi_ch);
+ 
+ void update_supported_bands(struct wil6210_priv *wil);
+-
+-void wil_clear_fw_log_addr(struct wil6210_priv *wil);
+ #endif /* __WIL6210_H__ */
+diff --git a/dpdk/drivers/wil6210/wil6210_api.c b/dpdk/drivers/wil6210/wil6210_api.c
+index 7eaf20c..d421990 100644
+--- a/dpdk/drivers/wil6210/wil6210_api.c
++++ b/dpdk/drivers/wil6210/wil6210_api.c
+@@ -26,7 +26,7 @@
+ static void *
+ wil_api_device_lookup(uint8_t *mac)
+ {
+-	struct ether_addr mac_addr;
++	struct rte_ether_addr mac_addr;
+ 	uint32_t pid;
+ 
+ 	/*
+@@ -40,7 +40,7 @@ wil_api_device_lookup(uint8_t *mac)
+ 		    "net_wil6210") != 0)
+ 			continue;
+ 		rte_eth_macaddr_get(pid, &mac_addr);
+-		if (memcmp(mac, mac_addr.addr_bytes, ETHER_ADDR_LEN) != 0)
++		if (memcmp(mac, mac_addr.addr_bytes, RTE_ETHER_ADDR_LEN) != 0)
+ 			continue;
+ 		/* Return pointer to rte_ethdev */
+ 		return &rte_eth_devices[pid];
+diff --git a/dpdk/drivers/wil6210/wil6210_compat.c b/dpdk/drivers/wil6210/wil6210_compat.c
+index ebd43fd..4f431ad 100644
+--- a/dpdk/drivers/wil6210/wil6210_compat.c
++++ b/dpdk/drivers/wil6210/wil6210_compat.c
+@@ -20,33 +20,6 @@
+ #include <rte_errno.h>
+ #include <unistd.h>
+ 
+-size_t strlcat(char *dest, const char *src, size_t count)
+-{
+-	size_t dsize = strlen(dest);
+-	size_t len = strlen(src);
+-	size_t res = dsize + len;
+-
+-	dest += dsize;
+-	count -= dsize;
+-	if (len >= count)
+-		len = count-1;
+-	memcpy(dest, src, len);
+-	dest[len] = 0;
+-	return res;
+-}
+-
+-size_t strlcpy(char *dest, const char *src, size_t size)
+-{
+-	size_t ret = strlen(src);
+-
+-	if (size) {
+-		size_t len = (ret >= size) ? size - 1 : ret;
+-		memcpy(dest, src, len);
+-		dest[len] = '\0';
+-	}
+-	return ret;
+-}
+-
+ u32 crc32_le(u32 crc, const u8 *ptr, u32 length)
+ {
+ 	int i;
+@@ -167,7 +140,7 @@ bool schedule_work(struct work_struct *work, char *name)
+ 
+ 	/* Run control threads on master lcore and set its name */
+ 	CPU_ZERO(&cpuset);
+-	CPU_SET(rte_get_master_lcore(), &cpuset);
++	CPU_SET(rte_get_main_lcore(), &cpuset);
+ 	ret = pthread_setaffinity_np(work->thread, sizeof(cpuset),
+ 				     &cpuset);
+ 	if (ret != 0) {
+@@ -255,7 +228,7 @@ create_singlethread_workqueue(const char *name)
+ 
+ 	/* Run control threads on master lcore and set its name */
+ 	CPU_ZERO(&cpuset);
+-	CPU_SET(rte_get_master_lcore(), &cpuset);
++	CPU_SET(rte_get_main_lcore(), &cpuset);
+ 	retval = pthread_setaffinity_np(wq->thread, sizeof(cpuset), &cpuset);
+ 	if (retval != 0) {
+ 		RTE_LOG(ERR, PMD, "Unable to set wq thread affinity: %s\n",
+diff --git a/dpdk/drivers/wil6210/wil6210_compat.h b/dpdk/drivers/wil6210/wil6210_compat.h
+index b774a33..805fc73 100644
+--- a/dpdk/drivers/wil6210/wil6210_compat.h
++++ b/dpdk/drivers/wil6210/wil6210_compat.h
+@@ -122,7 +122,6 @@ typedef uint16_t  u16;
+ typedef uint32_t  u32;
+ typedef int32_t   s32;
+ typedef uint64_t  u64;
+-typedef int       bool;
+ 
+ typedef rte_iova_t  dma_addr_t;
+ 
+@@ -298,9 +297,6 @@ struct station_info;
+ struct key_params;
+ struct rte_eth_dev;
+ 
+-size_t strlcat(char *dest, const char *src, size_t count);
+-size_t strlcpy(char *dest, const char *src, size_t size);
+-
+ u32 crc32_le(u32 crc, const u8 *ptr, u32 length);
+ 
+ #define min_t(type, x, y) ({                    \
+@@ -720,10 +716,10 @@ struct net_device {
+ 
+ /* dirty */
+ #define is_valid_ether_addr(addr) \
+-	is_valid_assigned_ether_addr((const struct ether_addr *)&(addr)[0])
++	rte_is_valid_assigned_ether_addr((const struct rte_ether_addr *)&(addr)[0])
+ #define ether_addr_equal(addr1, addr2) \
+-	is_same_ether_addr((const struct ether_addr *)&(addr1)[0], \
+-	                   (const struct ether_addr *)&(addr2)[0])
++	rte_is_same_ether_addr((const struct rte_ether_addr *)&(addr1)[0], \
++	                       (const struct rte_ether_addr *)&(addr2)[0])
+ 
+ #define module_param(param...)
+ #define MODULE_PARM_DESC(param...)
+@@ -798,6 +794,4 @@ struct wil_memio_block {
+ 	void *block; /* block contents */
+ };
+ 
+-
+-
+ #endif /* _WIL6210_COMPAT_H_ */
+diff --git a/dpdk/drivers/wil6210/wil6210_control.c b/dpdk/drivers/wil6210/wil6210_control.c
+index ad28475..a5138ae 100644
+--- a/dpdk/drivers/wil6210/wil6210_control.c
++++ b/dpdk/drivers/wil6210/wil6210_control.c
+@@ -657,14 +657,14 @@ uint16_t write_terra_slowpath(struct rte_mbuf **tx_pkts, const uint16_t nb_pkts)
+ 		mbuf = tx_pkts[0];
+ 
+ 		/* Translate link_id to peer_id */
+-		li = &dhd_link_map[mbuf->udata64];
+-		mbuf->udata64 = li->dhd_peer_id;
++		li = &dhd_link_map[wil_mbuf_link_id_get(mbuf)];
++		wil_mbuf_link_id_set(mbuf, li->dhd_peer_id);
+ 
+ 		for (tx_batch = 1; tx_batch < tx_left; tx_batch++) {
+ 			struct rte_mbuf *next = tx_pkts[tx_batch];
+-			if (li->dhd_peer_nameunit != (int)next->udata64)
++			if (li->dhd_peer_nameunit != (int)wil_mbuf_link_id_get(next))
+ 				break;
+-			next->udata64 = (unsigned)li->dhd_peer_id;
++			wil_mbuf_link_id_set(next, (unsigned)li->dhd_peer_id);
+ 		}
+ 
+ 		tx_done = dhd_tx_burst(li->dhd, tx_pkts, tx_batch);
+diff --git a/dpdk/drivers/wil6210/wil6210_ethdev.c b/dpdk/drivers/wil6210/wil6210_ethdev.c
+index 55721c6..cfc2129 100644
+--- a/dpdk/drivers/wil6210/wil6210_ethdev.c
++++ b/dpdk/drivers/wil6210/wil6210_ethdev.c
+@@ -53,7 +53,7 @@ struct ethdev_tx_queue {
+ 
+ struct pmd_internals {
+ 	struct ethdev_tx_queue tx_ethdev_queues[WIL6210_MAX_TX_RINGS];
+-	struct ether_addr eth_addr;
++	struct rte_ether_addr eth_addr;
+ 	struct wil6210_priv *wil;
+ };
+ 
+@@ -481,13 +481,13 @@ release_irq:
+ 	return rc;
+ }
+ 
+-static void
++static int
+ eth_dev_stop(struct rte_eth_dev *dev)
+ {
+ 	struct wil6210_priv *wil;
+ 
+ 	if (dev == NULL)
+-		return;
++		return -EINVAL;
+ 
+ 	wil = dev->data->dev_private;
+ 
+@@ -505,15 +505,17 @@ eth_dev_stop(struct rte_eth_dev *dev)
+ 	wil6210_fini_irq(wil, 0);
+ 
+ 	dev->data->dev_link.link_status = ETH_LINK_DOWN;
++	return 0;
+ }
+ 
+-static void
++static int
+ eth_dev_close(struct rte_eth_dev *dev)
+ {
+ 	if (dev == NULL)
+-		return;
++		return -EINVAL;
+ 
+ 	wil6210_dev_uninit(dev);
++	return 0;
+ }
+ 
+ static int
+@@ -611,7 +613,7 @@ wil_tx_burst_peer(struct pmd_internals *internals, uint16_t peer,
+ 	 * Note: unlocked access to ring pointer to verify
+ 	 * if corresponding TX ring should be polled or not
+ 	 */
+-	if (unlikely(ring == NULL)) {
++	if (unlikely(ring == NULL || peer >= WIL6210_MAX_TX_RINGS)) {
+ 		/*
+ 		 * These are not accounted for as they really are not
+ 		 * expected and we have no STA to keep the track of
+@@ -664,11 +666,12 @@ wil_tx_burst(void *qdata, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+ 		mbuf = tx_pkts[0];
+ 
+ 		for (tx_batch = 1; tx_batch < tx_left; tx_batch++)
+-			if (mbuf->udata64 != tx_pkts[tx_batch]->udata64)
++			if (wil_mbuf_link_id_get(mbuf) !=
++				wil_mbuf_link_id_get(tx_pkts[tx_batch]))
+ 				break;
+ 
+-		tx_done = wil_tx_burst_peer(internals, mbuf->udata64, tx_pkts,
+-					    tx_batch);
++		tx_done = wil_tx_burst_peer(internals, wil_mbuf_link_id_get(mbuf),
++					    tx_pkts, tx_batch);
+ 		tx_total += tx_done;
+ 		if (tx_done < tx_batch)
+ 			break;
+@@ -740,11 +743,11 @@ static int eth_fw_version_get(struct rte_eth_dev *dev, char *fw_version,
+ 		return 0;
+ }
+ 
+-static void
++static int
+ eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ {
+ 	if (dev == NULL || dev_info == NULL)
+-		return;
++		return -EINVAL;
+ 
+ 	dev_info->max_mac_addrs = 1;
+ 	dev_info->max_rx_pktlen = (uint32_t)-1;
+@@ -756,6 +759,7 @@ eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 	dev_info->tx_offload_capa = DEV_TX_OFFLOAD_IPV4_CKSUM |
+ 					DEV_TX_OFFLOAD_TCP_CKSUM |
+ 					DEV_TX_OFFLOAD_UDP_CKSUM;
++	return 0;
+ }
+ 
+ static int
+@@ -789,11 +793,12 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *eth_stats)
+ 	return 0;
+ }
+ 
+-static void
++static int
+ eth_stats_reset(struct rte_eth_dev *dev)
+ {
+ 	if (dev == NULL)
+-		return;
++		return -EINVAL;
++	return 0;
+ }
+ 
+ static int
+diff --git a/dpdk/drivers/wil6210/wil6210_ethdev.h b/dpdk/drivers/wil6210/wil6210_ethdev.h
+index 85ae3c3..5ffd6ec 100644
+--- a/dpdk/drivers/wil6210/wil6210_ethdev.h
++++ b/dpdk/drivers/wil6210/wil6210_ethdev.h
+@@ -9,6 +9,7 @@
+ #define __WIL6210_H__
+ 
+ #include "wil6210_compat.h"
++#include "wil6210_mbuf_dyn.h"
+ #include "wmi.h"
+ #include "wil_platform.h"
+ #include "ftm.h"
+@@ -1884,4 +1885,5 @@ int wmi_pmc_ext_stop(struct wil6210_priv *wil);
+ int wmi_pmc_ext_get_status(struct wil6210_priv *wil);
+ 
+ void wil_sta_info_amsdu_init(struct wil_sta_info *sta);
++void wil_clear_fw_log_addr(struct wil6210_priv *wil);
+ #endif /* __WIL6210_H__ */
+diff --git a/dpdk/drivers/wil6210/wil6210_fw_trace.c b/dpdk/drivers/wil6210/wil6210_fw_trace.c
+index ad054a3..ea54e10 100644
+--- a/dpdk/drivers/wil6210/wil6210_fw_trace.c
++++ b/dpdk/drivers/wil6210/wil6210_fw_trace.c
+@@ -1736,7 +1736,7 @@ int wil_fw_log_start_poll_worker(struct wil6210_priv *wil)
+ 
+ 	/* Run control threads on master lcore and set its name */
+ 	CPU_ZERO(&cpuset);
+-	CPU_SET(rte_get_master_lcore(), &cpuset);
++	CPU_SET(rte_get_main_lcore(), &cpuset);
+ 	rc = pthread_setaffinity_np(wil->log_poll_thread, sizeof(cpuset),
+ 		&cpuset);
+ 	if (rc != 0) {
+diff --git a/dpdk/drivers/wil6210/wil6210_mbuf_dyn.h b/dpdk/drivers/wil6210/wil6210_mbuf_dyn.h
+new file mode 100644
+index 0000000..fbbc211
+--- /dev/null
++++ b/dpdk/drivers/wil6210/wil6210_mbuf_dyn.h
+@@ -0,0 +1,48 @@
++/* SPDX-License-Identifier: ISC */
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ */
++
++#ifndef _WIL6210_MBUF_DYN_H_
++#define _WIL6210_MBUF_DYN_H_
++
++#include <rte_mbuf.h>
++#include <rte_mbuf_dyn.h>
++
++/* mbuf dynamic field for link id */
++#define WIL6210_LINK_ID_DYNFIELD_NAME "wil6210_dynfield_link_id"
++/* mbuf dynamic field for fragment pointers */
++#define WIL6210_FRAG_PTR_DYNFIELD_NAME "wil6210_dynfield_frag_ptr"
++
++extern int wil6210_link_id_dynfield_offset;
++extern int wil6210_frag_ptr_dynfield_offset;
++
++static inline uint16_t
++wil_mbuf_link_id_get(const struct rte_mbuf *mbuf)
++{
++	return *RTE_MBUF_DYNFIELD(mbuf, wil6210_link_id_dynfield_offset,
++		uint16_t *);
++}
++
++static inline void
++wil_mbuf_link_id_set(const struct rte_mbuf *mbuf, uint16_t link)
++{
++	*RTE_MBUF_DYNFIELD(mbuf, wil6210_link_id_dynfield_offset, uint16_t *)
++		= link;
++}
++
++static inline uintptr_t
++wil_mbuf_frag_ptr_get(const struct rte_mbuf *mbuf)
++{
++	return *RTE_MBUF_DYNFIELD(mbuf, wil6210_frag_ptr_dynfield_offset,
++		uintptr_t *);
++}
++
++static inline void
++wil_mbuf_frag_ptr_set(const struct rte_mbuf *mbuf, uintptr_t val)
++{
++	*RTE_MBUF_DYNFIELD(mbuf, wil6210_frag_ptr_dynfield_offset, uintptr_t *)
++		= val;
++}
++
++#endif /* _WIL6210_MBUF_DYN_H_ */
+diff --git a/dpdk/drivers/wil6210/wil6210_nl60g.c b/dpdk/drivers/wil6210/wil6210_nl60g.c
+index 205286c..f363993 100644
+--- a/dpdk/drivers/wil6210/wil6210_nl60g.c
++++ b/dpdk/drivers/wil6210/wil6210_nl60g.c
+@@ -2011,7 +2011,7 @@ nl60g_start_poll_worker(struct nl60g_state *nl60g)
+ 
+ 	/* set affinity to the VPP master lcore */
+ 	CPU_ZERO(&cpuset);
+-	CPU_SET(rte_get_master_lcore(), &cpuset);
++	CPU_SET(rte_get_main_lcore(), &cpuset);
+ 	rc = pthread_setaffinity_np(nl60g->poll_thread, sizeof(cpuset),
+ 		&cpuset);
+ 	if (rc != 0) {
+diff --git a/dpdk/drivers/wil6210/wil6210_pcidev.c b/dpdk/drivers/wil6210/wil6210_pcidev.c
+index b463c8d..876941d 100644
+--- a/dpdk/drivers/wil6210/wil6210_pcidev.c
++++ b/dpdk/drivers/wil6210/wil6210_pcidev.c
+@@ -91,6 +91,9 @@ bool ftm_mode;
+ module_param(ftm_mode, bool, 0444);
+ MODULE_PARM_DESC(ftm_mode, " Set factory test mode, default - false");
+ 
++int wil6210_link_id_dynfield_offset = -1;
++int wil6210_frag_ptr_dynfield_offset = -1;
++
+ #define WIL_MAC_ADDR_ARG "mac-address"
+ #define WIL_FW_CORE_DUMP_PATH_ARG "fw-core-dump-path"
+ #define WIL_FW_STR_PATH_ARG "fw-strings"
+@@ -862,6 +865,18 @@ wil6210_dev_init(struct rte_eth_dev *eth_dev)
+ 	};
+ 	u32 bar_size;
+ 	int rc;
++	static const struct rte_mbuf_dynfield wil6210_link_id_dynfield_desc = {
++		.name = WIL6210_LINK_ID_DYNFIELD_NAME,
++		.size = sizeof(uint16_t),
++		.align = __alignof__(uint16_t),
++		.flags = 0,
++	};
++	static const struct rte_mbuf_dynfield wil6210_frag_ptr_dynfield_desc = {
++		.name = WIL6210_FRAG_PTR_DYNFIELD_NAME,
++		.size = sizeof(uintptr_t),
++		.align = __alignof__(uintptr_t),
++		.flags = 0,
++	};
+ 
+ 	PMD_INIT_FUNC_TRACE();
+ 
+@@ -890,6 +905,21 @@ wil6210_dev_init(struct rte_eth_dev *eth_dev)
+ 	pci_priv->vif.wdev.priv = wil;
+ 	pci_priv->vif.wdev.wiphy = wil->wiphy;
+ 
++	wil6210_link_id_dynfield_offset =
++		rte_mbuf_dynfield_register(&wil6210_link_id_dynfield_desc);
++	if (wil6210_link_id_dynfield_offset < 0) {
++		dev_err(dev, "Failed to register mbuf dynfield for link id: %d\n",
++			-rte_errno);
++		return -rte_errno;
++	}
++	wil6210_frag_ptr_dynfield_offset =
++		rte_mbuf_dynfield_register(&wil6210_frag_ptr_dynfield_desc);
++	if (wil6210_frag_ptr_dynfield_offset < 0) {
++		dev_err(dev, "Failed to register mbuf dynfield for frag ptr: %d\n",
++			-rte_errno);
++		return -rte_errno;
++	}
++
+ 	rc = wil_priv_init(wil);
+ 	if (rc) {
+ 		dev_err(dev, "wil_priv_init failed: %d\n", rc);
+@@ -999,7 +1029,7 @@ static const struct rte_pci_id pci_id_wil6210_map[] = {
+ static struct rte_pci_driver rte_wil6210_pmd = {
+ 	.id_table = pci_id_wil6210_map,
+ 	.drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC |
+-	    RTE_PCI_DRV_IOVA_AS_VA,
++	    RTE_PCI_DRV_NEED_IOVA_AS_VA,
+ 	.probe = eth_wil6210_pci_probe,
+ 	.remove = eth_wil6210_pci_remove,
+ };
+diff --git a/dpdk/drivers/wil6210/wil6210_txrx.c b/dpdk/drivers/wil6210/wil6210_txrx.c
+index b96b3ec..da7b395 100644
+--- a/dpdk/drivers/wil6210/wil6210_txrx.c
++++ b/dpdk/drivers/wil6210/wil6210_txrx.c
+@@ -61,7 +61,7 @@ void wil_netif_rx_any(struct rte_mbuf *skb, struct net_device *ndev)
+ 	/* here looking for DA, not A1, thus Rxdesc's 'mcast' indication
+ 	 * is not suitable, need to look at data
+ 	 */
+-	int mcast = is_multicast_ether_addr(da);
++	int mcast = rte_is_multicast_ether_addr(da);
+ 	struct wil_net_stats *stats;
+ 	struct sk_buff *xmit_skb = NULL;
+ 	static const char * const gro_res_str[] = {
+@@ -227,7 +227,7 @@ static int wil_tx_desc_offload_setup(struct vring_tx_desc *d,
+ 	} else if (mbuf->ol_flags & PKT_TX_UDP_CKSUM) {
+ 		/* L4 header len: UDP header length */
+ 		d->dma.d0 |=
+-		(sizeof(struct udp_hdr) & DMA_CFG_DESC_TX_0_L4_LENGTH_MSK);
++		(sizeof(struct rte_udp_hdr) & DMA_CFG_DESC_TX_0_L4_LENGTH_MSK);
+ 	}
+ 
+ 	d->dma.ip_length = mbuf->l3_len;
+@@ -273,7 +273,7 @@ static int __wil_tx_ring(struct wil6210_priv *wil, struct wil6210_vif *vif,
+ 	int used;
+ 	bool mcast = (ring_index == vif->bcast_ring);
+ 	uint len = rte_pktmbuf_data_len(skb);
+-	struct ether_hdr *eth_hdr;
++	struct rte_ether_hdr *eth_hdr;
+ 
+ 	if (unlikely(pkt_len == 0)) {
+ 		if (stats)
+@@ -285,7 +285,7 @@ static int __wil_tx_ring(struct wil6210_priv *wil, struct wil6210_vif *vif,
+ 
+ 	/* If connection is secured and link key is not set, drop plaintext  */
+ 	if (vif->privacy[cid] && !vif->link_key_set[cid]) {
+-		eth_hdr = rte_pktmbuf_mtod(skb, struct ether_hdr *);
++		eth_hdr = rte_pktmbuf_mtod(skb, struct rte_ether_hdr *);
+ 		if (cpu_to_be16(eth_hdr->ether_type) != ETH_P_PAE) {
+ 			if (stats)
+ 				stats->wil_tx_plain_pkts_dropped++;
+diff --git a/dpdk/drivers/wil6210/wil6210_txrx_edma.c b/dpdk/drivers/wil6210/wil6210_txrx_edma.c
+index 22c4874..76594dd 100644
+--- a/dpdk/drivers/wil6210/wil6210_txrx_edma.c
++++ b/dpdk/drivers/wil6210/wil6210_txrx_edma.c
+@@ -186,7 +186,7 @@ static int wil_ring_alloc_skb_edma(struct wil6210_priv *wil,
+ 		return -ENOMEM;
+ 	}
+ 
+-	skb->userdata = NULL;
++	wil_mbuf_frag_ptr_set(skb, (uintptr_t)NULL);
+ 
+ 	/**
+ 	 * Make sure that the network stack calculates checksum for packets
+@@ -832,7 +832,7 @@ static int wil_check_amsdu(struct wil6210_priv *wil, void *msg, int cid,
+ 	case NL80211_IFTYPE_STATION:
+ 	case NL80211_IFTYPE_P2P_CLIENT:
+ 		/* check if the MSDU (a sub-frame of AMSDU) is multicast */
+-		if (is_multicast_ether_addr((const struct ether_addr *)da))
++		if (rte_is_multicast_ether_addr((const struct rte_ether_addr *)da))
+ 			return 0;
+ 
+ 		/* check if the current AMSDU (MPDU) frame is a multicast.
+@@ -1109,7 +1109,7 @@ skipping:
+ 	} else {
+ 		struct rte_mbuf *seg;
+ 
+-		seg = rxdata->skb->userdata;
++		seg = (void *)wil_mbuf_frag_ptr_get(rxdata->skb);
+ 		if (seg != NULL)
+ 			seg->next = skb;
+ 		else
+@@ -1118,7 +1118,7 @@ skipping:
+ 		rxdata->skb->nb_segs++;
+ 		rxdata->skb->pkt_len += dmalen;
+ 		/* Remember last mbuf in chain */
+-		rxdata->skb->userdata = skb;
++		wil_mbuf_frag_ptr_set(rxdata->skb, (uintptr_t)(void *)skb);
+ 	}
+ 
+ 	if (!eop)
+@@ -1126,7 +1126,7 @@ skipping:
+ 
+ 	/* reaching here rxdata->skb always contains a full packet */
+ 	skb = rxdata->skb;
+-	skb->userdata = NULL;
++	wil_mbuf_frag_ptr_set(skb, (uintptr_t)NULL);
+ 	rxdata->skb = NULL;
+ 	rxdata->skipping = false;
+ 
+@@ -1190,7 +1190,7 @@ uint16_t wil_rx_burst(struct wil6210_priv *wil, struct rte_mbuf **rx_pkts,
+ 	unsigned int nb_done;
+ 	u32 swhead;
+ 	int i;
+-	struct ether_hdr *eth_hdr;
++	struct rte_ether_hdr *eth_hdr;
+ 
+ #ifdef DEBUG_LATENCY
+ 	u64 start = rte_get_timer_cycles() * wil->nano_per_cycle;
+@@ -1248,7 +1248,7 @@ uint16_t wil_rx_burst(struct wil6210_priv *wil, struct rte_mbuf **rx_pkts,
+ 
+ 				/* If connection is secured and link key is not set, drop plaintext  */
+ 				if (vif->privacy[cid] && !vif->link_key_set[cid]) {
+-					eth_hdr = rte_pktmbuf_mtod(mbuf, struct ether_hdr *);
++					eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
+ 					if (cpu_to_be16(eth_hdr->ether_type) != ETH_P_PAE) {
+ 						if (stats)
+ 							stats->wil_rx_plain_pkts_dropped++;
+@@ -1269,7 +1269,7 @@ uint16_t wil_rx_burst(struct wil6210_priv *wil, struct rte_mbuf **rx_pkts,
+ 				/*
+ 				 * Translate PEER is to terra unit number
+ 				 */
+-				mbuf->udata64 = wil->sta[cid].link_id;
++				wil_mbuf_link_id_set(mbuf, wil->sta[cid].link_id);
+ 
+ 				nb_done++;
+ 				*rx_pkts++ = mbuf;
+diff --git a/dpdk/examples/wil6210-test/main.c b/dpdk/examples/wil6210-test/main.c
+index feedec4..a2ad1b6 100644
+--- a/dpdk/examples/wil6210-test/main.c
++++ b/dpdk/examples/wil6210-test/main.c
+@@ -67,9 +67,27 @@
+ #include <rte_ethdev.h>
+ #include <rte_mempool.h>
+ #include <rte_mbuf.h>
++#include <rte_mbuf_dyn.h>
+ #include <rte_net.h>
+ #include <rte_version.h>
+ 
++/* mbuf dynamic field for link id */
++#define WIL6210_LINK_ID_DYNFIELD_NAME "wil6210_dynfield_link_id"
++int wil6210_link_id_dynfield_offset;
++
++static inline uint16_t
++wil_mbuf_link_id_get(const struct rte_mbuf *mbuf)
++{
++	return *RTE_MBUF_DYNFIELD(mbuf, wil6210_link_id_dynfield_offset,
++		uint16_t *);
++}
++static inline void
++wil_mbuf_link_id_set(const struct rte_mbuf *mbuf, uint16_t link)
++{
++	*RTE_MBUF_DYNFIELD(mbuf, wil6210_link_id_dynfield_offset, uint16_t *)
++		= link;
++}
++
+ uint16_t read_terra_slowpath(struct rte_mbuf **rx_pkts, const uint16_t nb_pkts);
+ uint16_t write_terra_slowpath(struct rte_mbuf **tx_pkts, uint16_t nb_pkts);
+ bool terra_port_qid_to_link(uint16_t port_id, uint16_t qid, uint16_t *link_id);
+@@ -97,7 +115,7 @@ static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+ static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
+ 
+ /* ethernet addresses of ports */
+-static struct ether_addr wiltest_ports_eth_addr[RTE_MAX_ETHPORTS];
++static struct rte_ether_addr wiltest_ports_eth_addr[RTE_MAX_ETHPORTS];
+ 
+ /* mask of enabled ports */
+ static uint32_t wiltest_enabled_port_mask = 0;
+@@ -238,7 +256,7 @@ wiltest_simple_forward(struct rte_mbuf *m)
+ 	struct rte_eth_dev_tx_buffer *buffer;
+ 
+ 	/* Cache this in routing module. Used here as an example */
+-	if (!terra_link_to_port_qid(m->udata64, &dst_port, &dst_queue)) {
++	if (!terra_link_to_port_qid(wil_mbuf_link_id_get(m), &dst_port, &dst_queue)) {
+ 		rte_pktmbuf_free(m);
+ 		return;
+ 	}
+@@ -249,8 +267,8 @@ wiltest_simple_forward(struct rte_mbuf *m)
+ 		return;
+ 	}
+ 
+-	/* Pass desired peer in udata64 */
+-	m->udata64 = dst_queue;
++	/* Pass desired peer in link id dynfield */
++	wil_mbuf_link_id_set(m, dst_queue);
+ 
+ 	buffer = tx_buffer[dst_port][0];
+ 	sent = rte_eth_tx_buffer(dst_port, 0, buffer, m);
+@@ -325,7 +343,7 @@ wiltest_main_loop(void)
+ 				/* if timer has reached its timeout */
+ 				if (unlikely(timer_tsc >= timer_period)) {
+ 					/* do this only on master core */
+-					if (lcore_id == rte_get_master_lcore()) {
++					if (lcore_id == rte_get_main_lcore()) {
+ 						print_stats();
+ 						/* reset the timer */
+ 						timer_tsc = 0;
+@@ -604,6 +622,11 @@ main(int argc, char **argv)
+ 	signal(SIGINT, signal_handler);
+ 	signal(SIGTERM, signal_handler);
+ 
++	wil6210_link_id_dynfield_offset =
++		rte_mbuf_dynfield_lookup(WIL6210_LINK_ID_DYNFIELD_NAME, NULL);
++	if (wil6210_link_id_dynfield_offset < 0)
++		rte_exit(EXIT_FAILURE, "No wil6210 link id dynfield offset\n");
++
+ 	/* parse application arguments (after the EAL ones) */
+ 	ret = wiltest_parse_args(argc, argv);
+ 	if (ret < 0)
+@@ -785,7 +808,7 @@ main(int argc, char **argv)
+ 
+ 	ret = 0;
+ 	/* launch per-lcore init on every lcore */
+-	rte_eal_mp_remote_launch(wiltest_launch_one_lcore, NULL, SKIP_MASTER);
++	rte_eal_mp_remote_launch(wiltest_launch_one_lcore, NULL, SKIP_MAIN);
+ 
+ 	/* Loop, reading packets from kernel */
+ 	while  (true) {
+@@ -802,7 +825,7 @@ main(int argc, char **argv)
+ 	}
+ 
+ 	/* Wait for other threads to shutdown */
+-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
++	RTE_LCORE_FOREACH_WORKER(lcore_id) {
+ 		if (rte_eal_wait_lcore(lcore_id) < 0) {
+ 			ret = -1;
+ 			break;
+diff --git a/dpdk/examples/wil6210-test/meson.build b/dpdk/examples/wil6210-test/meson.build
+index efc37c6..8e06a19 100644
+--- a/dpdk/examples/wil6210-test/meson.build
++++ b/dpdk/examples/wil6210-test/meson.build
+@@ -1,6 +1,6 @@
+ executable('wiltest',
+ 	'main.c',
+-	c_args: ['-O3', '-Werror'],
++	c_args: ['-O3', '-Werror', '-DALLOW_EXPERIMENTAL_API'],
+ 	link_whole: rte_pmd_wil6210,
+ 	dependencies: [dependency('libdpdk', static: true, required: true)],
+ 	install: true)
+-- 
+2.30.2
+

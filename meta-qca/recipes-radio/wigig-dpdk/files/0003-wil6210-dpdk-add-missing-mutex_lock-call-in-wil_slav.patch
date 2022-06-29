@@ -1,0 +1,26 @@
+From 5220eb41168e4f9784f815c32674ecfb205e33a8 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 21 Jan 2022 22:32:00 -0800
+Subject: [PATCH] wil6210-dpdk: add missing mutex_lock call in
+ wil_slave_tdm_connect
+
+---
+ dpdk/drivers/wil6210/wil6210_slave.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/dpdk/drivers/wil6210/wil6210_slave.c b/dpdk/drivers/wil6210/wil6210_slave.c
+index 405b9b0..a4e9261 100644
+--- a/dpdk/drivers/wil6210/wil6210_slave.c
++++ b/dpdk/drivers/wil6210/wil6210_slave.c
+@@ -486,6 +486,8 @@ void wil_slave_tdm_connect(struct wil6210_vif *vif,
+ 		return;
+ 	}
+ 
++	mutex_lock(&wil->mutex);
++
+ 	if (wil->sta[evt->cid].status != wil_sta_unused) {
+ 		wil_err(wil, "Invalid status %d for CID %d\n",
+ 			wil->sta[evt->cid].status, evt->cid);
+-- 
+2.30.2
+

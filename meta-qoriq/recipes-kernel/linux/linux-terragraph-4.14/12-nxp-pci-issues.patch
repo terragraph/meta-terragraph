@@ -1,0 +1,39 @@
+From 4f2277e913fbc63cfe61b40cbc26bc8cf6c1f3a4 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Thu, 10 May 2018 15:15:06 -0700
+Subject: [PATCH] nxp-pci-issues
+
+---
+ drivers/pci/quirks.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/pci/quirks.c b/drivers/pci/quirks.c
+index 19c5af4d6e23..ab3179dd0aea 100644
+--- a/drivers/pci/quirks.c
++++ b/drivers/pci/quirks.c
+@@ -4880,3 +4880,22 @@ static void quirk_fsl_no_msi(struct pci_dev *pdev)
+ 		pdev->no_msi = 1;
+ }
+ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_FREESCALE, PCI_ANY_ID, quirk_fsl_no_msi);
++
++static void quirk_pericomm_disable_acs(struct pci_dev *pdev)
++{
++	int pos;
++	u16 ctrl;
++
++	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_ACS);
++	if (!pos)
++		return;
++
++	/* Disable ACS.  If not completion timeouts and performance problems
++	 * This is due to errata E5 on 2G304SL pci express switch.
++	 */
++	ctrl = 0;
++	pci_write_config_word(pdev, pos + PCI_ACS_CTRL, ctrl);
++	pci_read_config_word(pdev, pos + PCI_ACS_CTRL, &ctrl);
++}
++
++DECLARE_PCI_FIXUP_FINAL(0x12d8, 0x2304, quirk_pericomm_disable_acs);
+-- 
+2.17.1
+

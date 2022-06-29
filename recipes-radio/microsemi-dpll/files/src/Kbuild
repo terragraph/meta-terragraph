@@ -1,0 +1,29 @@
+#
+# Kbuild file for Microsemi Synchronizer kernel module
+#
+ccflags-y += -I$(KERNEL_EXTRA_HEADER_PATH)/nl-driver-if \
+	     -I$(srctree)/include/net -I.
+
+# Disable new warnings
+ccflags-y += -Wall -Werror
+
+ifeq ($(ENABLE_ASAN),1)
+	ccflags-y += -fsanitize=kernel-address
+endif
+
+MODULE_NAME ?= zl3079x
+
+obj-m := $(MODULE_NAME).o
+
+# List of objects to compile, keep sorted
+$(MODULE_NAME)-y := fb_tgd_zl3079x.o
+
+# Comment/uncomment the following line to disable/enable debugging
+DEBUG = n
+ifeq ($(DEBUG),y)
+	DEBFLAGS = -O -g -DDEBUG # "-O" is needed to expand inlines
+else
+	DEBFLAGS = -O2
+endif
+
+ccflags-y += $(DEBFLAGS)

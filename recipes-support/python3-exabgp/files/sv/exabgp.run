@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+RUN_FILE_BASE="/run/exabgp"
+
+mkdir -p "${RUN_FILE_BASE}"
+chown nobody "${RUN_FILE_BASE}"
+for operation in 'in' 'out'
+do
+    cmd_file="${RUN_FILE_BASE}/exabgp.${operation}"
+    if [ ! -e $cmd_file ]
+    then
+        mkfifo -m 0666 "$cmd_file"
+    fi
+done
+
+# Generate aioexabgp + exabgp config files
+# If successful, run exabgp
+/usr/bin/exaconf -d
+if [ $? -ne 0 ]; then
+    echo "Failed to successfully run exaconf"
+    sleep 5
+else
+    exec /usr/bin/exabgp \
+        --env /etc/exabgp/exabgp.env \
+        /data/etc/exabgp/exabgp.conf
+fi

@@ -1,0 +1,181 @@
+From f58614540ea5f6f684d18ec8f8ac884ff7540394 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Mon, 27 Apr 2020 11:14:04 -0700
+Subject: [PATCH] Add command to configure device burst parameters
+
+---
+ src/plugins/dpdk/device/cli.c       | 84 ++++++++++++++++++++++++++++-
+ src/plugins/dpdk/device/dpdk.h      |  2 +
+ src/plugins/dpdk/device/dpdk_priv.h |  2 +
+ src/plugins/dpdk/device/init.c      |  2 +
+ src/plugins/dpdk/device/node.c      |  8 +--
+ 5 files changed, 93 insertions(+), 5 deletions(-)
+
+diff --git a/src/plugins/dpdk/device/cli.c b/src/plugins/dpdk/device/cli.c
+index 7f0eb9be2..9587cf00c 100644
+--- a/src/plugins/dpdk/device/cli.c
++++ b/src/plugins/dpdk/device/cli.c
+@@ -485,7 +485,7 @@ get_dpdk_xstats (vlib_main_t * vm, unformat_input_t * input,
+ 
+   if (s)
+     {
+-      vlib_cli_output (vm, s);
++      vlib_cli_output (vm, (char*)s);
+     }
+   last_get_xstats = now;
+ done:
+@@ -502,6 +502,88 @@ VLIB_CLI_COMMAND (cmd_get_dpdk_xstat, static) = {
+ };
+ /* *INDENT-ON* */
+ 
++/*?
++ * This command is used to configure a device RX burst parameters.
++ */
++static clib_error_t *
++dpdk_burst (vlib_main_t * vm, unformat_input_t * input,
++	    vlib_cli_command_t * cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  dpdk_main_t *dm = &dpdk_main;
++  u32 hw_if_index = (u32) ~ 0;
++  vnet_hw_interface_t *hw;
++  dpdk_device_t *xd;
++  u32 min = ~0;
++  u32 rxsize = ~0;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat
++	  (line_input, "%U", unformat_vnet_hw_interface, dm->vnet_main,
++	   &hw_if_index))
++	;
++      else if (unformat (line_input, "rx_burst_size %u", &rxsize))
++	;
++      else if (unformat (line_input, "giveup_threshold %u", &min))
++	;
++      else
++	{
++	  error = clib_error_return (0, "parse error: '%U'",
++				     format_unformat_error, line_input);
++	  goto done;
++	}
++    }
++
++  if (hw_if_index == (u32) ~ 0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  hw = vnet_get_hw_interface (dm->vnet_main, hw_if_index);
++  xd = vec_elt_at_index (dm->devices, hw->dev_instance);
++
++  if (min != ~0)
++    {
++      xd->rx_burst_giveup_threshold = min;
++    }
++
++  if (rxsize != ~0)
++    {
++      xd->rx_burst_size = rxsize;
++    }
++
++  if (rxsize != ~0 || min != ~0)
++    {
++      /* Sanity */
++      if (xd->rx_burst_giveup_threshold > xd->rx_burst_size)
++	xd->rx_burst_giveup_threshold = xd->rx_burst_size;
++    }
++
++  vlib_cli_output (vm, "%U rx_burst_size %u giveup_threshold %u\n",
++		   format_vnet_hw_if_index_name, dm->vnet_main, hw_if_index,
++		   xd->rx_burst_size, xd->rx_burst_giveup_threshold);
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (cmd_dpdk_burst, static) = {
++  .path = "dpdk burst",
++  .short_help = "dpdk burst <interface> rx_burst_size <burst_size> "
++      "giveup_threshold <give-up-threshold>",
++  .function = dpdk_burst,
++};
++/* *INDENT-ON* */
++
+ static clib_error_t *
+ show_dpdk_version_command_fn (vlib_main_t * vm,
+ 			      unformat_input_t * input,
+diff --git a/src/plugins/dpdk/device/dpdk.h b/src/plugins/dpdk/device/dpdk.h
+index b699af6ad..21f68b91e 100644
+--- a/src/plugins/dpdk/device/dpdk.h
++++ b/src/plugins/dpdk/device/dpdk.h
+@@ -201,6 +201,8 @@ typedef struct
+ 
+     CLIB_CACHE_LINE_ALIGN_MARK (cacheline1);
+   u16 nb_tx_desc;
++  u16 rx_burst_size;
++  u16 rx_burst_giveup_threshold;
+   u16 nb_rx_desc;
+ 
+   u8 *name;
+diff --git a/src/plugins/dpdk/device/dpdk_priv.h b/src/plugins/dpdk/device/dpdk_priv.h
+index 46b87512b..02e36d77f 100644
+--- a/src/plugins/dpdk/device/dpdk_priv.h
++++ b/src/plugins/dpdk/device/dpdk_priv.h
+@@ -18,6 +18,8 @@
+ #define DPDK_NB_RX_DESC_VIRTIO    256
+ #define DPDK_NB_TX_DESC_VIRTIO    256
+ 
++#define DPDK_RX_BURST_GIVEUP_THRESHOLD_DEFAULT 32
++
+ #define I40E_DEV_ID_SFP_XL710           0x1572
+ #define I40E_DEV_ID_QSFP_A              0x1583
+ #define I40E_DEV_ID_QSFP_B              0x1584
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index a99dc7da9..e067e4538 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -284,6 +284,8 @@ dpdk_lib_init (dpdk_main_t * dm)
+       xd->nb_rx_desc = DPDK_NB_RX_DESC_DEFAULT;
+       xd->nb_tx_desc = DPDK_NB_TX_DESC_DEFAULT;
+       xd->cpu_socket = (i8) rte_eth_dev_socket_id (i);
++      xd->rx_burst_giveup_threshold = DPDK_RX_BURST_GIVEUP_THRESHOLD_DEFAULT;
++      xd->rx_burst_size = VLIB_FRAME_SIZE;
+ 
+       if (p)
+ 	{
+diff --git a/src/plugins/dpdk/device/node.c b/src/plugins/dpdk/device/node.c
+index e7d836fe0..23eca9ffd 100644
+--- a/src/plugins/dpdk/device/node.c
++++ b/src/plugins/dpdk/device/node.c
+@@ -305,15 +305,15 @@ dpdk_device_input (vlib_main_t * vm, dpdk_main_t * dm, dpdk_device_t * xd,
+   if ((xd->flags & DPDK_DEVICE_FLAG_ADMIN_UP) == 0)
+     return 0;
+ 
+-  /* get up to DPDK_RX_BURST_SZ buffers from PMD */
+-  while (n_rx_packets < DPDK_RX_BURST_SZ)
++  /* get up to xd->rx_burst_size buffers from PMD */
++  while (n_rx_packets < xd->rx_burst_size)
+     {
+       n = rte_eth_rx_burst (xd->port_id, queue_id,
+ 			    ptd->mbufs + n_rx_packets,
+-			    DPDK_RX_BURST_SZ - n_rx_packets);
++			    xd->rx_burst_size - n_rx_packets);
+       n_rx_packets += n;
+ 
+-      if (n < 32)
++      if (n < xd->rx_burst_giveup_threshold)
+ 	break;
+     }
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,10 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -67,6 +67,7 @@
+ else()
+     set(_lua_module_dir "${_lua_lib_dir}/lua/5.1")
+ endif()
++set(_lua_module_dir ".")
+
+ if(MSVC)
+     add_definitions(-D_CRT_SECURE_NO_WARNINGS)

@@ -1,0 +1,31 @@
+From 0acc6816f26e93b4ec4597bbee35a407165b5324 Mon Sep 17 00:00:00 2001
+From: Terragraph <tg-precommit@fb.com>
+Date: Fri, 20 Sep 2019 17:45:44 -0700
+Subject: [PATCH 2/2] Optionally include wil6210 pmd into testpmd
+
+Add a make variable that, when set, slurps up the whole
+librte_pmd_wil6210.a into pktgen.  Said library is expected to be installed
+into (e.g.) /usr/lib separately.
+
+---
+ app/test-pmd/Makefile | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/app/test-pmd/Makefile b/app/test-pmd/Makefile
+index d5258eae4..da4ec32f5 100644
+--- a/app/test-pmd/Makefile
++++ b/app/test-pmd/Makefile
+@@ -72,6 +72,10 @@ endif
+ 
+ endif
+ 
++ifeq ($(DPDK_RTE_LIBRTE_WIL6210_PMD),true)
++LDFLAGS += --whole-archive -lrte_pmd_wil6210 --no-whole-archive
++endif
++
+ include $(RTE_SDK)/mk/rte.app.mk
+ 
+ endif
+-- 
+2.17.1
+

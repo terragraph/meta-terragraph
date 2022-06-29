@@ -1,0 +1,163 @@
+/*
+ * Device Tree file for FB LS1048A MBH Board.
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include "fsl-ls1048a.dtsi"
+
+/ {
+	model = "NXP TG Board LS1048A (MBH)";
+	compatible = "fsl,ls1088a-rdb", "fsl,ls1088a";
+
+	chosen {
+		bootargs = "iommu.passthrough=1 default_hugepagesz=2m hugepagesz=2m hugepages=512 pcie_aspm=off cma=512M crashkernel=32M@3G isolcpus=2,3 firmware_class.path=/data/firmware/wil6210 ";
+		eeprom = "/sys/bus/nvmem/devices/1-00540/nvmem" ;
+		bb2_eeprom = "/sys/bus/i2c/devices/2-0056/eeprom";
+		bb4_eeprom = "/sys/bus/i2c/devices/1-0056/eeprom";
+		wlan0_eeprom = "/sys/bus/i2c/devices/2-0056/eeprom";
+		wlan1_eeprom = "/sys/bus/i2c/devices/1-0056/eeprom";
+		wlan0_pci = "0000:01:00.0";
+		wlan1_pci = "0001:01:00.0";
+	};
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	eeprom@54 {
+		compatible = "at24,24c64";
+		reg = <0x54>;
+		pagesize = <32>;
+	};
+
+	eeprom@56 {
+		compatible = "at24,24c1024";
+		reg = <0x56>;
+		pagesize = <256>;
+	};
+
+	rtc@51 {
+		compatible = "nxp,pcf8563";
+		reg = <0x51>;
+	};
+
+	lm90: lm90@48 {
+		compatible = "nxp,sa56004";
+		reg = <0x48>;
+	};
+
+};
+
+&i2c2 {
+	status = "okay";
+
+	eeprom@56 {
+		compatible = "at24,24c1024";
+		reg = <0x56>;
+		pagesize = <256>;
+	};
+
+	dpll@25 {
+		compatible = "facebook,zl3079x";
+		reg = <0x25>;
+	};
+};
+
+&i2c3 {
+	status = "okay";
+};
+
+&qspi {
+	status = "okay";
+	qflash0: s25fs512s@0 {
+		compatible = "spansion,m25p80";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-max-frequency = <20000000>;
+		spi-rx-bus-width = <1>;
+		spi-tx-bus-width = <1>;
+		reg = <0>;
+	};
+};
+
+&ifc {
+	status = "disabled";
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&duart1 {
+	status = "okay";
+};
+
+&duart2 {
+	status = "okay";
+};
+
+&duart3 {
+	status = "okay";
+};
+
+&esdhc {
+	status = "okay";
+	non-removable;
+};
+
+&emdio1 {
+	/* RealTek RTL8211FSI PHY
+	 * PHY_AD[2:0] = 010: PHY Addr = 0b00010
+	 * CFG_MODE[2:0]=011: SGMII <=> UTP
+	 * CFG_LDO[1:0] = 10 : RGMII IO LDO voltage selection (1.8V)
+	 * RXDLY = 0: No Delay
+	 */
+	mdio1_phy1: emdio1_phy@1 {
+		reg = <0x2>;
+		phy-connection-type = "sgmii";
+	};
+};
+
+/* DPMAC connections to external PHYs
+ * based on LS1088A RM RevC - $24.1.2 SerDes Options
+ */
+
+ /* dpmac 3 is SGMII */
+&dpmac3 {
+	phy-handle = <&mdio1_phy1>;
+};
+
+&emdio2 {
+	/* Microsemi VSC8254 PHY
+	 * PHY_AD = 0x10
+	 */
+	mdio2_phy1: emdio2_phy@1 {
+		reg = <0x10>;
+		phy-connection-type = "xfi";
+		phy-type = "vsc8254_xfi_phy";
+	};
+
+	/* Microsemi VSC8254 PHY
+	 * PHY_AD = 0x11
+	 */
+	mdio2_phy2: emdio2_phy@2 {
+		reg = <0x11>;
+		phy-connection-type = "xfi";
+		phy-type = "vsc8254_xfi_phy";
+	};
+};
+
+/* dpmac 1 is SFP 1 */
+&dpmac1 {
+	phy-handle = <&mdio2_phy1>;
+};
+ /* dpmac 2 is SFP 2 */
+&dpmac2 {
+	phy-handle = <&mdio2_phy2>;
+};

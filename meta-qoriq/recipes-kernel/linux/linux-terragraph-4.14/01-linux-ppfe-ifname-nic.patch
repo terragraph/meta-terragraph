@@ -1,0 +1,67 @@
+From fbd0a2858d8f0bb6125c18f6aada9faa8218c7d2 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Fri, 8 Sep 2017 09:57:14 -0700
+Subject: [PATCH] Allow PPFE ifname be set from DTS
+
+---
+ drivers/staging/fsl_ppfe/pfe_eth.c              | 3 ++-
+ drivers/staging/fsl_ppfe/pfe_eth.h              | 1 +
+ drivers/staging/fsl_ppfe/pfe_ls1012a_platform.c | 9 +++++++++
+ 3 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/staging/fsl_ppfe/pfe_eth.c b/drivers/staging/fsl_ppfe/pfe_eth.c
+index 177edc66b623..3bdfef520679 100644
+--- a/drivers/staging/fsl_ppfe/pfe_eth.c
++++ b/drivers/staging/fsl_ppfe/pfe_eth.c
+@@ -2332,7 +2332,8 @@ static int pfe_eth_init_one(struct pfe *pfe,
+ 	if (us)
+ 		emac_txq_cnt = EMAC_TXQ_CNT;
+ 	/* Create an ethernet device instance */
+-	ndev = alloc_etherdev_mq(sizeof(*priv), emac_txq_cnt);
++	ndev = alloc_netdev_mqs(sizeof (*priv), einfo[id].name, NET_NAME_UNKNOWN,
++				ether_setup, emac_txq_cnt, emac_txq_cnt);
+ 
+ 	if (!ndev) {
+ 		pr_err("%s: gemac %d device allocation failed\n",
+diff --git a/drivers/staging/fsl_ppfe/pfe_eth.h b/drivers/staging/fsl_ppfe/pfe_eth.h
+index 26e28a29f8d6..06cd7ba41962 100644
+--- a/drivers/staging/fsl_ppfe/pfe_eth.h
++++ b/drivers/staging/fsl_ppfe/pfe_eth.h
+@@ -38,6 +38,7 @@
+ 
+ struct ls1012a_eth_platform_data {
+ 	/* board specific information */
++	char name[IFNAMSIZ];
+ 	u32 mii_config;
+ 	u32 phy_flags;
+ 	u32 gem_id;
+diff --git a/drivers/staging/fsl_ppfe/pfe_ls1012a_platform.c b/drivers/staging/fsl_ppfe/pfe_ls1012a_platform.c
+index 6f1dbcec2d99..1809917711ad 100644
+--- a/drivers/staging/fsl_ppfe/pfe_ls1012a_platform.c
++++ b/drivers/staging/fsl_ppfe/pfe_ls1012a_platform.c
+@@ -30,6 +30,7 @@ static int pfe_get_gemac_if_properties(struct device_node *gem,
+ 	int phy_id = 0;
+ 	const u32 *addr;
+ 	const void *mac_addr;
++	const char *ifname;
+ 
+ 	addr = of_get_property(gem, "reg", &size);
+ 	port = be32_to_cpup(addr);
+@@ -98,6 +99,14 @@ static int pfe_get_gemac_if_properties(struct device_node *gem,
+ 		pfe->mdio_muxval[pdata->ls1012a_eth_pdata[port].phy_id] =
+ 			 pdata->ls1012a_eth_pdata[port].mdio_muxval;
+ 
++	if (of_property_read_string(gem, "fsl,pfe-gemac-if-name", &ifname) != 0)
++		snprintf(pdata->ls1012a_eth_pdata[port].name,
++			 sizeof(pdata->ls1012a_eth_pdata[port].name),
++			 "eth%d", port);
++	else
++		snprintf(pdata->ls1012a_eth_pdata[port].name,
++			 sizeof(pdata->ls1012a_eth_pdata[port].name),
++			 "%s", ifname);
+ 
+ 	pdata->ls1012a_mdio_pdata[port].irq[0] = PHY_POLL;
+ 
+-- 
+2.17.1
+

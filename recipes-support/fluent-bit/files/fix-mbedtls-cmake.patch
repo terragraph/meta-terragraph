@@ -1,0 +1,38 @@
+From 26f60c7d59f5df16f8b3f6145ee3aebc92a70895 Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Fri, 15 Oct 2021 01:55:53 +0000
+Subject: [PATCH] fix mbedtls cmake
+
+---
+ lib/mbedtls-2.27.0/CMakeLists.txt | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/lib/mbedtls-2.27.0/CMakeLists.txt b/lib/mbedtls-2.27.0/CMakeLists.txt
+index 789430737..6c08e7da6 100644
+--- a/lib/mbedtls-2.27.0/CMakeLists.txt
++++ b/lib/mbedtls-2.27.0/CMakeLists.txt
+@@ -205,8 +205,8 @@ if(CMAKE_COMPILER_IS_GNU)
+       set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat-overflow=2 -Wformat-truncation")
+     endif()
+     set(CMAKE_C_FLAGS_RELEASE     "-O2")
+-    set(CMAKE_C_FLAGS_DEBUG       "-O0 -g3")
+-    set(CMAKE_C_FLAGS_COVERAGE    "-O0 -g3 --coverage")
++    set(CMAKE_C_FLAGS_DEBUG       "-O2 -g3")
++    set(CMAKE_C_FLAGS_COVERAGE    "-O2 -g3 --coverage")
+     set(CMAKE_C_FLAGS_ASAN        "-fsanitize=address -fno-common -fsanitize=undefined -fno-sanitize-recover=all -O3")
+     set(CMAKE_C_FLAGS_ASANDBG     "-fsanitize=address -fno-common -fsanitize=undefined -fno-sanitize-recover=all -O1 -g3 -fno-omit-frame-pointer -fno-optimize-sibling-calls")
+     set(CMAKE_C_FLAGS_CHECK       "-Os")
+@@ -216,8 +216,8 @@ endif(CMAKE_COMPILER_IS_GNU)
+ if(CMAKE_COMPILER_IS_CLANG)
+     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wwrite-strings -Wpointer-arith -Wimplicit-fallthrough -Wshadow -Wvla -Wformat=2 -Wno-format-nonliteral")
+     set(CMAKE_C_FLAGS_RELEASE     "-O2")
+-    set(CMAKE_C_FLAGS_DEBUG       "-O0 -g3")
+-    set(CMAKE_C_FLAGS_COVERAGE    "-O0 -g3 --coverage")
++    set(CMAKE_C_FLAGS_DEBUG       "-O2 -g3")
++    set(CMAKE_C_FLAGS_COVERAGE    "-O2 -g3 --coverage")
+     set(CMAKE_C_FLAGS_ASAN        "-fsanitize=address -fno-common -fsanitize=undefined -fno-sanitize-recover=all -O3")
+     set(CMAKE_C_FLAGS_ASANDBG     "-fsanitize=address -fno-common -fsanitize=undefined -fno-sanitize-recover=all -O1 -g3 -fno-omit-frame-pointer -fno-optimize-sibling-calls")
+     set(CMAKE_C_FLAGS_MEMSAN      "-fsanitize=memory -O3")
+--
+2.30.2
+

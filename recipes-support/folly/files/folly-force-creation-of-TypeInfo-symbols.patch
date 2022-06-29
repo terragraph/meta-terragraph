@@ -1,0 +1,30 @@
+From 83c1b8579b93041f562b1128a0ec7e4284c5631f Mon Sep 17 00:00:00 2001
+From: Bob Copeland <bobcopeland@fb.com>
+Date: Mon, 14 Dec 2020 07:33:21 -0800
+Subject: [PATCH] folly-force-creation-of-TypeInfo-symbols
+
+gcc-8 will optimize out the definitions for TypeInfo<...>::name because
+they aren't used in the header file.  Unfortunately this results in a
+link-time error when different values of --std are passed: the linker
+sees the symbol as undefined when later referenced in a different library
+(in this case openr).  Work around this by marking the symbol used so
+that it doesn't get optimized out.
+---
+ folly/dynamic.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/folly/dynamic.cpp b/folly/dynamic.cpp
+index 3d8a00003..fa82fc05f 100644
+--- a/folly/dynamic.cpp
++++ b/folly/dynamic.cpp
+@@ -32,6 +32,7 @@ namespace folly {
+ 
+ #define FOLLY_DYNAMIC_DEF_TYPEINFO(T, str)            \
+   const char* const dynamic::TypeInfo<T>::name = str; \
++  constexpr __attribute__((used)) dynamic::Type dynamic::TypeInfo<T>::type; \
+   //
+ 
+ FOLLY_DYNAMIC_DEF_TYPEINFO(std::nullptr_t, "null")
+-- 
+2.24.1
+

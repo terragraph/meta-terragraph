@@ -1,0 +1,33 @@
+From 6ddc0ce94a03ebe8be4733bcb3757719a9afafe4 Mon Sep 17 00:00:00 2001
+From: Pranav Thulasiram Bhat <pranavtbhat@fb.com>
+Date: Thu, 17 Aug 2017 16:57:56 -0700
+Subject: [PATCH] Disable binary strip + ipv6
+
+---
+ Makefile | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index da2c8f1..ae75a13 100644
+--- a/Makefile
++++ b/Makefile
+@@ -19,7 +19,7 @@ LIBOWFAT_LIBRARY=$(PREFIX)/libowfat
+ 
+ BINDIR?=$(PREFIX)/bin
+ 
+-#FEATURES+=-DWANT_V6
++FEATURES+=-DWANT_V6
+ 
+ #FEATURES+=-DWANT_ACCESSLIST_BLACK
+ #FEATURES+=-DWANT_ACCESSLIST_WHITE
+@@ -66,7 +66,6 @@ CFLAGS_debug = $(CFLAGS) $(OPTS_debug) $(FEATURES)
+ 
+ $(BINARY): $(OBJECTS) $(HEADERS)
+ 	$(CC) -o $@ $(OBJECTS) $(LDFLAGS)
+-	strip $@
+ $(BINARY).debug: $(OBJECTS_debug) $(HEADERS)
+ 	$(CC) -o $@ $(OBJECTS_debug) $(LDFLAGS)
+ proxy: $(OBJECTS_proxy) $(HEADERS)
+-- 
+2.9.5
+

@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+node_id=$(/usr/sbin/get_hw_info NODE_ID)
+if [ -z "$node_id" ]; then
+  echo "Node ID not found"
+  sleep ${DELAY}
+  exit 1
+fi
+
+while [ : ]; do
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+if [ "$LOGTAIL_ENABLED" = "0" ]; then
+  echo "Logtail is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+RUN_LOGTAIL="/usr/sbin/logtail -v 2 -node_id $node_id"
+
+if [ ! -z "$E2E_AGGREGATOR_HOST" ]; then
+  RUN_LOGTAIL="$RUN_LOGTAIL -aggregator_host [$E2E_AGGREGATOR_HOST]"
+fi
+
+exec $RUN_LOGTAIL -logtostderr 2>&1
+
+done

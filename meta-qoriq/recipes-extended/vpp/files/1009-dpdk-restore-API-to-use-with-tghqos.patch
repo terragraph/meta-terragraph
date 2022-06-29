@@ -1,0 +1,660 @@
+From 2f9769b79b3264debca6c5f84f52c1df71ef8947 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 3 Sep 2021 15:33:51 -0700
+Subject: [PATCH] dpdk: restore API to use with tghqos
+
+Restore the deleted dpdk API to configure tghqos tctbl.
+TODO: Redo this API, moving it into tghqos module and clean it up,
+make the test plugin work.
+---
+ src/plugins/dpdk/CMakeLists.txt       |  16 ++
+ src/plugins/dpdk/api/dpdk.api         |  41 +++++
+ src/plugins/dpdk/api/dpdk_all_api_h.h |  19 ++
+ src/plugins/dpdk/api/dpdk_api.c       | 216 +++++++++++++++++++++++
+ src/plugins/dpdk/api/dpdk_msg_enum.h  |  31 ++++
+ src/plugins/dpdk/api/dpdk_test.c      | 239 ++++++++++++++++++++++++++
+ src/vpp/api/vpe_all_api_h.h           |   4 +
+ 7 files changed, 566 insertions(+)
+ create mode 100644 src/plugins/dpdk/api/dpdk.api
+ create mode 100644 src/plugins/dpdk/api/dpdk_all_api_h.h
+ create mode 100755 src/plugins/dpdk/api/dpdk_api.c
+ create mode 100644 src/plugins/dpdk/api/dpdk_msg_enum.h
+ create mode 100644 src/plugins/dpdk/api/dpdk_test.c
+
+diff --git a/src/plugins/dpdk/CMakeLists.txt b/src/plugins/dpdk/CMakeLists.txt
+index 3f7a29bb0..08f708549 100644
+--- a/src/plugins/dpdk/CMakeLists.txt
++++ b/src/plugins/dpdk/CMakeLists.txt
+@@ -136,11 +136,15 @@ else ()
+   set(DPDK_CRYPTODEV_SOURCE cryptodev)
+ endif ()
+ 
++set(CMAKE_CXX_FLAGS, "${CMAKE_CXX_FLAGS} VPP_DPDK_PLUGIN")
++
+ add_vpp_plugin(dpdk
+   SOURCES
+   buffer.c
+   main.c
+   thread.c
++  api/dpdk_api.c
++  api/dpdk_test.c
+   device/cli.c
+   device/common.c
+   device/device.c
+@@ -164,6 +168,12 @@ add_vpp_plugin(dpdk
+   tghqos/tghqos.c
+   tghqos/tghqos.h
+ 
++  API_FILES
++  api/dpdk.api
++
++  API_TEST_SOURCES
++  api/dpdk_test.c
++
+   MULTIARCH_SOURCES
+   buffer.c
+   device/device.c
+@@ -185,3 +195,9 @@ add_vpp_plugin(dpdk
+   COMPONENT
+   vpp-plugin-dpdk
+ )
++
++install(
++  FILES ${CMAKE_CURRENT_BINARY_DIR}/api/dpdk.api.h
++  DESTINATION include/plugins/dpdk/api
++  COMPONENT vpp-dev
++)
+diff --git a/src/plugins/dpdk/api/dpdk.api b/src/plugins/dpdk/api/dpdk.api
+new file mode 100644
+index 000000000..1e5a4e447
+--- /dev/null
++++ b/src/plugins/dpdk/api/dpdk.api
+@@ -0,0 +1,41 @@
++/*
++ * Copyright (c) 2015-2016 Cisco and/or its affiliates.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++option version = "1.0.0";
++
++/** \brief DPDK interface HQoS tctbl entry set request
++    @param client_index - opaque cookie to identify the sender
++    @param context - sender context, to match reply w/ request
++    @param sw_if_index - the interface
++    @param entry - entry index ID
++    @param tc - traffic class (0 .. 3)
++    @param queue - traffic class queue (0 .. 3)
++    @param color - traffic color (0 .. 3)
++*/
++autoreply define sw_interface_set_dpdk_hqos_tctbl {
++    u32 client_index;
++    u32 context;
++    u32 sw_if_index;
++    u32 entry;
++    u32 tc;
++    u32 queue;
++    u32 color;
++};
++
++/*
++ * Local Variables:
++ * eval: (c-set-style "gnu")
++ * End:
++ */
+diff --git a/src/plugins/dpdk/api/dpdk_all_api_h.h b/src/plugins/dpdk/api/dpdk_all_api_h.h
+new file mode 100644
+index 000000000..15eb98d6a
+--- /dev/null
++++ b/src/plugins/dpdk/api/dpdk_all_api_h.h
+@@ -0,0 +1,19 @@
++
++/*
++ * dpdk_all_api_h.h - skeleton vpp engine plug-in api #include file
++ *
++ * Copyright (c) <current-year> <your-organization>
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/* Include the generated file, see BUILT_SOURCES in Makefile.am */
++#include <dpdk/api/dpdk.api.h>
+diff --git a/src/plugins/dpdk/api/dpdk_api.c b/src/plugins/dpdk/api/dpdk_api.c
+new file mode 100755
+index 000000000..a9dcb1c75
+--- /dev/null
++++ b/src/plugins/dpdk/api/dpdk_api.c
+@@ -0,0 +1,216 @@
++/*
++ * Copyright (c) 2017 Cisco and/or its affiliates.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#include <vnet/vnet.h>
++#include <vppinfra/vec.h>
++#include <vppinfra/error.h>
++#include <vppinfra/format.h>
++#include <vppinfra/bitmap.h>
++
++#include <vnet/ethernet/ethernet.h>
++#include <dpdk/device/dpdk.h>
++#include <vlib/pci/pci.h>
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <sys/stat.h>
++#include <sys/mount.h>
++#include <string.h>
++#include <fcntl.h>
++
++#include <dpdk/device/dpdk_priv.h>
++
++#include <vlibapi/api.h>
++#include <vlibmemory/api.h>
++
++/* define message IDs */
++#include <dpdk/api/dpdk_msg_enum.h>
++
++#define vl_typedefs		/* define message structures */
++#include <dpdk/api/dpdk_all_api_h.h>
++#undef vl_typedefs
++
++#define vl_endianfun		/* define message structures */
++#include <dpdk/api/dpdk_all_api_h.h>
++#undef vl_endianfun
++
++#define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
++
++/* Get the API version number. */
++#define vl_api_version(n,v) static u32 api_version=(v);
++#include <dpdk/api/dpdk_all_api_h.h>
++#undef vl_api_version
++
++/* Macro to finish up custom dump fns */
++#define FINISH                                  \
++    vec_add1 (s, 0);                            \
++    vl_print (handle, (char *)s);               \
++    vec_free (s);                               \
++    return handle;
++
++#define REPLY_MSG_ID_BASE dm->msg_id_base
++#include <vlibapi/api_helper_macros.h>
++
++static void
++  vl_api_sw_interface_set_dpdk_hqos_tctbl_t_handler
++  (vl_api_sw_interface_set_dpdk_hqos_tctbl_t * mp)
++{
++  vl_api_sw_interface_set_dpdk_hqos_tctbl_reply_t *rmp;
++  int rv = 0;
++
++  dpdk_main_t *dm = &dpdk_main;
++
++  u32 entry = ntohl (mp->entry);
++  u32 tc = ntohl (mp->tc);
++  u32 queue = ntohl (mp->queue);
++  u32 color = ntohl (mp->color);
++
++  // TODO: change API and use of API in vpp chaperone
++  tghqos_main_t *tgm = &tghqos_main;
++  tghqos_config_t *config;
++
++  if (entry >= NUM_DSCP_VALUES)
++    {
++      clib_warning ("invalid entry !!");
++      rv = VNET_API_ERROR_INVALID_VALUE;
++      goto done;
++    }
++  if (tc >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++    {
++      clib_warning ("invalid traffic class !!");
++      rv = VNET_API_ERROR_INVALID_VALUE;
++      goto done;
++    }
++  if (queue >= TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS)
++    {
++      clib_warning ("invalid queue !!");
++      rv = VNET_API_ERROR_INVALID_VALUE;
++      goto done;
++    }
++  if (color == 0 || color > TGHQOS_COLORS) // using DSCP colors here
++    {
++      clib_warning ("invalid color %d !!", color);
++      rv = VNET_API_ERROR_INVALID_VALUE;
++      goto done;
++    }
++
++  config = &tgm->config;
++  config->tc_table[entry] =
++      ((color & 0x3) << 6) + ((tc & 0xf) << 2) + (queue & 2);
++
++done:
++
++  REPLY_MACRO (VL_API_SW_INTERFACE_SET_DPDK_HQOS_TCTBL_REPLY);
++}
++
++static void *vl_api_sw_interface_set_dpdk_hqos_tctbl_t_print
++  (vl_api_sw_interface_set_dpdk_hqos_tctbl_t * mp, void *handle)
++{
++  u8 *s;
++
++  s = format (0, "SCRIPT: sw_interface_set_dpdk_hqos_tctbl ");
++
++  s = format (s, "sw_if_index %u ", ntohl (mp->sw_if_index));
++
++  s = format (s, "entry %u  tc %u  queue %u",
++	      ntohl (mp->entry), ntohl (mp->tc), ntohl (mp->queue));
++
++  FINISH;
++}
++
++#define foreach_dpdk_plugin_api_msg                                       \
++_(SW_INTERFACE_SET_DPDK_HQOS_TCTBL, sw_interface_set_dpdk_hqos_tctbl)
++
++/* Set up the API message handling tables */
++static clib_error_t *
++dpdk_plugin_api_hookup (vlib_main_t * vm)
++{
++  dpdk_main_t *dm __attribute__ ((unused)) = &dpdk_main;
++#define _(N,n)                                                  \
++    vl_msg_api_set_handlers((VL_API_##N + dm->msg_id_base),     \
++                           #n,          \
++                           vl_api_##n##_t_handler,              \
++                           vl_noop_handler,                     \
++                           vl_api_##n##_t_endian,               \
++                           vl_api_##n##_t_print,                \
++                           sizeof(vl_api_##n##_t), 1);
++  foreach_dpdk_plugin_api_msg;
++#undef _
++  return 0;
++}
++
++#define vl_msg_name_crc_list
++#include <dpdk/api/dpdk_all_api_h.h>
++#undef vl_msg_name_crc_list
++
++static void
++setup_message_id_table (dpdk_main_t * dm, api_main_t * am)
++{
++#define _(id,n,crc) \
++  vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + dm->msg_id_base);
++  foreach_vl_msg_name_crc_dpdk;
++#undef _
++}
++
++static void plugin_custom_dump_configure (dpdk_main_t * dm, api_main_t * am)
++{
++#define _(n,f) am->msg_print_handlers \
++  [VL_API_##n + dm->msg_id_base]                \
++    = (void *) vl_api_##f##_t_print;
++  foreach_dpdk_plugin_api_msg;
++#undef _
++}
++/* force linker to link functions used by vlib and declared weak */
++
++static clib_error_t *
++dpdk_api_init (vlib_main_t * vm)
++{
++  dpdk_main_t *dm = &dpdk_main;
++  clib_error_t *error = 0;
++
++  /* init CLI */
++  if ((error = vlib_call_init_function (vm, dpdk_init)))
++    return error;
++
++  u8 *name;
++  name = format (0, "dpdk_%08x%c", api_version, 0);
++
++  /* Ask for a correctly-sized block of API message decode slots */
++  dm->msg_id_base = vl_msg_api_get_msg_ids
++    ((char *) name, VL_MSG_FIRST_AVAILABLE);
++  vec_free (name);
++
++  error = dpdk_plugin_api_hookup (vm);
++
++  /* Add our API messages to the global name_crc hash table */
++  setup_message_id_table (dm, vlibapi_get_main ());
++
++  plugin_custom_dump_configure (dm, vlibapi_get_main ());
++
++  vec_free (name);
++
++  return error;
++}
++
++VLIB_INIT_FUNCTION (dpdk_api_init);
++
++
++/*
++ * fd.io coding-style-patch-verification: ON
++ *
++ * Local Variables:
++ * eval: (c-set-style "gnu")
++ * End:
++ */
+diff --git a/src/plugins/dpdk/api/dpdk_msg_enum.h b/src/plugins/dpdk/api/dpdk_msg_enum.h
+new file mode 100644
+index 000000000..952ce6ad5
+--- /dev/null
++++ b/src/plugins/dpdk/api/dpdk_msg_enum.h
+@@ -0,0 +1,31 @@
++
++/*
++ * dpdk_msg_enum.h - skeleton vpp engine plug-in message enumeration
++ *
++ * Copyright (c) <current-year> <your-organization>
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#ifndef included_dpdk_msg_enum_h
++#define included_dpdk_msg_enum_h
++
++#include <vppinfra/byte_order.h>
++
++#define vl_msg_id(n,h) n,
++typedef enum {
++#include <dpdk/api/dpdk_all_api_h.h>
++    /* We'll want to know how many messages IDs we need... */
++    VL_MSG_FIRST_AVAILABLE,
++} vl_msg_id_t;
++#undef vl_msg_id
++
++#endif /* included_dpdk_msg_enum_h */
+diff --git a/src/plugins/dpdk/api/dpdk_test.c b/src/plugins/dpdk/api/dpdk_test.c
+new file mode 100644
+index 000000000..a2682bc50
+--- /dev/null
++++ b/src/plugins/dpdk/api/dpdk_test.c
+@@ -0,0 +1,239 @@
++// TODO: Make this actually work
++/*
++ * dpdk_test.c - skeleton vpp-api-test plug-in
++ *
++ * Copyright (c) <current-year> <your-organization>
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at:
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#include <vat/vat.h>
++#include <vlibapi/api.h>
++#include <vlibmemory/api.h>
++#include <vppinfra/error.h>
++#include <vnet/ip/ip.h>
++
++uword unformat_sw_if_index (unformat_input_t * input, va_list * args);
++
++/* Declare message IDs */
++#include <dpdk/api/dpdk_msg_enum.h>
++
++/* define message structures */
++#define vl_typedefs
++#include <dpdk/api/dpdk.api.h>
++#undef vl_typedefs
++
++/* declare message handlers for each api */
++
++#define vl_endianfun             /* define message structures */
++#include <dpdk/api/dpdk.api.h>
++#undef vl_endianfun
++
++/* instantiate all the print functions we know about */
++#define vl_print(handle, ...)
++#define vl_printfun
++#include <dpdk/api/dpdk.api.h>
++#undef vl_printfun
++
++/* Get the API version number. */
++#define vl_api_version(n,v) static u32 api_version=(v);
++#include <dpdk/api/dpdk.api.h>
++#undef vl_api_version
++
++typedef struct {
++    /* API message ID base */
++    u16 msg_id_base;
++    vat_main_t *vat_main;
++} dpdk_test_main_t;
++
++dpdk_test_main_t dpdk_test_main;
++
++#define foreach_standard_reply_retval_handler         \
++_(sw_interface_set_dpdk_hqos_tctbl_reply)
++
++#define _(n)                                          \
++    static void vl_api_##n##_t_handler                \
++    (vl_api_##n##_t * mp)                             \
++    {                                                 \
++        vat_main_t * vam = dpdk_test_main.vat_main;  \
++        i32 retval = ntohl(mp->retval);               \
++        if (vam->async_mode) {                        \
++            vam->async_errors += (retval < 0);        \
++        } else {                                      \
++            vam->retval = retval;                     \
++            vam->result_ready = 1;                    \
++        }                                             \
++    }
++foreach_standard_reply_retval_handler;
++#undef _
++
++/*
++ * Table of message reply handlers, must include boilerplate handlers
++ * we just generated
++ */
++#define foreach_vpe_api_reply_msg                               \
++_(SW_INTERFACE_SET_DPDK_HQOS_TCTBL_REPLY,                       \
++  sw_interface_set_dpdk_hqos_tctbl_reply)
++
++/* M: construct, but don't yet send a message */
++#define M(T,t)                                                  \
++do {                                                            \
++    vam->result_ready = 0;                                      \
++    mp = vl_msg_api_alloc(sizeof(*mp));                         \
++    clib_memset (mp, 0, sizeof (*mp));                               \
++    mp->_vl_msg_id = ntohs (VL_API_##T + dm->msg_id_base);      \
++    mp->client_index = vam->my_client_index;                    \
++} while(0);
++
++#define M2(T,t,n)                                               \
++do {                                                            \
++    vam->result_ready = 0;                                      \
++    mp = vl_msg_api_alloc(sizeof(*mp)+(n));                     \
++    clib_memset (mp, 0, sizeof (*mp));                               \
++    mp->_vl_msg_id = ntohs (VL_API_##T + dm->msg_id_base);      \
++    mp->client_index = vam->my_client_index;                    \
++} while(0);
++
++/* S: send a message */
++#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
++
++/* W: wait for results, with timeout */
++#define W                                       \
++do {                                            \
++    timeout = vat_time_now (vam) + 1.0;         \
++                                                \
++    while (vat_time_now (vam) < timeout) {      \
++        if (vam->result_ready == 1) {           \
++            return (vam->retval);               \
++        }                                       \
++    }                                           \
++    return -99;                                 \
++} while(0);
++
++
++static int
++api_sw_interface_set_dpdk_hqos_tctbl (vat_main_t * vam)
++{
++  dpdk_test_main_t * dm = &dpdk_test_main;
++  unformat_input_t *i = vam->input;
++  vl_api_sw_interface_set_dpdk_hqos_tctbl_t *mp;
++  f64 timeout;
++  u32 sw_if_index;
++  u8 sw_if_index_set = 0;
++  u8 entry_set = 0;
++  u8 tc_set = 0;
++  u8 queue_set = 0;
++  u32 entry, tc, queue;
++
++  /* Parse args required to build the message */
++  while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (i, "rx sw_if_index %u", &sw_if_index))
++  sw_if_index_set = 1;
++      else if (unformat (i, "entry %d", &entry))
++  entry_set = 1;
++      else if (unformat (i, "tc %d", &tc))
++  tc_set = 1;
++      else if (unformat (i, "queue %d", &queue))
++  queue_set = 1;
++      else
++  break;
++    }
++
++  if (sw_if_index_set == 0)
++    {
++      errmsg ("missing interface name or sw_if_index");
++      return -99;
++    }
++
++  if (entry_set == 0)
++    {
++      errmsg ("missing entry ");
++      return -99;
++    }
++
++  if (tc_set == 0)
++    {
++      errmsg ("missing traffic class ");
++      return -99;
++    }
++
++  if (queue_set == 0)
++    {
++      errmsg ("missing queue ");
++      return -99;
++    }
++
++  M (SW_INTERFACE_SET_DPDK_HQOS_TCTBL, sw_interface_set_dpdk_hqos_tctbl);
++
++  mp->sw_if_index = ntohl (sw_if_index);
++  mp->entry = ntohl (entry);
++  mp->tc = ntohl (tc);
++  mp->queue = ntohl (queue);
++
++  S;
++  W;
++  /* NOTREACHED */
++  return 0;
++}
++
++/*
++ * List of messages that the api test plugin sends,
++ * and that the data plane plugin processes
++ */
++#define foreach_vpe_api_msg                                               \
++_(sw_interface_set_dpdk_hqos_tctbl,                                       \
++  "rx sw_if_index <id> entry <n> tc <n> queue <n>\n")
++
++static void dpdk_api_hookup (vat_main_t *vam)
++{
++  dpdk_test_main_t * dm __attribute__((unused)) = &dpdk_test_main;
++  /* Hook up handlers for replies from the data plane plug-in */
++#define _(N,n)                                                  \
++  vl_msg_api_set_handlers((VL_API_##N + dm->msg_id_base),       \
++                          #n,                                   \
++                          vl_api_##n##_t_handler,               \
++                          vl_noop_handler,                      \
++                          vl_api_##n##_t_endian,                \
++                          vl_api_##n##_t_print,                 \
++                          sizeof(vl_api_##n##_t), 1);
++  foreach_vpe_api_reply_msg;
++#undef _
++
++  /* API messages we can send */
++#define _(n,h) hash_set_mem (vam->function_by_name, #n, api_##n);
++  foreach_vpe_api_msg;
++#undef _
++
++  /* Help strings */
++#define _(n,h) hash_set_mem (vam->help_by_name, #n, h);
++  foreach_vpe_api_msg;
++#undef _
++}
++
++clib_error_t * vat_plugin_register (vat_main_t *vam)
++{
++  dpdk_test_main_t * dm = &dpdk_test_main;
++  u8 * name;
++
++  dm->vat_main = vam;
++
++  /* Ask the vpp engine for the first assigned message-id */
++  name = format (0, "dpdk_%08x%c", api_version, 0);
++  dm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
++
++  if (dm->msg_id_base != (u16) ~0)
++    dpdk_api_hookup (vam);
++
++  vec_free(name);
++
++  return 0;
++}
+diff --git a/src/vpp/api/vpe_all_api_h.h b/src/vpp/api/vpe_all_api_h.h
+index 7f8a2265a..b85395840 100644
+--- a/src/vpp/api/vpe_all_api_h.h
++++ b/src/vpp/api/vpe_all_api_h.h
+@@ -29,6 +29,10 @@
+ #include <vpp/api/vpe_types.api.h>
+ #include <vpp/api/vpe.api.h>
+ 
++#ifdef VPP_DPDK_PLUGIN
++#include <plugins/dpdk/api/dpdk.api.h>
++#endif
++
+ /*
+  * fd.io coding-style-patch-verification: ON
+  *
+-- 
+2.30.2
+

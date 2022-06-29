@@ -1,0 +1,61 @@
+From d7ca4f27cde4e98de8317af00e0844e3e9195673 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Mon, 13 Sep 2021 15:27:15 -0700
+Subject: [PATCH] Make ip6 headers and function available for plugins
+
+---
+ src/vnet/CMakeLists.txt | 2 ++
+ src/vnet/ip/ip6_link.c  | 2 +-
+ src/vnet/ip/ip6_link.h  | 3 +++
+ 3 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/vnet/CMakeLists.txt b/src/vnet/CMakeLists.txt
+index 27f494cba..e60291066 100644
+--- a/src/vnet/CMakeLists.txt
++++ b/src/vnet/CMakeLists.txt
+@@ -446,6 +446,7 @@ list(APPEND VNET_HEADERS
+   ip/ip4.h
+   ip/ip4_mtrie.h
+   ip/ip4_inlines.h
++  ip/ip6_link.h
+   ip/ip4_packet.h
+   ip/ip46_address.h
+   ip/ip6_error.h
+@@ -1477,6 +1478,7 @@ list (APPEND VNET_SOURCES
+ 
+ list(APPEND VNET_HEADERS
+   ip6-nd/ip6_nd.h
++  ip6-nd/ip6_ra.h
+ )
+ 
+ list(APPEND VNET_API_FILES
+diff --git a/src/vnet/ip/ip6_link.c b/src/vnet/ip/ip6_link.c
+index dbc6ce673..e6a09a9f9 100644
+--- a/src/vnet/ip/ip6_link.c
++++ b/src/vnet/ip/ip6_link.c
+@@ -95,7 +95,7 @@ ip6_link_is_enabled_i (const ip6_link_t * il)
+   return (!ip6_address_is_zero (&il->il_ll_addr));
+ }
+ 
+-static void
++void
+ ip6_link_local_address_from_mac (ip6_address_t * ip, const u8 * mac)
+ {
+   ip->as_u64[0] = clib_host_to_net_u64 (0xFE80000000000000ULL);
+diff --git a/src/vnet/ip/ip6_link.h b/src/vnet/ip/ip6_link.h
+index d9f611950..7136afeea 100644
+--- a/src/vnet/ip/ip6_link.h
++++ b/src/vnet/ip/ip6_link.h
+@@ -70,6 +70,9 @@ extern bool ip6_link_delegate_update (u32 sw_if_index,
+ extern void ip6_link_delegate_remove (u32 sw_if_index,
+ 				      ip6_link_delegate_id_t id, index_t ii);
+ 
++extern void ip6_link_local_address_from_mac (ip6_address_t * ip,
++					     const u8 * mac);
++
+ /*
+  * fd.io coding-style-patch-verification: ON
+  *
+-- 
+2.30.2
+

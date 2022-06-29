@@ -1,0 +1,243 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @format
+ */
+
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.heroBanner {
+  max-height: calc(100vh - var(--ifm-navbar-height));
+  background-color: #d5e3fd;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+}
+
+.heroVideo {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-height: 220px;
+}
+
+.heroVideo > :first-child {
+  aspect-ratio: 1600 / 960;
+  height: auto;
+  width: 100vw;
+  max-width: 1920px;
+}
+
+.heroText {
+  position: absolute;
+  z-index: 1;
+  color: #000;
+  text-align: center;
+
+  /* align with .heroVideo */
+  width: 100vw;
+  max-width: 1920px;
+}
+
+.heroTitle {
+  aspect-ratio: 1061 / 970.7;
+  margin-bottom: -16px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.getStartedButton {
+  color: #fff;
+}
+
+.heroGithubButton {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+
+.heroGithubButton::before {
+  height: 16px;
+  width: 16px;
+}
+
+/* centered logo, faded video background */
+@media only screen and (max-width: 480px) {
+  .heroButton {
+    --ifm-button-size-multiplier: 0.8;
+  }
+  .heroVideo {
+    opacity: 0.4;
+  }
+  .heroTitle {
+    width: 200px;
+  }
+}
+
+/* left-aligned logo */
+@media only screen and (min-width: 480px) {
+  .heroVideo {
+    opacity: 0.76;
+  }
+  .heroText {
+    transform: translateX(-18%);
+  }
+  .heroTitle {
+    width: 240px;
+  }
+}
+@media only screen and (min-width: 768px) {
+  .heroText {
+    transform: translateX(-20%);
+  }
+  .heroTitle {
+    width: 300px;
+  }
+}
+@media only screen and (min-width: 992px) {
+  .heroText {
+    transform: translateX(-22%);
+  }
+  .heroTitle {
+    width: 360px;
+  }
+}
+
+.homeContainer {
+  margin: 0 auto;
+  padding: 0 var(--ifm-spacing-horizontal);
+  width: 100%;
+}
+
+.homeContainer h2 {
+  padding-bottom: 1em;
+}
+
+.homeContainer > div {
+  margin: 0 auto;
+  padding: 4em 20px;
+  max-width: 1100px;
+}
+
+.homeContainer li:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.imgContainer {
+  padding: 32px;
+  text-align: center;
+}
+
+@media only screen and (max-width: 768px) {
+  .imgContainer {
+    padding: 8px;
+  }
+}
+
+[data-theme='dark'] .imgContainer img {
+  filter: brightness(0) invert(1);
+}
+
+.flexContainer {
+  display: flex;
+  align-items: center;
+  padding: 2rem 0;
+  width: 100%;
+}
+
+.flexCenter {
+  justify-content: center;
+}
+
+.featureImage {
+  height: 64px;
+  margin: 32px 16px;
+}
+
+@media only screen and (max-width: 768px) {
+  .featureImage {
+    height: 48px;
+    margin: 16px 8px;
+  }
+}
+
+[data-theme='dark'] .featureImage {
+  filter: brightness(0) invert(1);
+}
+
+.partner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.partnerImage {
+  height: 64px;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .partnerImage {
+  filter: brightness(0) invert(1);
+}
+
+.partnerModalImage {
+  height: 64px;
+}
+
+.modalBackdrop {
+  position: fixed;
+  z-index: 1040;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modalBackdrop .fade .show {
+  opacity: 0.5;
+}
+
+.modal {
+  position: fixed;
+  z-index: 1040;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  padding: 24px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: #fff;
+  border-radius: 12px;
+}
+
+.modalContainer {
+  color: #000;
+}
+
+.modalContainer hr {
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.modalContents {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}

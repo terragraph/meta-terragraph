@@ -1,0 +1,86 @@
+From 5a3322fea5bc6b062c1c9fe6a0d5af04873ec8e2 Mon Sep 17 00:00:00 2001
+From: joydang <joydang@devvm179.vll0.facebook.com>
+Date: Tue, 29 Jun 2021 16:50:36 -0700
+Subject: [PATCH] add show stats command to exabgpcli
+
+%% original patch: 070-add-show-stats-command-to-exabgpcli.patch
+---
+ lib/exabgp/reactor/api/command/neighbor.py |  9 +++++++++
+ lib/exabgp/reactor/api/processes.py        | 23 ++++++++++++++++++++++
+ 2 files changed, 32 insertions(+)
+
+diff --git a/lib/exabgp/reactor/api/command/neighbor.py b/lib/exabgp/reactor/api/command/neighbor.py
+index ae3e419..ae52ac7 100644
+--- a/lib/exabgp/reactor/api/command/neighbor.py
++++ b/lib/exabgp/reactor/api/command/neighbor.py
+@@ -180,3 +180,12 @@ def show_neighbor (self, reactor, service, command):
+ 	reactor.processes.write(service,'please specify summary, extensive or configuration')
+ 	reactor.processes.write(service,'you can filter by peer ip address adding it after the word neighbor')
+ 	reactor.processes.answer_done(service)
++
++@Command.register('text', 'show stats', False)
++def show_stats (self, reactor, service, command):
++	stat_bgp_connection_down, stat_total_bgp_down_time_s = reactor.processes.get_stats()
++	reactor.processes.write(service, f'bgp_connection_down,{stat_bgp_connection_down}')
++	reactor.processes.write(service, f'total_bgp_down_time_seconds,{str(round(stat_total_bgp_down_time_s, 2))}')
++	reactor.processes.answer_done(service)
++
++	return True
+diff --git a/lib/exabgp/reactor/api/processes.py b/lib/exabgp/reactor/api/processes.py
+index aee0856..7c7a092 100644
+--- a/lib/exabgp/reactor/api/processes.py
++++ b/lib/exabgp/reactor/api/processes.py
+@@ -65,6 +65,11 @@ class Processes (object):
+ 		self.terminate_on_error = environment.settings().api.terminate
+ 		self.ack = environment.settings().api.ack
+ 
++		self.time_last_down = None
++		self.prev_state = None
++		self.stat_bgp_connection_down = 0
++		self.stat_total_bgp_down_time_s = 0
++
+ 	def number (self):
+ 		return len(self._process)
+ 
+@@ -319,6 +324,22 @@ class Processes (object):
+ 		for process in neighbor.api[event]:
+ 			yield process
+ 
++	# Return a tuple of bgp statistics
++	# First is an integer representing the number of times the bgp connection went down
++	# Second is a decimal representing the total time (in seconds) the connection was down for
++	def get_stats (self):
++		return self.stat_bgp_connection_down, self.stat_total_bgp_down_time_s
++
++	def _updateStats (self, new_state):
++		# If we were previously down and we are NOT now, update the stat
++		if self.prev_state == "down" and new_state != "down":
++			self.stat_total_bgp_down_time_s += round(time.time() - self.time_last_down, 2)
++		# If we were not previously in a down state and we are now, update the stat
++		elif self.prev_state != "down" and new_state == "down":
++			self.stat_bgp_connection_down += 1
++			self.time_last_down = time.time()
++		self.prev_state = new_state
++
+ 	# do not do anything if silenced
+ 	# no-self-argument
+ 
+@@ -334,6 +355,7 @@ class Processes (object):
+ 	def up (self, neighbor):
+ 		for process in self._notify(neighbor,'neighbor-changes'):
+ 			self.write(process,self._encoder[process].up(neighbor),neighbor)
++		self._updateStats("up")
+ 
+ 	@silenced
+ 	def connected (self, neighbor):
+@@ -344,6 +366,7 @@ class Processes (object):
+ 	def down (self, neighbor, reason):
+ 		for process in self._notify(neighbor,'neighbor-changes'):
+ 			self.write(process,self._encoder[process].down(neighbor,reason),neighbor)
++		self._updateStats("down")
+ 
+ 	@silenced
+ 	def negotiated (self, neighbor, negotiated):
+-- 
+2.30.2
+

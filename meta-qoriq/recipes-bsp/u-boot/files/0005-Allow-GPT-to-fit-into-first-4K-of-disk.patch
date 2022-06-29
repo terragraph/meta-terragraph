@@ -1,0 +1,49 @@
+From 239e845e437ceb6f410470fed2c1bee254afb8e6 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Wed, 13 Dec 2017 21:06:49 -0500
+Subject: [PATCH 05/21] Allow GPT to fit into first 4K of disk
+
+Change default GPT table to be at most 24 entries in size.
+This allows us to fit before RCW in MMC. The table that
+is created this was is compatible with sgdisk/gdisk tools.
+---
+ disk/part_efi.c    | 6 ++++--
+ include/part_efi.h | 2 +-
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/disk/part_efi.c b/disk/part_efi.c
+index 2945892a24..9bc4ab7c3e 100644
+--- a/disk/part_efi.c
++++ b/disk/part_efi.c
+@@ -609,11 +609,13 @@ int gpt_fill_header(struct blk_desc *dev_desc, gpt_header *gpt_h,
+ 	gpt_h->header_size = cpu_to_le32(sizeof(gpt_header));
+ 	gpt_h->my_lba = cpu_to_le64(1);
+ 	gpt_h->alternate_lba = cpu_to_le64(dev_desc->lba - 1);
+-	gpt_h->last_usable_lba = cpu_to_le64(dev_desc->lba - 34);
++	gpt_h->last_usable_lba = cpu_to_le64(dev_desc->lba - 2 -
++	    BLOCK_CNT(GPT_ENTRY_NUMBERS * GPT_ENTRY_SIZE, dev_desc));
+ 	gpt_h->partition_entry_lba =
+ 		cpu_to_le64(partition_entries_offset(dev_desc));
+ 	gpt_h->first_usable_lba =
+-		cpu_to_le64(le64_to_cpu(gpt_h->partition_entry_lba) + 32);
++		cpu_to_le64(le64_to_cpu(gpt_h->partition_entry_lba) +
++		    BLOCK_CNT(GPT_ENTRY_NUMBERS * GPT_ENTRY_SIZE, dev_desc));
+ 	gpt_h->num_partition_entries = cpu_to_le32(GPT_ENTRY_NUMBERS);
+ 	gpt_h->sizeof_partition_entry = cpu_to_le32(sizeof(gpt_entry));
+ 	gpt_h->header_crc32 = 0;
+diff --git a/include/part_efi.h b/include/part_efi.h
+index 8525770445..2a5de1a47c 100644
+--- a/include/part_efi.h
++++ b/include/part_efi.h
+@@ -27,7 +27,7 @@
+ #define GPT_HEADER_SIGNATURE 0x5452415020494645ULL
+ #define GPT_HEADER_REVISION_V1 0x00010000
+ #define GPT_PRIMARY_PARTITION_TABLE_LBA 1ULL
+-#define GPT_ENTRY_NUMBERS		CONFIG_EFI_PARTITION_ENTRIES_NUMBERS
++#define GPT_ENTRY_NUMBERS		24
+ #define GPT_ENTRY_SIZE			128
+ 
+ #define PARTITION_SYSTEM_GUID \
+-- 
+2.17.1
+

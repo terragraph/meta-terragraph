@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if WebUI is enabled
+if [ -z "$WEBUI_ENABLED" ] || [ "$WEBUI_ENABLED" -ne "1" ]; then
+  echo "WebUI is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+RUN_WEBUI="/usr/sbin/webui"
+
+# extract the UI resources and set the static resource path
+WEBUI_BUNDLE_TAR="/etc/webui/tg95.tar.gz"
+if [ -f "$WEBUI_BUNDLE_TAR" ]; then
+  WEBUI_STATIC_DIR="/tmp/webui_tg95"
+  if [ ! -d "$WEBUI_STATIC_DIR" ]; then
+    mkdir "$WEBUI_STATIC_DIR"
+  fi
+  echo "Extracting $WEBUI_BUNDLE_TAR to $WEBUI_STATIC_DIR ..."
+  tar -zxvf "$WEBUI_BUNDLE_TAR" -C "$WEBUI_STATIC_DIR"
+  RUN_WEBUI="$RUN_WEBUI -static_resource_path $WEBUI_STATIC_DIR"
+fi
+
+exec $RUN_WEBUI 2>&1
+
+done

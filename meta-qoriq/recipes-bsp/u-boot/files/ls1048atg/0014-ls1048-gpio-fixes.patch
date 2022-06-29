@@ -1,0 +1,294 @@
+From a2b057688c2717934265f3ea04b19fe100c0b155 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Sun, 11 Feb 2018 15:28:14 -0800
+Subject: [PATCH 14/20] ls1048 gpio fixes
+
+---
+ board/freescale/ls1048a/ls1048a.c | 143 +++++++++++++++++++++---------
+ drivers/gpio/ls10xxa_gpio.c       |  28 ++++--
+ include/configs/ls1048atg.h       |  12 ++-
+ 3 files changed, 133 insertions(+), 50 deletions(-)
+
+diff --git a/board/freescale/ls1048a/ls1048a.c b/board/freescale/ls1048a/ls1048a.c
+index 4d09da5991..0d24dcd254 100644
+--- a/board/freescale/ls1048a/ls1048a.c
++++ b/board/freescale/ls1048a/ls1048a.c
+@@ -19,6 +19,7 @@
+ #include <asm/arch-fsl-layerscape/soc.h>
+ #include <asm/arch/ppa.h>
+ #include <hwconfig.h>
++#include <asm/gpio.h>
+ #include <asm/arch/fsl_serdes.h>
+ #include <asm/arch/soc.h>
+ 
+@@ -256,45 +257,6 @@ void board_retimer_init(void)
+ 	reg |= 0x70;
+ 	i2c_write(I2C_RETIMER_ADDR, 0x2F, 1, &reg, 1);
+ 
+-#ifdef	CONFIG_TARGET_LS1088AQDS
+-	/* Retimer is connected to I2C1_CH5 */
+-	//select_i2c_ch_pca9547(I2C_MUX_CH5);
+-
+-	/* Access to Control/Shared register */
+-	reg = 0x0;
+-	i2c_write(I2C_RETIMER_ADDR2, 0xff, 1, &reg, 1);
+-
+-	/* Read device revision and ID */
+-	i2c_read(I2C_RETIMER_ADDR2, 1, 1, &reg, 1);
+-	debug("Retimer version id = 0x%x\n", reg);
+-
+-	/* Enable Broadcast. All writes target all channel register sets */
+-	reg = 0x0c;
+-	i2c_write(I2C_RETIMER_ADDR2, 0xff, 1, &reg, 1);
+-
+-	/* Reset Channel Registers */
+-	i2c_read(I2C_RETIMER_ADDR2, 0, 1, &reg, 1);
+-	reg |= 0x4;
+-	i2c_write(I2C_RETIMER_ADDR2, 0, 1, &reg, 1);
+-
+-	/* Set data rate as 10.3125 Gbps */
+-	reg = 0x90;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x60, 1, &reg, 1);
+-	reg = 0xb3;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x61, 1, &reg, 1);
+-	reg = 0x90;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x62, 1, &reg, 1);
+-	reg = 0xb3;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x63, 1, &reg, 1);
+-	reg = 0xcd;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x64, 1, &reg, 1);
+-
+-	/* Select VCO Divider to full rate (000) */
+-	i2c_read(I2C_RETIMER_ADDR2, 0x2F, 1, &reg, 1);
+-	reg &= 0x0f;
+-	reg |= 0x70;
+-	i2c_write(I2C_RETIMER_ADDR2, 0x2F, 1, &reg, 1);
+-#endif
+ 	/*return the default channel*/
+ 	i2c_set_bus_num(I2C_CH_DEFAULT);
+ }
+@@ -311,8 +273,6 @@ int board_init(void)
+ {
+ 	init_final_memctl_regs();
+ 
+-	/* Retimer is connected to I2C4 */
+-	i2c_set_bus_num(4);
+ 	board_retimer_init();
+ 
+ #ifdef CONFIG_ENV_IS_NOWHERE
+@@ -325,6 +285,107 @@ int board_init(void)
+ #ifdef CONFIG_FSL_LS_PPA
+ 	ppa_init();
+ #endif
++
++#define GPIO(N,P)  (32 * ((N)-1) + (P))
++
++#define BB1_RF_WAKE  GPIO(2,29)
++
++#define BB2_PWR_ON GPIO(1, 3)  /*   3 */
++#define BB3_PWR_ON GPIO(1, 4)  /*   4 */
++#define BB4_PWR_ON GPIO(1, 5)  /*   5 */
++
++#define BB1_RST_N  GPIO(4,11)  /* 107 */
++#define BB2_RST_N  GPIO(2,17)  /*  49 */
++#define BB3_RST_N  GPIO(2,18)  /*  50 */
++#define BB4_RST_N  GPIO(2, 8)  /*  40 */
++
++#define BB1_REG_ON GPIO(4, 9)  /* 105 */
++#define BB2_REG_ON GPIO(2,19)  /*  51 */
++#define BB3_REG_ON GPIO(2,22)  /*  54 */
++#define BB4_REG_ON GPIO(4,13)  /* 109 */
++
++#define BB1_RF_CONN_RST_N GPIO(2,14) /*  46 */
++#define BB2_RF_CONN_RST_N GPIO(2,26) /*  58 */
++#define BB3_RF_CONN_RST_N GPIO(2,27)    /*  59 */
++#define BB4_RF_CONN_RST_N GPIO(2,28)    /*  60 */
++
++#define BB1_PERST  GPIO(2,15)  /*  47 */
++#define BB2_PERST  GPIO(1, 7)  /*   7 */
++#if 0
++#define BB3_PERST        Connected to PcieSW
++#define BB4_PERST        Connected to PcieSW
++#endif
++
++#define PCIESW_RESET GPIO(2,30)  /*  62 */
++
++#define GPS_1PPS_IN  GPIO(4,27)  /* 123 */
++#define GPS_1PPS_OUT GPIO(4,24)  /* 120 */
++
++#define LED_BLUE GPIO(1,26)  /*  26 */
++#define LED_GRN    GPIO(1,22)  /*  22 */
++#define LED_RED    GPIO(4,10)  /* 106 */
++
++#define SFP_TX_EN  GPIO(4, 8)  /* 104 */
++
++    /* SFP TX_EN set low */
++    gpio_direction_output(SFP_TX_EN, 0);
++
++
++    /* BB2/BB3/BB4 power on */
++    gpio_direction_output(BB2_PWR_ON, 0);
++    gpio_direction_output(BB3_PWR_ON, 0);
++    gpio_direction_output(BB4_PWR_ON, 0);
++    udelay(100000);
++
++    /* BB1/BB2 - Toggle REG_ON and RF_CONN_RST
++    *    - Set RST/PERST High
++    */
++    gpio_direction_output(BB1_REG_ON, 0);
++    gpio_direction_output(BB1_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB1_RST_N, 1);
++    gpio_direction_output(BB1_PERST, 1);
++
++    gpio_direction_output(BB2_REG_ON, 0);
++    gpio_direction_output(BB2_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB1_RST_N, 1);
++    gpio_direction_output(BB2_PERST, 1);
++
++    /* BB3/BB4 - Toggle REG_ON and RF_CONN_RST
++    *         - Set RST High
++    * PE_RST comes from switch
++    */
++    gpio_direction_output(BB3_REG_ON, 0);
++    gpio_direction_output(BB3_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB3_RST_N, 1);
++
++    gpio_direction_output(BB4_REG_ON, 0);
++    gpio_direction_output(BB4_RF_CONN_RST_N, 0);
++    gpio_direction_output(BB4_RST_N, 1);
++
++    udelay(500000);
++
++    gpio_set_value(BB1_REG_ON, 1);
++    gpio_set_value(BB1_RF_CONN_RST_N, 1);
++
++    gpio_set_value(BB2_REG_ON, 1);
++    gpio_set_value(BB2_RF_CONN_RST_N, 1);
++
++    gpio_set_value(BB3_REG_ON, 1);
++    gpio_set_value(BB3_RF_CONN_RST_N, 1);
++
++    gpio_set_value(BB4_REG_ON, 1);
++    gpio_set_value(BB4_RF_CONN_RST_N, 1);
++
++    /*
++    * After toggling baseband gpios need to
++    * reset the upstream pcie switch.  If not causing pcie
++    * problems and aborts.
++    */
++    printf("Resetting PCIE switch \n");
++    gpio_direction_output(PCIESW_RESET, 0);
++    udelay(500000);
++    gpio_set_value(PCIESW_RESET, 1);
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/gpio/ls10xxa_gpio.c b/drivers/gpio/ls10xxa_gpio.c
+index 05c25c3ccb..bb97d9d6c7 100644
+--- a/drivers/gpio/ls10xxa_gpio.c
++++ b/drivers/gpio/ls10xxa_gpio.c
+@@ -29,11 +29,25 @@ DECLARE_GLOBAL_DATA_PTR;
+ #ifdef CONFIG_FSL_LSCH3
+ # define MAX_NUM_BANKS	4
+ # define MAX_NUM_GPIOS	128
++
++#define setbits_gpio setbits_le32
++#define clrbits_gpio clrbits_le32
++#define out_gpio     out_le32
++#define in_gpio      in_le32
++
++
+ #else
+ # define MAX_NUM_BANKS	2
+ # define MAX_NUM_GPIOS	64
++
++#define setbits_gpio setbits_be32
++#define clrbits_gpio clrbits_be32
++#define out_gpio     out_be32
++#define in_gpio      in_be32
++
+ #endif
+ 
++
+ static struct gpio_state {
+ 	u32 def;
+ 	u32 iod;
+@@ -50,11 +64,14 @@ static void ls10xxa_gpio_set_dir(u32 pin, int dir)
+ 
+ 	if (dir == LS10XXA_GPIO_OUTPUT) {
+ 		gpio_info_cache[bank].iod |= mask;
+-		setbits_be32(&pgpio->gpdir, mask);
++		setbits_gpio(&pgpio->gpdir, mask);
+ 	} else {
+ 		gpio_info_cache[bank].iod &= ~mask;
+-		clrbits_be32(&pgpio->gpdir, mask);
++		clrbits_gpio(&pgpio->gpdir, mask);
+ 	}
++#ifdef CONFIG_FSL_LSCH3
++	setbits_gpio(&pgpio->gpibe, mask);
++#endif
+ 
+ 	gpio_info_cache[bank].def |= mask;
+ }
+@@ -74,16 +91,15 @@ static int ls10xxa_gpio_output(u32 pin, u32 val)
+ 		return  0;
+ 
+ 	/* Read old value */
+-	reg = in_be32(&pgpio->gpdat);
++	reg = in_gpio(&pgpio->gpdat);
+ 	/* Change only bits we know the value for */
+ 	reg &= ~gpio_info_cache[bank].iod;
+-
+ 	if (val)
+ 		gpio_info_cache[bank].val |= mask;
+ 	else
+ 		gpio_info_cache[bank].val &= ~mask;
+ 	reg |= (gpio_info_cache[bank].val & gpio_info_cache[bank].iod);
+-	setbits_be32(&pgpio->gpdat, reg);
++	out_gpio(&pgpio->gpdat, reg);
+ 	return val ? 1 : 0;
+ }
+ 
+@@ -100,7 +116,7 @@ static int ls10xxa_gpio_input(u32 pin)
+ 		if (gpio_info_cache[bank].iod & mask)
+ 			dat = gpio_info_cache[bank].val;
+ 		else
+-			dat = in_be32(&pgpio->gpdat);
++			dat = in_gpio(&pgpio->gpdat);
+ 	} else /* We do now know */
+ 		dat = 0;
+ 
+diff --git a/include/configs/ls1048atg.h b/include/configs/ls1048atg.h
+index edf6df993c..e13eee30ed 100644
+--- a/include/configs/ls1048atg.h
++++ b/include/configs/ls1048atg.h
+@@ -88,9 +88,9 @@
+ #endif
+ 
+ /* EEPROM */
+-#define CONFIG_SYS_EEPROM_BUS_NUM		2
+-#define CONFIG_SYS_I2C_EEPROM_ADDR		0x5C
+-#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN		1
++#define CONFIG_SYS_EEPROM_BUS_NUM		1
++#define CONFIG_SYS_I2C_EEPROM_ADDR		0x54
++#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN		2
+ #define CONFIG_SYS_EEPROM_PAGE_WRITE_BITS	3
+ #define CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS	5
+ 
+@@ -191,6 +191,12 @@
+ #endif
+ #endif
+ 
++#define CONFIG_VID_FLS_ENV              "ls1048atg_vdd_mv"
++
++/* The lowest and highest voltage allowed for LS1088ARDB */
++#define VDD_MV_MIN                      819
++#define VDD_MV_MAX                      1212
++
+ /*  MMC  */
+ #ifdef CONFIG_MMC
+ #define CONFIG_SYS_FSL_MMC_HAS_CAPBLT_VS33
+-- 
+2.17.1
+

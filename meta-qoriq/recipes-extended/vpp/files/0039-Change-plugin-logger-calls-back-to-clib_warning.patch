@@ -1,0 +1,183 @@
+From 9b8a03068b555dad3a449087abb388a3785d1824 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 17 Sep 2021 16:21:46 -0700
+Subject: [PATCH] Change plugin logger calls back to clib_warning
+
+These plugin logger calls don't actually seem to print properly.
+Change them back to using clib_warning to actually show them all.
+TODO: fix logger initialization or whatever seems to be broken
+so that these logger calls work
+---
+ src/vlib/unix/plugin.c | 32 ++++++++++++++++----------------
+ src/vpp/api/plugin.c   |  8 ++++----
+ 2 files changed, 20 insertions(+), 20 deletions(-)
+
+diff --git a/src/vlib/unix/plugin.c b/src/vlib/unix/plugin.c
+index a714c7c29..3d689320c 100644
+--- a/src/vlib/unix/plugin.c
++++ b/src/vlib/unix/plugin.c
+@@ -186,7 +186,7 @@ load_one_plugin (plugin_main_t * pm, plugin_info_t * pi, int from_early_init)
+       error = r2_to_reg (&em, r2, reg);
+       if (error)
+ 	{
+-	  PLUGIN_LOG_ERR ("Bad r2 registration: %s\n", (char *) pi->name);
++	  clib_warning ("Bad r2 registration: %s\n", (char *) pi->name);
+ 	  return -1;
+ 	}
+       if (pm->plugins_default_disable)
+@@ -199,7 +199,7 @@ load_one_plugin (plugin_main_t * pm, plugin_info_t * pi, int from_early_init)
+ 				   &section);
+   if (error)
+     {
+-      PLUGIN_LOG_ERR ("Not a plugin: %s\n", (char *) pi->name);
++      clib_warning ("Not a plugin: %s\n", (char *) pi->name);
+       return -1;
+     }
+ 
+@@ -208,7 +208,7 @@ load_one_plugin (plugin_main_t * pm, plugin_info_t * pi, int from_early_init)
+ 
+   if (vec_len (data) != sizeof (*reg))
+     {
+-      PLUGIN_LOG_ERR ("vlib_plugin_registration size mismatch in plugin %s\n",
++      clib_warning ("vlib_plugin_registration size mismatch in plugin %s\n",
+ 		      (char *) pi->name);
+       goto error;
+     }
+@@ -223,18 +223,18 @@ process_reg:
+       pc = vec_elt_at_index (pm->configs, p[0]);
+       if (pc->is_disabled)
+ 	{
+-	  PLUGIN_LOG_NOTICE ("Plugin disabled: %s", pi->name);
++	  clib_warning ("Plugin disabled: %s", pi->name);
+ 	  goto error;
+ 	}
+       if (reg->default_disabled && pc->is_enabled == 0)
+ 	{
+-	  PLUGIN_LOG_NOTICE ("Plugin disabled (default): %s", pi->name);
++	  clib_warning ("Plugin disabled (default): %s", pi->name);
+ 	  goto error;
+ 	}
+     }
+   else if (reg->default_disabled)
+     {
+-      PLUGIN_LOG_NOTICE ("Plugin disabled (default): %s", pi->name);
++      clib_warning ("Plugin disabled (default): %s", pi->name);
+       goto error;
+     }
+ 
+@@ -245,7 +245,7 @@ process_reg:
+       (strncmp (vlib_plugin_app_version, version_required,
+ 		strlen (version_required))))
+     {
+-      PLUGIN_LOG_ERR ("Plugin %s version mismatch: %s != %s",
++      clib_warning ("Plugin %s version mismatch: %s != %s",
+ 		      pi->name, vlib_plugin_app_version,
+ 		      reg->version_required);
+       if (!(pc && pc->skip_version_check == 1))
+@@ -308,8 +308,8 @@ process_reg:
+ 
+   if (handle == 0)
+     {
+-      PLUGIN_LOG_ERR ("%s", dlerror ());
+-      PLUGIN_LOG_ERR ("Failed to load plugin '%s'", pi->name);
++      clib_warning ("%s", dlerror ());
++      clib_warning ("Failed to load plugin '%s'", pi->name);
+       goto error;
+     }
+ 
+@@ -336,7 +336,7 @@ process_reg:
+ 	    {
+ 	      u8 *err = format (0, "%s: %U%c", pi->name,
+ 				format_clib_error, error, 0);
+-	      PLUGIN_LOG_ERR ((char *) err);
++	      clib_warning ((char *) err);
+ 	      clib_error_free (error);
+ 	      dlclose (pi->handle);
+ 	      pi->handle = 0;
+@@ -344,14 +344,14 @@ process_reg:
+ 	    }
+ 	}
+       else
+-	PLUGIN_LOG_ERR ("Plugin %s: early init function %s set but not found",
++	clib_warning ("Plugin %s: early init function %s set but not found",
+ 			(char *) pi->name, reg->early_init);
+     }
+ 
+   if (reg->description)
+-    PLUGIN_LOG_NOTICE ("Loaded plugin: %s (%s)", pi->name, reg->description);
++    clib_warning ("Loaded plugin: %s (%s)", pi->name, reg->description);
+   else
+-    PLUGIN_LOG_NOTICE ("Loaded plugin: %s", pi->name);
++    clib_warning ("Loaded plugin: %s", pi->name);
+ 
+   vec_free (data);
+   elf_main_free (&em);
+@@ -522,7 +522,7 @@ vlib_load_new_plugins (plugin_main_t * pm, int from_early_init)
+       /* Plugin overridden? */
+       if (p)
+ 	{
+-	  PLUGIN_LOG_NOTICE ("Plugin '%s' overridden by '%s'", pi->name,
++	  clib_warning ("Plugin '%s' overridden by '%s'", pi->name,
+ 			     p[0]);
+ 	  vec_add1 (not_loaded_indices, i);
+ 	}
+@@ -561,7 +561,7 @@ vlib_load_new_plugins (plugin_main_t * pm, int from_early_init)
+ 	  if (pi->handle)
+ 	    {
+ 	      dlclose (pi->handle);
+-	      PLUGIN_LOG_NOTICE ("Unloaded plugin: %s", pi->name);
++	      clib_warning ("Unloaded plugin: %s", pi->name);
+ 	    }
+ 	  vec_free (pi->name);
+ 	  vec_free (pi->filename);
+@@ -595,7 +595,7 @@ vlib_plugin_early_init (vlib_main_t * vm)
+   if (pm->plugin_path == 0)
+     pm->plugin_path = format (0, "%s%c", vlib_plugin_path, 0);
+ 
+-  PLUGIN_LOG_DBG ("plugin path %s", pm->plugin_path);
++  clib_warning ("plugin path %s", pm->plugin_path);
+ 
+   pm->plugin_by_name_hash = hash_create_string (0, sizeof (uword));
+   pm->plugin_overrides_by_name_hash = hash_create_string (0, sizeof (uword));
+diff --git a/src/vpp/api/plugin.c b/src/vpp/api/plugin.c
+index 410d497a0..689a7c83c 100644
+--- a/src/vpp/api/plugin.c
++++ b/src/vpp/api/plugin.c
+@@ -48,7 +48,7 @@ load_one_vat_plugin (plugin_main_t * pm, plugin_info_t * pi)
+    */
+   if (handle == 0)
+     {
+-      PLUGIN_LOG_ERR ("%s", dlerror ());
++      clib_warning ("%s", dlerror ());
+       return 0;
+     }
+ 
+@@ -57,7 +57,7 @@ load_one_vat_plugin (plugin_main_t * pm, plugin_info_t * pi)
+   register_handle = dlsym (pi->handle, "vat_plugin_register");
+   if (register_handle == 0)
+     {
+-      PLUGIN_LOG_ERR ("%s: symbol vat_plugin_register not found", pi->name);
++      clib_warning ("%s: symbol vat_plugin_register not found", pi->name);
+       dlclose (handle);
+       return 0;
+     }
+@@ -69,14 +69,14 @@ load_one_vat_plugin (plugin_main_t * pm, plugin_info_t * pi)
+   if (error)
+     {
+       u8 *err = format (0, "%U%c", format_clib_error, error, 0);
+-      PLUGIN_LOG_ERR ((char *) err);
++      clib_warning ((char *) err);
+       clib_error_free (error);
+       dlclose (handle);
+       pi->handle = 0;
+       return 1;
+     }
+ 
+-  PLUGIN_LOG_NOTICE ("Loaded plugin: %s", pi->name);
++  clib_warning ("Loaded plugin: %s", pi->name);
+ 
+   return 0;
+ }
+-- 
+2.30.2
+

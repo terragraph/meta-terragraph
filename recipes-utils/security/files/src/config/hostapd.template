@@ -1,0 +1,17 @@
+ctrl_interface=/var/run/hostapd_${ifname}
+interface=${ifname}
+# driver=nl80211
+hw_mode=ad
+channel=2
+wpa=2
+
+# Note: different from supplicant, do not use ""
+ssid=terragraph
+wpa_psk_file=/var/run/hostapd.wpa_psk
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=GCMP
+rsn_pairwise=GCMP
+wpa_group_rekey=-1
+
+#logger_syslog_level=4
+logger_stdout_level=7

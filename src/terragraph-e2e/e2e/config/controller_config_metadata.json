@@ -1,0 +1,1101 @@
+{
+  "flags": {
+    "v": {
+      "desc": "Show all VLOG(m) messages for m <= this",
+      "action": "UPDATE_GLOG_LEVEL",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-2147483648, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Logging"
+    },
+    "listen_addr": {
+      "desc": "The IP address to bind to",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Host Configuration"
+    },
+    "minion_router_port": {
+      "desc": "The port controller listens on for minions",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Host Configuration"
+    },
+    "app_router_port": {
+      "desc": "The port controller listens on for apps",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Host Configuration"
+    },
+    "monitor_router_port": {
+      "desc": "The zmq router port on which the monitor listens on",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Host Configuration"
+    },
+    "monitor_pub_port": {
+      "desc": "The zmq publish port on which the monitor binds",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Host Configuration"
+    },
+    "bstar_primary": {
+      "desc": "The primary (true) or backup (false) controller in the high availability configuration",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "tag": "High Availability"
+    },
+    "bstar_pub_port": {
+      "desc": "The port that the controller publishes primary-backup state information on in the high availability configuration",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "High Availability"
+    },
+    "bstar_peer_ip": {
+      "desc": "[DEPRECATED: use 'bstar_peer_host' instead] The IP address of the peer controller in the high availability configuration; if empty, this feature will be disabled",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "High Availability"
+    },
+    "bstar_peer_host": {
+      "desc": "The hostname or IP address of the peer controller in the high availability configuration; if empty, this feature will be disabled",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "High Availability"
+    },
+    "bstar_peer_pub_port": {
+      "desc": "The publisher port on the peer controller in the high availability configuration",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "High Availability"
+    },
+    "bstar_heartbeat_period_ms": {
+      "desc": "Period for heartbeats between controllers, in milliseconds",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "High Availability"
+    },
+    "bstar_failover_missed_heartbeats": {
+      "desc": "Number of missed heartbeats before declaring the other controller 'dead'",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "High Availability"
+    },
+    "bstar_primary_recovery_heartbeats": {
+      "desc": "If the backup is 'active' and the primary comes back online, the backup will yield to the primary (i.e. automatic recovery) after receiving this number of successive heartbeats (0 to disable). Ignored on primary.",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[0, 2147483647]]
+      },
+      "sync": true,
+      "tag": "High Availability"
+    },
+    "disable_bstar": {
+      "desc": "Whether to disable the high availability feature",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "tag": "High Availability"
+    },
+    "node_alive_timeout": {
+      "desc": "Mark a node as offline if no heartbeat is received within this interval",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_extended_dampen_interval": {
+      "desc": "The minimum time before re-igniting the same link after 'linkup_extended_dampen_failure_interval' of failed ignition attempts",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_extended_dampen_failure_interval": {
+      "desc": "The minimum duration of successive failed ignition attempts across the same link before changing the dampen interval to 'linkup_extended_dampen_interval'",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_backup_cn_link_interval": {
+      "desc": "The minimum time that must elapse before trying to ignite using backup links (starting from when a DN-to-CN link could have been ignited from either a primary or backup link)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_ignore_dampen_interval_after_resp": {
+      "desc": "Whether to ignore the regular dampen interval upon receiving a link-down event from a node, allowing for quicker ignition attempts (the extended dampen interval is not affected by this setting)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "enable_linkup_slot_exclusion": {
+      "desc": "Whether to enable the Slot Exclusion feature during initial beamforming",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_exclusion_distance_short": {
+      "desc": "The short distance threshold (in meters) used to determine initial beamforming exclusion set",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-32768, 32767]]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_exclusion_distance_long": {
+      "desc": "The long distance threshold (in meters) used to determine initial beamforming exclusion set",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-32768, 32767]]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "linkup_exclusion_angle_rel": {
+      "desc": "The relative link angle (in degrees) used to determine initial beamforming exclusion set",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-32768, 32767]]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "routing_adjacencies_dump_interval": {
+      "desc": "The time interval at which the controller requests the full dump of routing adjacencies from a minion's KvStore",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "topology_report_interval": {
+      "desc": "The time interval at which the controller records statistics for node/link status",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "status_reports_interval": {
+      "desc": "The time interval at which various controller apps sync with the latest status reports (i.e. heartbeats) received from nodes",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "status_report_throttle_interval": {
+      "desc": "Do not process successive status reports (i.e. heartbeats) received from nodes within this 'throttle' interval",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "full_status_report_interval": {
+      "desc": "Request full status reports from minions at this interval (as a safeguard only)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "config_staged_rollout_enabled": {
+      "desc": "Whether to roll out config changes in a staged manner",
+      "action": "REBOOT",
+      "type": "BOOLEAN",
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "config_batch_timeout_s": {
+      "desc": "Time period in seconds for a config change to be successfully applied to a node",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "consecutive_reconfig_delay_s": {
+      "desc": "The minimum time period in seconds between consecutive failed node configs",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "config_actions_req_timeout_s": {
+      "desc": "Time period in seconds for controller to aggregate node responses to config actions requests to minions",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "firmware_parameter_update_delay": {
+      "desc": "Number of BWGD intervals to delay firmware updates to allow for synchronization between nodes",
+      "action": "UPDATE_GFLAG",
+      "type": "INTEGER",
+      "strVal": {
+        "intRanges": [[0, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "unknown_hw_queries_enabled": {
+      "desc": "Whether to request base configs and metadata from nodes running unknown hardware. If this is disabled, config management will just be disabled for those nodes.",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "unknown_hw_config_req_delay_s": {
+      "desc": "The minimum time period in seconds between consecutive requests for base configs from nodes running unknown hardware with the same board ID",
+      "action": "UPDATE_GFLAG",
+      "type": "INTEGER",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Config Management"
+    },
+    "enable_bt_tracker_upgrades": {
+      "desc": "Whether to enable seeding of upgrade images using BitTorrent",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Software Upgrades"
+    },
+    "bt_tracker_ipv6_global_addressable_ifname": {
+      "desc": "The globally addressable ipv6 interface on the controller (if running the BitTorrent tracker)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Software Upgrades"
+    },
+    "bt_tracker_override": {
+      "desc": "The external address of the BitTorrent tracker used by nodes to retrieve peer info (e.g. http://[::1]:6969/announce)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Software Upgrades"
+    },
+    "bt_seeder_port": {
+      "desc": "The port of the BitTorrent seeder used for image upgrades",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 65535]]
+      },
+      "tag": "Software Upgrades"
+    },
+    "local_bt_tracker_override": {
+      "desc": "The local address of the BitTorrent tracker used by the controller to seed image upgrades (e.g. http://chihaya:6969/announce)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Software Upgrades"
+    },
+    "bt_announce_ip": {
+      "desc": "The external IP of the controller that is announced to other BitTorrent clients for image upgrades",
+      "action": "REBOOT",
+      "type": "STRING",
+      "tag": "Software Upgrades"
+    },
+    "bt_high_performance_seed": {
+      "desc": "Enable 'high performance seed' mode in libtorrent",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Software Upgrades"
+    },
+    "bt_num_active_seeds": {
+      "desc": "The number of active seeding and downloading torrents the queueing mechanism allows (-1 = unlimited)",
+      "action": "REBOOT",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[-1, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Software Upgrades"
+    },
+    "bt_peer_tos": {
+      "desc": "The ToS (type of service) byte set in the IP header of every packet sent to peers (-1 = libtorrent default)",
+      "action": "REBOOT",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[-1, 255]]
+      },
+      "sync": true,
+      "tag": "Software Upgrades"
+    },
+    "golden_image_check_interval_s": {
+      "desc": "The interval (in seconds) at which nodes may be automatically upgraded to the 'golden image' (if configured), or 0 to disable",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[0, 2147483647]]
+      },
+      "sync": true,
+      "tag": "Software Upgrades"
+    },
+    "set_golden_image_after_commits": {
+      "desc": "Whether to automatically update the golden image version (in controller config) after successful commits",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Software Upgrades"
+    },
+    "scan_disable_periodic": {
+      "desc": "Kill switch to disable automatic periodic PBF and IM scans by the controller. Manual scans initiated with `tg` will still work",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Scans"
+    },
+    "scan_max_results": {
+      "desc": "Hold at most this many scan results in memory. Remove oldest result if new result goes above this limit. A result holds measurements of a single initiator and all corresponding responder nodes",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 4294967295]]
+      },
+      "sync": true,
+      "tag": "Scans"
+    },
+    "enable_airtime_auto_alloc": {
+      "desc": "Whether to enable automatic fair airtime allocation",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Airtime Allocation"
+    },
+    "airtime_ul_dl_ratio": {
+      "desc": "Percentage of uplink traffic to allow as a fraction of downlink traffic",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "floatRanges": [[0.0, 1.0]]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "airtime_alloc_update_interval": {
+      "desc": "The minimum time interval at which the controller will recompute the airtime allocations for the entire network",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "enable_centralized_prefix_alloc": {
+      "desc": "Whether to enable centralized prefix allocation",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "enable_deterministic_prefix_alloc": {
+      "desc": "Whether to enable deterministic prefix allocation",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "centralized_prefix_update_interval": {
+      "desc": "The time interval at which the controller will propogate any allocated network prefixes to a minion's KvStore (when centralized or deterministic prefix allocation mode is enabled)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "enable_pop_prefix_broadcast": {
+      "desc": "If enabled, broadcast prefix allocations to all POP nodes instead of a single random POP node (for use when POP nodes cannot reach each other)",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "sysdump_fileserver_url": {
+      "desc": "File server URL for pushing sysdump archives",
+      "action": "UPDATE_GFLAG",
+      "type": "STRING",
+      "sync": true,
+      "tag": "Debug"
+    },
+    "enable_zap_apps_sock": {
+      "desc": "Whether to enable ZAP on the apps sock, which will log IP addresses and ZMQ IDs for each request",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Debug"
+    },
+    "enable_zap_minions_sock": {
+      "desc": "Whether to enable ZAP on the minions sock, which will log IP addresses and ZMQ IDs for each request",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Debug"
+    },
+    "enable_create_intrasite_links": {
+      "desc": "Whether to enable automatic intrasite wired link creation",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
+    "upgrade_image_http_path": {
+      "desc": "The HTTP path for node upgrade images",
+      "action": "REBOOT",
+      "type": "STRING",
+      "sync": true,
+      "tag": "Software Upgrades"
+    }
+  },
+  "ignitionParams": {
+    "enable": {
+      "desc": "The state of network-wide ignition",
+      "action": "REBOOT",
+      "type": "BOOLEAN",
+      "sync": true
+    },
+    "linkUpInterval": {
+      "desc": "The ignition cycle interval, i.e. the minimum time between igniting batches of links (in seconds)",
+      "action": "REBOOT",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 2147483647]]
+      },
+      "sync": true
+    },
+    "linkUpDampenInterval": {
+      "desc": "The minimum time before re-igniting the same link if no link status was reported to the controller (in seconds)",
+      "action": "REBOOT",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 2147483647]]
+      },
+      "sync": true
+    },
+    "linkAutoIgnite": {
+      "desc": "The per-link auto ignition map (link name : enable). This will only take effect if network-wide ignition is enabled, and is only intended to turn ignition of specific links off.",
+      "action": "REBOOT",
+      "type": "MAP",
+      "mapVal": {
+        "type": "BOOLEAN"
+      },
+      "sync": true
+    }
+  },
+  "scanParams": {
+    "scanSchedule": {
+      "imScanTimeoutSec": {
+        "desc": "Interval in seconds between periodic IM (interference measurement) scans",
+        "action": "UPDATE_SCAN_CONFIG",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[-2147483648, 2147483647]]
+        },
+        "sync": true
+      },
+      "combinedScanTimeoutSec": {
+        "desc": "Interval in seconds between periodic combined scans",
+        "action": "UPDATE_SCAN_CONFIG",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[-2147483648, 2147483647]]
+        },
+        "sync": true
+      },
+      "pbfEnable": {
+        "desc": "Whether PBF (periodic beamforming) is enabled for combined scans",
+        "action": "UPDATE_SCAN_CONFIG",
+        "type": "BOOLEAN",
+        "sync": true
+      },
+      "rtcalEnable": {
+        "desc": "Whether RTCAL (runtime calibration) is enabled for combined scans",
+        "action": "UPDATE_SCAN_CONFIG",
+        "type": "BOOLEAN",
+        "sync": true
+      },
+      "cbfEnable": {
+        "desc": "Whether CBF (coordinated beamforming) is enabled for combined scans",
+        "action": "UPDATE_SCAN_CONFIG",
+        "type": "BOOLEAN",
+        "sync": true
+      },
+      "imEnable": {
+        "desc": "Whether fast IM (interference measurement) scan is enabled for combined scans",
+        "action": "UPDATE_SCAN_CONFIG",
+        "type": "BOOLEAN",
+        "sync": true
+      }
+    },
+    "cbfConfigJson": {
+      "desc": "The CBF (coordinated beamforming) scan config, serialized as JSON - DO NOT edit this directly!",
+      "action": "NO_ACTION",
+      "type": "STRING",
+      "sync": true
+    },
+    "centralLaTpcConfig": {
+      "maxMcsAutoEnable": {
+        "desc": "Enable automatic max MCS assignment based on periodic scan results",
+        "action": "NO_ACTION",
+        "type": "BOOLEAN",
+        "sync": true
+      },
+      "maxMcsLow": {
+        "desc": "Lowest MCS value set by automatic max MCS assignment",
+        "action": "NO_ACTION",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[2, 12]]
+        },
+        "sync": true
+      },
+      "maxMcsHigh": {
+        "desc": "Highest MCS value set by automatic max MCS assignment",
+        "action": "NO_ACTION",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[2, 12]]
+        },
+        "sync": true
+      },
+      "maxMcsInrLimit": {
+        "desc": "Victim link INR threshold (in dB) used for automatic max MCS assignment",
+        "action": "NO_ACTION",
+        "type": "FLOAT",
+        "floatVal": {
+          "allowedRanges": [[-100.0, 100.0]]
+        },
+        "sync": true
+      },
+      "maxMcsInrAlpha": {
+        "desc": "Victim link power headroom scale constant used to determine INR threshold for automatic max MCS assignment",
+        "action": "NO_ACTION",
+        "type": "FLOAT",
+        "floatVal": {
+          "allowedRanges": [[0.0, 1.0]]
+        },
+        "sync": true
+      },
+      "maxMcsTxPowerMin": {
+        "desc": "Minimum TX power index used for automatic max MCS assignment algorithm",
+        "action": "NO_ACTION",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[0, 28]]
+        },
+        "sync": true
+      },
+      "maxMcsTxPowerMax": {
+        "desc": "Maximum TX power index used for automatic max MCS assignment algorithm",
+        "action": "NO_ACTION",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[0, 28]]
+        },
+        "sync": true
+      }
+    }
+  },
+  "prefixAllocParams": {
+    "seedPrefix": {
+      "desc": "Network seed prefix used for centralized and deterministic prefix allocation",
+      "action": "UPDATE_PREFIX_ALLOC_PARAMS",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|([0-9a-fA-F:]+)/([0-9]+)"
+      },
+      "sync": true
+    },
+    "allocPrefixLen": {
+      "desc": "Length of per-node allocated prefixes",
+      "action": "UPDATE_PREFIX_ALLOC_PARAMS",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[0, 128]]
+      },
+      "sync": true
+    }
+  },
+  "statsAgentParams": {
+    "sources": {
+      "desc": "The stats sources",
+      "action": "RESTART_STATS_AGENT",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "enabled": {
+              "desc": "Enable stats for this source",
+              "type": "BOOLEAN",
+              "required": true
+            },
+            "zmq_url": {
+              "desc": "The ZMQ endpoint",
+              "type": "STRING",
+              "required": true,
+              "strVal": {
+                "regexMatches": "(inproc://(.{1,256}))|(ipc://(.{1,107}))|(tcp://((\\*|[^:]+|\\[[^\\]]+\\]):(\\*|[0-9]{1,5}))(;((\\*|[^:]+|\\[[^]]+\\]):(\\*|[0-9]{1,5})))?)"
+              }
+            }
+          }
+        }
+      },
+      "sync": true
+    },
+    "statsBlacklist": {
+      "desc": "The stats block list, comprised of a map of group names to regex strings to block",
+      "action": "RESTART_STATS_AGENT",
+      "type": "MAP",
+      "mapVal": {
+        "type": "STRING"
+      },
+      "sync": true
+    },
+    "endpointParams": {
+      "kafkaParams": {
+        "enabled": {
+          "desc": "Enable data publishing to Kafka",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN",
+          "sync": true
+        },
+        "config": {
+          "brokerEndpointList": {
+            "desc": "[metadata.broker.list] Kafka broker endpoint list (comma-separated)",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          },
+          "queueBufferingMaxMs": {
+            "desc": "[queue.buffering.max.ms] Delay in milliseconds to wait for messages in the producer queue to accumulate before constructing message batches (MessageSets) to transmit to brokers. A higher value allows larger and more effective (less overhead, improved compression) batches of messages to accumulate at the expense of increased message delivery latency.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[0, 900000]]
+            },
+            "sync": true
+          },
+          "queueBufferingMaxMessages": {
+            "desc": "[queue.buffering.max.messages] Maximum number of messages allowed on the producer queue. This queue is shared by all topics and partitions.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[1, 10000000]]
+            },
+            "sync": true
+          },
+          "queueBufferingMaxKbytes": {
+            "desc": "[queue.buffering.max.kbytes] Maximum total message size sum allowed on the producer queue. This queue is shared by all topics and partitions. This property has higher priority than queue.buffering.max.messages.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[1, 2097151]]
+            },
+            "sync": true
+          },
+          "batchNumMessages": {
+            "desc": "[batch.num.messages] Maximum number of messages batched in one MessageSet. The total MessageSet size is also limited by message.max.bytes.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[1, 1000000]]
+            },
+            "sync": true
+          },
+          "enableIdempotence": {
+            "desc": "[enable.idempotence] When set to true, the producer will ensure that messages are successfully produced exactly once and in the original produce order.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "BOOLEAN",
+            "sync": true
+          },
+          "compressionCodec": {
+            "desc": "[compression.codec] Compression codec to use for compressing message sets",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "strVal": {
+              "allowedValues": ["none", "gzip", "snappy", "lz4", "zstd"]
+            },
+            "sync": true
+          },
+          "compressionLevel": {
+            "desc": "[compression.level] Compression level parameter for algorithm selected by configuration property compression.codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: [0-9] for gzip; [0-12] for lz4; only 0 for snappy; -1 = codec-dependent default compression level.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[-1, 12]]
+            },
+            "sync": true
+          },
+          "messageTimeoutMs": {
+            "desc": "[message.timeout.ms] Local message timeout. This value is only enforced locally and limits the time a produced message waits for successful delivery. A time of 0 is infinite. This is the maximum time librdkafka may use to deliver a message (including retries). Delivery error occurs when either the retry count or the message timeout are exceeded.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[0, 2147483647]]
+            },
+            "sync": true
+          }
+        },
+        "topics": {
+          "eventsTopic": {
+            "desc": "Kafka events topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          },
+          "hfStatsTopic": {
+            "desc": "Kafka high-frequency stats topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          },
+          "statsTopic": {
+            "desc": "Kafka stats topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          },
+          "scanResultsTopic": {
+            "desc": "Kafka scan results topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          },
+          "iperfResultsTopic": {
+            "desc": "Kafka iperf results topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          },
+          "pingResultsTopic": {
+            "desc": "Kafka ping results topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "sync": true
+          }
+        }
+      },
+      "odsParams": {
+        "enabled": {
+          "desc": "Enable data publishing to ODS",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN",
+          "sync": true
+        },
+        "remoteEndpoint": {
+          "desc": "ODS endpoint URL",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        },
+        "accessToken": {
+          "desc": "Access token for the ODS endpoint",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        },
+        "categoryId": {
+          "desc": "Category ID for submitting to ODS endpoint",
+          "action": "RESTART_STATS_AGENT",
+          "type": "INTEGER",
+          "sync": true
+        },
+        "entityPrefix": {
+          "desc": "Prefix for ODS entity name",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        },
+        "keyPrefix": {
+          "desc": "Prefix for ODS key name",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        }
+      },
+      "pelicanParams": {
+        "enabled": {
+          "desc": "Enable data publishing to Pelican",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN",
+          "sync": true
+        },
+        "remoteEndpoint": {
+          "desc": "Pelican endpoint URL",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        },
+        "accessToken": {
+          "desc": "Access token for the Pelican endpoint",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        }
+      },
+      "scribeParams": {
+        "enabled": {
+          "desc": "Enable data publishing to Scribe",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN",
+          "sync": true
+        },
+        "remoteEndpoint": {
+          "desc": "Scribe endpoint URL",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING",
+          "sync": true
+        }
+      }
+    },
+    "nmsPublisherParams": {
+      "defaultStatsInterval": {
+        "desc": "The interval (in seconds) at which stats are pushed to the aggregator",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        },
+        "sync": true
+      },
+      "highFrequencyStatsInterval": {
+        "desc": "The interval (in seconds) at which high-frequency stats are pushed to the aggregator",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        },
+        "sync": true
+      },
+      "statsBufferSize": {
+        "desc": "The maximum number of queued stats (when reached, older stats are dropped)",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        },
+        "sync": true
+      },
+      "eventLogsBufferSize": {
+        "desc": "The maximum number of queued event logs (when reached, older event logs are dropped)",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        },
+        "sync": true
+      },
+      "zmqSndHwm": {
+        "desc": "The ZMQ high watermark for outbound messages to the aggregator",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[0, 2147483647]]
+        },
+        "sync": true
+      },
+      "highFrequencyStatsWhitelist": {
+        "desc": "The high-frequency stats whitelist, comprised of a map of group names to regex strings to allow",
+        "action": "RESTART_STATS_AGENT",
+        "type": "MAP",
+        "mapVal": {
+          "type": "STRING"
+        },
+        "sync": true
+      }
+    },
+    "collectors": {
+      "openrStatsEnabled": {
+        "desc": "Collect counters from Open/R via Thrift",
+        "action": "RESTART_STATS_AGENT",
+        "type": "BOOLEAN",
+        "sync": true
+      }
+    }
+  },
+  "topologyParams": {
+    "enabledChannels": {
+      "desc": "List of enabled transmission channels for topology. Channels set manually ignore this configuration. If set to null, only channel 2 will be considered enabled.",
+      "action": "UPDATE_CHANNEL_ASSIGNMENT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[1-4](,[1-4])*"
+      },
+      "sync": true
+    }
+  },
+  "upgradeParams": {
+    "goldenImage": {
+      "enabled": {
+        "desc": "Enable automatic upgrades to the specified golden image",
+        "action": "NO_ACTION",
+        "type": "BOOLEAN",
+        "sync": true
+      },
+      "versions": {
+        "desc": "Image versions of the golden image (map of hardware board IDs to version strings)",
+        "action": "NO_ACTION",
+        "type": "MAP",
+        "mapVal": {
+          "type": "STRING"
+        },
+        "sync": true
+      },
+      "batchLimit": {
+        "desc": "Maximum number of nodes to upgrade simultaneously (0 = no limit)",
+        "action": "NO_ACTION",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[0, 2147483647]]
+        },
+        "sync": true
+      },
+      "timeoutSec": {
+        "desc": "The timeout, in seconds, for each upgrade individual stage (i.e. prepare/commit)",
+        "action": "NO_ACTION",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        },
+        "sync": true
+      },
+      "timeRestriction": {
+        "desc": "If set, automatic upgrades to the golden image can only occur within the given timeframe. The format of this field is '<days>:<timeframe>:<timezone>', specifically: '<any|mon,tue,wed,thu,fri,sat,sun>:<any|hhmm-hhmm>:<utc|local>' (without quotes). The timeframe is specified in 24-hour time, and the timezone refers to server time. For example, 'mon,tue,wed,thu,fri:0000-0430:utc' would allow upgrades on weekdays from midnight through 4:30am (UTC).",
+        "action": "NO_ACTION",
+        "type": "STRING",
+        "strVal": {
+          "regexMatches": "|((any|(mon|tue|wed|thu|fri|sat|sun)(,(mon|tue|wed|thu|fri|sat|sun))*):(any|([01][0-9]|2[0-3])[0-5][0-9]-([01][0-9]|2[0-3])[0-5][0-9]):(utc|local))"
+        },
+        "sync": true
+      },
+      "nodeBlacklist": {
+        "desc": "The node blacklist for golden image upgrades, mapping node names to a specific blacklisted version",
+        "action": "NO_ACTION",
+        "type": "MAP",
+        "mapVal": {
+          "type": "STRING"
+        },
+        "sync": true
+      }
+    }
+  }
+}

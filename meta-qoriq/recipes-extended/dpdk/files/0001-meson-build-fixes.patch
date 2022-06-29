@@ -1,0 +1,374 @@
+From b629c5806d7bfc33b32f6a2378db4f8a466449e5 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Mon, 2 Sep 2019 15:46:53 +0300
+Subject: [PATCH] meson build fixes
+
+Set cross_prefix in kernel module builds manually since
+the programmatic way fails for us.
+
+Changes originally for dpdk 18.11 from Oliver Giles <oliver_g@radwin.com>:
+
+1. separate native buildtools from target compilation
+
+   This allows us to independently build pmdinfogen, which
+   can then be used to build in a new environment for the
+   target.
+
+2. Allow configurable kernel module install path
+
+   Instead of using a subdirectory of the standard install
+   prefix.
+---
+ buildtools/meson.build            |  4 +-
+ buildtools/pkg-config/meson.build |  4 +-
+ buildtools/pmdinfogen/meson.build |  2 +-
+ config/meson.build                |  6 ++-
+ drivers/meson.build               |  2 +-
+ examples/l3fwd/meson.build        |  2 +-
+ examples/meson.build              |  3 +-
+ kernel/linux/kni/meson.build      |  4 +-
+ kernel/linux/meson.build          | 72 +++++++++++++++++--------------
+ lib/meson.build                   | 46 +++++++++++---------
+ meson.build                       | 20 ++++++---
+ meson_options.txt                 |  6 ++-
+ 12 files changed, 100 insertions(+), 71 deletions(-)
+
+diff --git a/buildtools/meson.build b/buildtools/meson.build
+index 36161afe48..b5c191a8e4 100644
+--- a/buildtools/meson.build
++++ b/buildtools/meson.build
+@@ -2,7 +2,6 @@
+ # Copyright(c) 2017-2019 Intel Corporation
+ 
+ pkgconf = find_program('pkg-config', 'pkgconf', required: false)
+-pmdinfo = find_program('gen-pmdinfo-cfile.sh')
+ check_symbols = find_program('check-symbols.sh')
+ ldflags_ibverbs_static = find_program('options-ibverbs-static.sh')
+ binutils_avx512_check = find_program('binutils-avx512-check.sh')
+@@ -17,3 +16,6 @@ endif
+ list_dir_globs = py3 + files('list-dir-globs.py')
+ map_to_win_cmd = py3 + files('map_to_win.py')
+ sphinx_wrapper = py3 + files('call-sphinx-build.py')
++install_data('gen-pmdinfo-cfile.sh',
++	install_dir: 'bin',
++	install_mode: 'rwxr-xr-x')
+diff --git a/buildtools/pkg-config/meson.build b/buildtools/pkg-config/meson.build
+index 39a8fd1c8e..5a7735d0da 100644
+--- a/buildtools/pkg-config/meson.build
++++ b/buildtools/pkg-config/meson.build
+@@ -47,11 +47,11 @@ pkg.generate(name: 'DPDK', # main DPDK pkgconfig file
+ 	description: '''The Data Plane Development Kit (DPDK).
+ Note that CFLAGS might contain an -march flag higher than typical baseline.
+ This is required for a number of static inline functions in the public headers.''',
+-	requires: ['libdpdk-libs', libbsd], # may need libbsd for string funcs
++	requires: [libbsd], # may need libbsd for string funcs
+ 	                  # if libbsd is not enabled, then this is blank
+ 	libraries_private: ['-Wl,--whole-archive'] +
+ 			dpdk_drivers + dpdk_static_libraries +
+-			['-Wl,--no-whole-archive'] + platform_flags
++			['-Wl,--no-whole-archive'] + platform_flags + dpdk_extra_ldflags
+ )
+ 
+ # For static linking with dependencies as shared libraries,
+diff --git a/buildtools/pmdinfogen/meson.build b/buildtools/pmdinfogen/meson.build
+index 670528fac7..04deefc0ac 100644
+--- a/buildtools/pmdinfogen/meson.build
++++ b/buildtools/pmdinfogen/meson.build
+@@ -11,4 +11,4 @@ pmdinfogen_inc += include_directories('../../lib/librte_pci')
+ pmdinfogen = executable('pmdinfogen',
+ 	'pmdinfogen.c',
+ 	include_directories: pmdinfogen_inc,
+-	native: true)
++	install: true)
+diff --git a/config/meson.build b/config/meson.build
+index 851c56b598..ef01f2c921 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -109,9 +109,13 @@ dpdk_conf.set('RTE_ARCH_64', cc.sizeof('void *') == 8)
+ dpdk_conf.set('RTE_ARCH_32', cc.sizeof('void *') == 4)
+ 
+ if not is_windows
+-	add_project_link_arguments('-Wl,--no-as-needed', language: 'c')
++	add_project_link_arguments('-Wl,--no-as-needed,-Bdynamic', language: 'c')
++	dpdk_extra_ldflags += '-Wl,--no-as-needed,-Bdynamic'
+ endif
+ 
++add_project_link_arguments('-lcrypto', language: 'c')
++dpdk_extra_ldflags += '-lcrypto'
++
+ # use pthreads if available for the platform
+ if not is_windows
+ 	add_project_link_arguments('-pthread', language: 'c')
+diff --git a/drivers/meson.build b/drivers/meson.build
+index f7db4329bf..73ebd2a517 100644
+--- a/drivers/meson.build
++++ b/drivers/meson.build
+@@ -155,7 +155,7 @@ foreach subpath:subdirs
+ 						command: [pmdinfo, tmp_lib.full_path(),
+ 							'@OUTPUT@', pmdinfogen],
+ 						output: out_filename,
+-						depends: [pmdinfogen, tmp_lib])
++						depends: [tmp_lib])
+ 			endif
+ 
+ 			# now build the static driver
+diff --git a/examples/l3fwd/meson.build b/examples/l3fwd/meson.build
+index 0bd58b5e14..993a842834 100644
+--- a/examples/l3fwd/meson.build
++++ b/examples/l3fwd/meson.build
+@@ -7,7 +7,7 @@
+ # DPDK instance, use 'make'
+ 
+ allow_experimental_apis = true
+-deps += ['hash', 'lpm', 'eventdev']
++deps += ['net_dpaa2', 'hash', 'lpm', 'eventdev']
+ sources = files(
+ 	'l3fwd_em.c', 'l3fwd_lpm.c', 'l3fwd_event.c',
+ 	'l3fwd_event_internal_port.c', 'l3fwd_event_generic.c', 'main.c'
+diff --git a/examples/meson.build b/examples/meson.build
+index b8275fea8e..29b0dff4c4 100644
+--- a/examples/meson.build
++++ b/examples/meson.build
+@@ -106,7 +106,8 @@ foreach example: examples
+ 			link_whole: link_whole_libs,
+ 			link_args: ldflags,
+ 			c_args: cflags,
+-			dependencies: dep_objs)
++			dependencies: dep_objs,
++			install: true)
+ 	elif not allow_skips
+ 		error('Cannot build requested example "' + name + '"')
+ 	else
+diff --git a/kernel/linux/kni/meson.build b/kernel/linux/kni/meson.build
+index 46b71c7418..8dcfec8760 100644
+--- a/kernel/linux/kni/meson.build
++++ b/kernel/linux/kni/meson.build
+@@ -13,7 +13,7 @@ kni_sources = files(
+ custom_target('rte_kni',
+ 	input: kni_sources,
+ 	output: 'rte_kni.ko',
+-	command: ['make', '-j4', '-C', kernel_build_dir,
++	command: ['env', 'LDFLAGS=', 'make', '-j4', '-C', kernel_build_dir,
+ 		'M=' + meson.current_build_dir(),
+ 		'src=' + meson.current_source_dir(),
+ 		'MODULE_CFLAGS=-include ' + meson.source_root() + '/config/rte_config.h' +
+@@ -23,6 +23,6 @@ custom_target('rte_kni',
+ 		' -I' + meson.current_source_dir(),
+ 		'modules'] + cross_args,
+ 	depends: kni_mkfile,
+-	install: install,
++	install: true,
+ 	install_dir: kernel_install_dir,
+ 	build_by_default: get_option('enable_kmods'))
+diff --git a/kernel/linux/meson.build b/kernel/linux/meson.build
+index b434706796..07eb163225 100644
+--- a/kernel/linux/meson.build
++++ b/kernel/linux/meson.build
+@@ -4,14 +4,15 @@
+ subdirs = ['kni']
+ 
+ kernel_build_dir = get_option('kernel_dir')
+-kernel_install_dir = ''
+-install = not meson.is_cross_build()
++kernel_install_dir = get_option('kernel_install_dir')
++if kernel_install_dir == ''
++	kernel_install_dir = '/lib/modules/' + kernel_version + '/extra/dpdk'
++endif
+ cross_args = []
+ 
+ if not meson.is_cross_build()
+ 	# native build
+ 	kernel_version = run_command('uname', '-r').stdout().strip()
+-	kernel_install_dir = '/lib/modules/' + kernel_version + '/extra/dpdk'
+ 	if kernel_build_dir == ''
+ 		# use default path for native builds
+ 		kernel_build_dir = '/lib/modules/' + kernel_version + '/build'
+@@ -47,36 +48,41 @@ endif
+ if kernel_build_dir == ''
+ 	error('Need "kernel_dir" option for kmod compilation when cross-compiling')
+ endif
+-cross_compiler = find_program('c').path()
+-if cross_compiler.endswith('gcc')
+-	cross_prefix = run_command([py3, '-c', 'print("' + cross_compiler + '"[:-3])']).stdout().strip()
+-elif cross_compiler.endswith('clang')
+-	cross_prefix = ''
+-	found_target = false
+-	# search for '-target' and use the arg that follows
+-	# (i.e. the value of '-target') as cross_prefix
+-	foreach cross_c_arg : meson.get_cross_property('c_args')
+-		if found_target and cross_prefix == ''
+-			cross_prefix = cross_c_arg
+-		endif
+-		if cross_c_arg == '-target'
+-			found_target = true
+-		endif
+-	endforeach
+-	if cross_prefix == ''
+-		error('Didn\'t find -target and its value in' +
+-		      ' c_args in input cross-file.')
+-	endif
+-	linker = 'lld'
+-	foreach cross_c_link_arg : meson.get_cross_property('c_link_args')
+-		if cross_c_link_arg.startswith('-fuse-ld')
+-			linker = cross_c_link_arg.split('=')[1]
+-		endif
+-	endforeach
+-	cross_args += ['CC=@0@'.format(cross_compiler), 'LD=ld.@0@'.format(linker)]
+-else
+-	error('Unsupported cross compiler: @0@'.format(cross_compiler))
+-endif
++
++#cross_compiler = find_program('c').path()
++#if cross_compiler.endswith('gcc')
++#	cross_prefix = run_command([py3, '-c', 'print("' + cross_compiler + '"[:-3])']).stdout().strip()
++#elif cross_compiler.endswith('clang')
++#	cross_prefix = ''
++#	found_target = false
++#	# search for '-target' and use the arg that follows
++#	# (i.e. the value of '-target') as cross_prefix
++#	foreach cross_c_arg : meson.get_cross_property('c_args')
++#		if found_target and cross_prefix == ''
++#			cross_prefix = cross_c_arg
++#		endif
++#		if cross_c_arg == '-target'
++#			found_target = true
++#		endif
++#	endforeach
++#	if cross_prefix == ''
++#		error('Didn\'t find -target and its value in' +
++#		      ' c_args in input cross-file.')
++#	endif
++#	linker = 'lld'
++#	foreach cross_c_link_arg : meson.get_cross_property('c_link_args')
++#		if cross_c_link_arg.startswith('-fuse-ld')
++#			linker = cross_c_link_arg.split('=')[1]
++#		endif
++#	endforeach
++#	cross_args += ['CC=@0@'.format(cross_compiler), 'LD=ld.@0@'.format(linker)]
++#else
++#	error('Unsupported cross compiler: @0@'.format(cross_compiler))
++#endif
++
++# Terragraph Puma: the above doesn't work with our meson.cross file,
++# but the expected result is:
++cross_prefix = 'aarch64-poky-linux-'
+ 
+ cross_arch = host_machine.cpu_family()
+ if host_machine.cpu_family() == 'aarch64'
+diff --git a/lib/meson.build b/lib/meson.build
+index ed00f89146..85b81f65bc 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -12,28 +12,32 @@ libraries = [
+ 	'kvargs', # eal depends on kvargs
+ 	'telemetry', # basic info querying
+ 	'eal', # everything depends on eal
+-	'ring',
+-	'rcu', # rcu depends on ring
+-	'mempool', 'mbuf', 'net', 'meter', 'ethdev', 'pci', # core
++	'ring', 'mempool', 'mbuf', 'net', # core (cmdline depends on net)
+ 	'cmdline',
+-	'metrics', # bitrate/latency stats depends on this
+-	'hash',    # efd depends on this
+-	'timer',   # eventdev depends on this
+-	'acl', 'bbdev', 'bitratestats', 'cfgfile',
+-	'compressdev', 'cryptodev',
+-	'distributor', 'efd', 'eventdev',
+-	'gro', 'gso', 'ip_frag', 'jobstats',
+-	'kni', 'latencystats', 'lpm', 'member',
+-	'power', 'pdump', 'rawdev', 'regexdev',
+-	'rib', 'reorder', 'sched', 'security', 'stack', 'vhost',
+-	# ipsec lib depends on net, crypto and security
+-	'ipsec',
+-	#fib lib depends on rib
+-	'fib',
+-	# add pkt framework libs which use other libs from above
+-	'port', 'table', 'pipeline',
+-	# flow_classify lib depends on pkt framework table lib
+-	'flow_classify', 'bpf', 'graph', 'node']
++]
++if not get_option('buildtools_only')
++	libraries += [
++		'rcu', # rcu depends on ring
++		'meter', 'ethdev', 'pci', # rest of core
++		'metrics', # bitrate/latency stats depends on this
++		'hash',    # efd depends on this
++		'timer',   # eventdev depends on this
++		'acl', 'bbdev', 'bitratestats', 'cfgfile',
++		'compressdev', 'cryptodev',
++		'distributor', 'efd', 'eventdev',
++		'gro', 'gso', 'ip_frag', 'jobstats',
++		'kni', 'latencystats', 'lpm', 'member',
++		'power', 'pdump', 'rawdev', 'regexdev',
++		'rib', 'reorder', 'sched', 'security', 'stack', 'vhost',
++		# ipsec lib depends on net, crypto and security
++		'ipsec',
++		#fib lib depends on rib
++		'fib',
++		# add pkt framework libs which use other libs from above
++		'port', 'table', 'pipeline',
++		# flow_classify lib depends on pkt framework table lib
++		'flow_classify', 'bpf', 'graph', 'node']
++endif
+ 
+ if is_windows
+ 	libraries = [
+diff --git a/meson.build b/meson.build
+index 8e051f7f4e..54770cf1b6 100644
+--- a/meson.build
++++ b/meson.build
+@@ -44,14 +44,22 @@ global_inc = include_directories('.', 'config',
+ subdir('buildtools')
+ subdir('config')
+ 
+-# build libs and drivers
+-subdir('buildtools/pmdinfogen')
+ subdir('lib')
+-subdir('drivers')
+ 
+-# build binaries and installable tools
+-subdir('usertools')
+-subdir('app')
++if get_option('buildtools_only')
++	driver_classes = []
++	subdir('buildtools/pmdinfogen')
++else
++	pmdinfo = find_program('gen-pmdinfo-cfile.sh')
++	pmdinfogen = find_program('pmdinfogen')
++
++	# build libs and drivers
++	subdir('drivers')
++
++	# build binaries and installable tools
++	subdir('usertools')
++	subdir('app')
++endif
+ 
+ # build docs
+ subdir('doc')
+diff --git a/meson_options.txt b/meson_options.txt
+index f819346baf..356cce2acc 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -1,5 +1,7 @@
+ # Please keep these options sorted alphabetically.
+ 
++option('buildtools_only', type: 'boolean', value: false,
++	description: 'build buildtools only')
+ option('disable_drivers', type: 'string', value: '',
+ 	description: 'Comma-separated list of drivers to explicitly disable.')
+ option('drivers_install_subdir', type: 'string', value: 'dpdk/pmds-<VERSION>',
+@@ -17,7 +19,9 @@ option('ibverbs_link', type: 'combo', choices : ['static', 'shared', 'dlopen'],
+ option('include_subdir_arch', type: 'string', value: '',
+ 	description: 'subdirectory where to install arch-dependent headers')
+ option('kernel_dir', type: 'string', value: '',
+-	description: 'Path to the kernel for building kernel modules. Headers must be in $kernel_dir or $kernel_dir/build. Modules will be installed in /lib/modules.')
++	description: 'Path to the kernel for building kernel modules. Headers must be in $kernel_dir or $kernel_dir/build.')
++option('kernel_install_dir', type: 'string', value: '',
++	description: 'path to install kernel modules, if unspecified $DEST_DIR/$kernel_dir/extra/dpdk will be used')
+ option('lib_musdk_dir', type: 'string', value: '',
+ 	description: 'path to the MUSDK library installation directory')
+ option('machine', type: 'string', value: 'native',
+-- 
+2.30.2
+

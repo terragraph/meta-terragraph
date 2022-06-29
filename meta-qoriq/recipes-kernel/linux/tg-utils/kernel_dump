@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+echo "<============== VERSION ===============>"
+cat /etc/os-release
+echo "<============== KERNEL VERSION ========>"
+uname -a
+echo "<============== UPTIME ================>"
+uptime
+echo "<============== LSMOD =================>"
+lsmod
+echo "<============== LSPCI =================>"
+lspci -vvv
+echo "<============== DMESG =================>"
+dmesg
+echo "<============== MEMINFO ===============>"
+cat /proc/meminfo
+echo "<============== IFCONFIG ==============>"
+ifconfig -a
+echo "<============== INTERRUPTS ==============>"
+cat /proc/interrupts
+echo "<============== SLABINFO ==============>"
+cat /proc/slabinfo

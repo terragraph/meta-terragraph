@@ -1,0 +1,12 @@
+{
+  "sysParams": {},
+  "envParams": {
+    "FW_IF2IF": "1"
+  },
+  "logTailParams": {
+    "sources": {}
+  },
+  "statsAgentParams": {
+    "sources": {}
+  }
+}

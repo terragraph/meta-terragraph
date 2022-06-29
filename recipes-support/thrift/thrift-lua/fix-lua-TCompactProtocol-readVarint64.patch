@@ -1,0 +1,18 @@
+Fix handling of int64 fields, as libluabpack.fromVarint64() expects an unsigned
+input value ("readSignByte" is a poorly-named method to read an unsigned byte).
+
+Merged in THRIFT-5106.
+
+Upstream-Status: Accepted
+
+--- a/lib/lua/TCompactProtocol.lua
++++ b/lib/lua/TCompactProtocol.lua
+@@ -428,7 +428,7 @@
+   local data = result(0)
+   local shiftl = 0
+   while true do
+-    b = self:readByte()
++    b = self:readSignByte()
+     endFlag, data = libluabpack.fromVarint64(b, shiftl, data)
+     shiftl = shiftl + 7
+     if endFlag == 0 then

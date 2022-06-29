@@ -1,0 +1,18 @@
+Enable reading structs using the "fname" field in addition to "fid".
+
+Upstream-Status: Inappropriate [needed for custom features]
+
+--- a/compiler/cpp/src/thrift/generate/t_lua_generator.cc
++++ b/compiler/cpp/src/thrift/generate/t_lua_generator.cc
+@@ -427,9 +427,9 @@
+
+   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
+     indent_down();
+-    indent(out) << "elseif fid == " << (*f_iter)->get_key() << " then" << endl;
++    indent(out) << "elseif fid == " << (*f_iter)->get_key() << " or fname == '" << (*f_iter)->get_name() << "' then" << endl;
+     indent_up();
+-    indent(out) << "if ftype == " << type_to_enum((*f_iter)->get_type()) << " then" << endl;
++    indent(out) << "if ftype == " << type_to_enum((*f_iter)->get_type()) << " or fname then" << endl;
+     indent_up();
+
+     // Read field contents

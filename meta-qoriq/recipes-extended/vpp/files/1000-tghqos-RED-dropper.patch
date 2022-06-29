@@ -1,0 +1,628 @@
+From 8da8496931253c36e34e9eabc32bb5c4152e8d65 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Tue, 16 Feb 2021 15:19:34 -0800
+Subject: [PATCH] tghqos: RED dropper
+
+Ported from rte_red.c and rte_red.h in DPDK, changing constants for
+Terragraph-specific operation.
+
+The RED dropper in DPDK is part of the rte_sched library from which
+we want to completely decouple our HQoS implementation.
+---
+ src/plugins/dpdk/tghqos/sched/tghqos_red.c | 141 +++++++
+ src/plugins/dpdk/tghqos/sched/tghqos_red.h | 455 +++++++++++++++++++++
+ 2 files changed, 596 insertions(+)
+ create mode 100644 src/plugins/dpdk/tghqos/sched/tghqos_red.c
+ create mode 100644 src/plugins/dpdk/tghqos/sched/tghqos_red.h
+
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_red.c b/src/plugins/dpdk/tghqos/sched/tghqos_red.c
+new file mode 100644
+index 000000000..7878e61c7
+--- /dev/null
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_red.c
+@@ -0,0 +1,141 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2010-2014 Intel Corporation
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ */
++
++#include <math.h>
++#include "tghqos_red.h"
++#include <rte_random.h>
++#include <rte_common.h>
++
++#ifdef __INTEL_COMPILER
++#pragma warning(disable : 2259) /* conversion may lose significant bits */
++#endif
++
++/* Flag to indicate that global initialisation is done */
++static int tghqos_red_init_done = 0;
++/* Random value cache */
++u32 tghqos_red_rand_val = 0;
++/* Seed for random number generation */
++u32 tghqos_red_rand_seed = 0;
++
++/**
++ * table[i] = log2(1-Wq) * Scale * -1
++ *       Wq = 1/(2^i)
++ */
++u16 tghqos_red_log2_1_minus_Wq[TGHQOS_RED_WQ_LOG2_NUM];
++
++/**
++ * table[i] = 2^(i/16) * Scale
++ */
++u16 tghqos_red_pow2_frac_inv[16];
++
++/**
++ * @brief Initialize tables used to compute average
++ *        queue size when queue is empty.
++ */
++static void __tghqos_red_init_tables (void)
++{
++  u32 i = 0;
++  double scale = 0.0;
++  double table_size = 0.0;
++
++  scale = (double)(1 << TGHQOS_RED_SCALING); /* for tghqos_red_pow2_frac_inv */
++  table_size = (double)(RTE_DIM (tghqos_red_pow2_frac_inv));
++
++  for (i = 0; i < RTE_DIM (tghqos_red_pow2_frac_inv); i++)
++    {
++      double m = (double)i;
++
++      tghqos_red_pow2_frac_inv[i] =
++          (u16)round (scale / pow (2, m / table_size));
++    }
++
++  scale = 1024.0; /* for tghqos_red_log2_1_minus_Wq */
++
++  ASSERT (TGHQOS_RED_WQ_LOG2_NUM == RTE_DIM (tghqos_red_log2_1_minus_Wq));
++
++  for (i = TGHQOS_RED_WQ_LOG2_MIN; i <= TGHQOS_RED_WQ_LOG2_MAX; i++)
++    {
++      double n = (double)i;
++      double Wq = pow (2, -n);
++      u32 index = i - TGHQOS_RED_WQ_LOG2_MIN;
++
++      tghqos_red_log2_1_minus_Wq[index] =
++          (u16)round (-1.0 * scale * log2 (1.0 - Wq));
++      /**
++       * Table entry of zero, corresponds to a Wq of zero
++       * which is not valid (avg would remain constant no
++       * matter how long the queue is empty). So we have
++       * to check for zero and round up to one.
++       */
++      if (tghqos_red_log2_1_minus_Wq[index] == 0)
++        {
++          tghqos_red_log2_1_minus_Wq[index] = 1;
++        }
++    }
++}
++
++int tghqos_red_rt_data_init (struct tghqos_red *red)
++{
++  if (red == NULL)
++    return -1;
++
++  red->avg = 0;
++  red->count = 0;
++  red->q_time = 0;
++  return 0;
++}
++
++int tghqos_red_config_init (struct tghqos_red_config *red_cfg,
++                            const u16 wq_log2, const u16 min_th,
++                            const u16 max_th, const u16 maxp_inv)
++{
++  if (red_cfg == NULL)
++    {
++      return -TGHQOS_RED_ENULL;
++    }
++  if (max_th > TGHQOS_RED_MAX_TH_MAX)
++    {
++      return -TGHQOS_RED_EMAX_TH_HI;
++    }
++  if (min_th >= max_th)
++    {
++      return -TGHQOS_RED_EMIN_TH_GT_MAX_TH;
++    }
++  if (wq_log2 > TGHQOS_RED_WQ_LOG2_MAX)
++    {
++      return -TGHQOS_RED_EWQLOG2_HI;
++    }
++  if (wq_log2 < TGHQOS_RED_WQ_LOG2_MIN)
++    {
++      return -TGHQOS_RED_EWQLOG2_LO;
++    }
++  if (maxp_inv < TGHQOS_RED_MAXP_INV_MIN)
++    {
++      return -TGHQOS_RED_EMAXP_INV_LO;
++    }
++  if (maxp_inv > TGHQOS_RED_MAXP_INV_MAX)
++    {
++      return -TGHQOS_RED_EMAXP_INV_HI;
++    }
++
++  /**
++   *  Initialize the RED module if not already done
++   */
++  if (!tghqos_red_init_done)
++    {
++      tghqos_red_rand_seed = rte_rand ();
++      tghqos_red_rand_val = tghqos_fast_rand ();
++      __tghqos_red_init_tables ();
++      tghqos_red_init_done = 1;
++    }
++
++  red_cfg->min_th = ((u32)min_th) << (wq_log2 + TGHQOS_RED_SCALING);
++  red_cfg->max_th = ((u32)max_th) << (wq_log2 + TGHQOS_RED_SCALING);
++  red_cfg->pa_const = (2 * (max_th - min_th) * maxp_inv) << TGHQOS_RED_SCALING;
++  red_cfg->maxp_inv = maxp_inv;
++  red_cfg->wq_log2 = wq_log2;
++
++  return 0;
++}
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_red.h b/src/plugins/dpdk/tghqos/sched/tghqos_red.h
+new file mode 100644
+index 000000000..cbcc656e3
+--- /dev/null
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_red.h
+@@ -0,0 +1,455 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2010-2014 Intel Corporation
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ */
++
++/**
++ * @file
++ * TGHQoS Random Early Detection (RED)
++ *
++ * Congestion management using the Random Early Detection (RED) algorithm.
++ * Adapted from the DPDK rte_sched library's rte_red module.
++ */
++
++#ifndef __TGHQOS_RED_H_INCLUDED__
++#define __TGHQOS_RED_H_INCLUDED__
++
++#include <limits.h>
++#include <rte_common.h>
++#include <rte_debug.h>
++#include <rte_cycles.h>
++#include <rte_branch_prediction.h>
++#include <vppinfra/types.h>
++#include <vppinfra/error_bootstrap.h>
++
++/**
++ * For Terragraph the max queue size is 4096 packets.
++ * TGHQOS_RED_SCALING value needs to not overflow u32 value for max_th in
++ * struct tghqos_red_config. Reference: Computation of red_cfg->max_th in
++ * tghqos_red_config_init() Set TGHQOS_RED_SCALING = 6 bits so max_th will be
++ * within u32. (12 bits for TGHQOS_RED_WQ_LOG2_MAX + 6 bits for
++ * TGHQOS_RED_SCALING + 12 bits for max queue len = 30 bits.
++ */
++#define TGHQOS_RED_SCALING 6 /**< Fraction size for fixed-point */
++
++/**
++ * TGHQOS_RED_S = Packet size * max number of leaf queues.
++ * For Terragraph, max leaf queues is 2048. Terragraph has 4 ports * 16 pipes *
++ * 8 Traffic Classes * 4 tc_q.
++ * The 4 tc_q's will be used if WRR is enabled.
++ * We will consider 1024 byte packet size. So 1024 * 2048 = 1 << 21
++ */
++#define TGHQOS_RED_S (1 << 21)
++
++/* Max threshold limit in fixed point format (max queue length is 4096) */
++#define TGHQOS_RED_MAX_TH_MAX 4096
++
++#define TGHQOS_RED_WQ_LOG2_MIN 1    /**< Min inverse filter weight value */
++#define TGHQOS_RED_WQ_LOG2_MAX 12   /**< Max inverse filter weight value */
++#define TGHQOS_RED_MAXP_INV_MIN 1   /**< Min inverse mark prob. value */
++#define TGHQOS_RED_MAXP_INV_MAX 255 /**< Max inverse mark prob. value */
++#define TGHQOS_RED_2POW16 (1 << 16) /**< 2 power 16 */
++#define TGHQOS_RED_INT16_NBITS (sizeof (u16) * CHAR_BIT)
++#define TGHQOS_RED_WQ_LOG2_NUM \
++  (TGHQOS_RED_WQ_LOG2_MAX - TGHQOS_RED_WQ_LOG2_MIN + 1)
++
++/**
++ * Externs
++ *
++ */
++extern u32 tghqos_red_rand_val;
++extern u32 tghqos_red_rand_seed;
++extern u16 tghqos_red_log2_1_minus_Wq[TGHQOS_RED_WQ_LOG2_NUM];
++extern u16 tghqos_red_pow2_frac_inv[16];
++
++/**
++ * Init error reasons
++ */
++enum tghqos_red_init_error
++{
++  TGHQOS_RED_ENULL = 1,
++  TGHQOS_RED_EMAX_TH_HI,
++  TGHQOS_RED_EMIN_TH_GT_MAX_TH,
++  TGHQOS_RED_EWQLOG2_HI,
++  TGHQOS_RED_EWQLOG2_LO,
++  TGHQOS_RED_EMAXP_INV_LO,
++  TGHQOS_RED_EMAXP_INV_HI
++};
++
++/**
++ * RED configuration parameters passed by user
++ *
++ */
++struct tghqos_red_params
++{
++  u16 min_th;   /**< Minimum threshold for queue (max_th) */
++  u16 max_th;   /**< Maximum threshold for queue (max_th) */
++  u16 maxp_inv; /**< Inverse of packet marking probability maximum
++  value (maxp = 1 / maxp_inv) */
++  u16 wq_log2;  /**< Negated log2 of queue weight
++  (wq = 1 / (2 ^ wq_log2)) */
++};
++
++/**
++ * RED configuration parameters
++ */
++struct tghqos_red_config
++{
++  u32 min_th;   /**< min_th scaled in fixed-point format */
++  u32 max_th;   /**< max_th scaled in fixed-point format */
++  u32 pa_const; /**< Precomputed constant value used for pa calculation
++  (scaled in fixed-point format) */
++  u8 maxp_inv;  /**< maxp_inv */
++  u8 wq_log2;   /**< wq_log2 */
++};
++
++/**
++ * RED run-time data
++ */
++struct tghqos_red
++{
++  u32 avg;         /**< Average queue size, scaled in fixed-point format */
++  u32 count;       /**< Number of packets since last marked packet */
++  uint64_t q_time; /**< Start of the queue idle time */
++};
++
++/**
++ * @brief Initialises run-time data
++ *
++ * @param red [in,out] data pointer to RED runtime data
++ *
++ * @return Operation status
++ * @retval 0 success
++ * @retval !0 error
++ */
++int tghqos_red_rt_data_init (struct tghqos_red *red);
++
++/**
++ * @brief Configures a single RED configuration parameter structure.
++ *
++ * @param red_cfg [in,out] config pointer to a RED configuration parameter
++ structure
++ * @param wq_log2 [in]  log2 of the filter weight, valid range is:
++ *             TGHQOS_RED_WQ_LOG2_MIN <= wq_log2 <= TGHQOS_RED_WQ_LOG2_MAX
++ * @param min_th [in] queue minimum threshold in number of packets
++ * @param max_th [in] queue maximum threshold in number of packets
++ * @param maxp_inv [in] inverse maximum mark probability
++ *
++ * @return Operation status
++ * @retval 0 success
++ * @retval !0 error
++ */
++int tghqos_red_config_init (struct tghqos_red_config *red_cfg,
++                            const u16 wq_log2, const u16 min_th,
++                            const u16 max_th, const u16 maxp_inv);
++
++/**
++ * @brief Generate random number for RED
++ *
++ * Implementation based on:
++ * https://web.archive.org/web/20190202143855/https://software.intel.com/en-us/articles/fast-random-number-generator-on-the-intel-pentiumr-4-processor
++ *
++ * 10 bit shift has been found through empirical tests (was 16).
++ *
++ * @return Random number between 0 and (2^22 - 1)
++ */
++static inline u32 tghqos_fast_rand (void)
++{
++  tghqos_red_rand_seed = (214013 * tghqos_red_rand_seed) + 2531011;
++  return tghqos_red_rand_seed >> 10;
++}
++
++/**
++ * @brief calculate factor to scale average queue size when queue
++ *        becomes empty
++ *
++ * @param wq_log2 [in] where EWMA filter weight wq = 1/(2 ^ wq_log2)
++ * @param m [in] exponent in the computed value (1 - wq) ^ m
++ *
++ * @return computed value
++ * @retval ((1 - wq) ^ m) scaled in fixed-point format
++ */
++static inline u16 __tghqos_red_calc_qempty_factor (u8 wq_log2, u16 m)
++{
++  u32 n = 0;
++  u32 f = 0;
++
++  /**
++   * Basic math tells us that:
++   *   a^b = 2^(b * log2(a) )
++   *
++   * in our case:
++   *   a = (1-Wq)
++   *   b = m
++   *  Wq = 1/ (2^log2n)
++   *
++   * So we are computing this equation:
++   *   factor = 2 ^ ( m * log2(1-Wq))
++   *
++   * First we are computing:
++   *    n = m * log2(1-Wq)
++   *
++   * To avoid dealing with signed numbers log2 values are positive
++   * but they should be negative because (1-Wq) is always < 1.
++   * Contents of log2 table values are also scaled for precision.
++   */
++
++  n = m * tghqos_red_log2_1_minus_Wq[wq_log2 - TGHQOS_RED_WQ_LOG2_MIN];
++
++  /**
++   * The tricky part is computing 2^n, for this I split n into
++   * integer part and fraction part.
++   *   f - is fraction part of n
++   *   n - is integer part of original n
++   *
++   * Now using basic math we compute 2^n:
++   *   2^(f+n) = 2^f * 2^n
++   *   2^f - we use lookup table
++   *   2^n - can be replaced with bit shift right operations
++   */
++
++  f = (n >> 6) & 0xf;
++  n >>= 10;
++
++  if (n < TGHQOS_RED_SCALING)
++    return (u16) ((tghqos_red_pow2_frac_inv[f] + (1 << (n - 1))) >> n);
++
++  return 0;
++}
++
++/**
++ * @brief Updates queue average in condition when queue is empty
++ *
++ * Note: packet is never dropped in this particular case.
++ *
++ * @param red_cfg [in] config pointer to a RED configuration parameter
++ * structure
++ * @param red [in,out] data pointer to RED runtime data
++ * @param time [in] current time stamp
++ *
++ * @return Operation status
++ * @retval 0 enqueue the packet
++ * @retval 1 drop the packet based on max threshold criterion
++ * @retval 2 drop the packet based on mark probability criterion
++ */
++static inline int
++tghqos_red_enqueue_empty (const struct tghqos_red_config *red_cfg,
++                          struct tghqos_red *red, const uint64_t time)
++{
++  uint64_t time_diff = 0, m = 0;
++
++  ASSERT (red_cfg != NULL);
++  ASSERT (red != NULL);
++
++  red->count++;
++
++  /**
++   * We compute avg but we don't compare avg against
++   *  min_th or max_th, nor calculate drop probability
++   */
++  time_diff = time - red->q_time;
++
++  /**
++   * m is the number of packets that might have arrived while the queue was
++   * empty. In this case we have time stamps provided by the scheduler in
++   * byte units (bytes transmitted on network port). Such time stamp
++   * translates into time units as port speed is fixed but such approach
++   * simplifies the code.
++   */
++  m = time_diff / TGHQOS_RED_S;
++
++  /**
++   * Check that m will fit into 16-bit unsigned integer
++   */
++  if (m >= TGHQOS_RED_2POW16)
++    {
++      red->avg = 0;
++    }
++  else
++    {
++      red->avg = (red->avg >> TGHQOS_RED_SCALING) *
++                 __tghqos_red_calc_qempty_factor (red_cfg->wq_log2, (u16)m);
++    }
++
++  return 0;
++}
++
++/**
++ *  Drop probability (Sally Floyd and Van Jacobson):
++ *
++ *     pb = (1 / maxp_inv) * (avg - min_th) / (max_th - min_th)
++ *     pa = pb / (2 - count * pb)
++ *
++ *
++ *                 (1 / maxp_inv) * (avg - min_th)
++ *                ---------------------------------
++ *                         max_th - min_th
++ *     pa = -----------------------------------------------
++ *                count * (1 / maxp_inv) * (avg - min_th)
++ *           2 - -----------------------------------------
++ *                          max_th - min_th
++ *
++ *
++ *                                  avg - min_th
++ *     pa = -----------------------------------------------------------
++ *           2 * (max_th - min_th) * maxp_inv - count * (avg - min_th)
++ *
++ *
++ *  We define pa_const as: pa_const =  2 * (max_th - min_th) * maxp_inv.
++ * Then:
++ *
++ *
++ *                     avg - min_th
++ *     pa = -----------------------------------
++ *           pa_const - count * (avg - min_th)
++ */
++
++/**
++ * @brief make a decision to drop or enqueue a packet based on mark
++ * probability criteria
++ *
++ * @param red_cfg [in] config pointer to structure defining RED parameters
++ * @param red [in,out] data pointer to RED runtime data
++ *
++ * @return operation status
++ * @retval 0 enqueue the packet
++ * @retval 1 drop the packet
++ */
++static inline int __tghqos_red_drop (const struct tghqos_red_config *red_cfg,
++                                     struct tghqos_red *red)
++{
++  u32 pa_num = 0; /* numerator of drop-probability */
++  u32 pa_den = 0; /* denominator of drop-probability */
++  u32 pa_num_count = 0;
++
++  pa_num = (red->avg - red_cfg->min_th) >> (red_cfg->wq_log2);
++
++  pa_num_count = red->count * pa_num;
++
++  if (red_cfg->pa_const <= pa_num_count)
++    return 1;
++
++  pa_den = red_cfg->pa_const - pa_num_count;
++
++  /* If drop, generate and save random number to be used next time */
++  if (unlikely ((tghqos_red_rand_val % pa_den) < pa_num))
++    {
++      tghqos_red_rand_val = tghqos_fast_rand ();
++
++      return 1;
++    }
++
++  /* No drop */
++  return 0;
++}
++
++/**
++ * @brief Decides if new packet should be enqueued or dropped in queue
++ * non-empty case
++ *
++ * @param red_cfg [in] config pointer to a RED configuration parameter
++ * structure
++ * @param red [in,out] data pointer to RED runtime data
++ * @param q [in] current queue size (measured in packets)
++ *
++ * @return Operation status
++ * @retval 0 enqueue the packet
++ * @retval 1 drop the packet based on max threshold criterion
++ * @retval 2 drop the packet based on mark probability criterion
++ */
++static inline int
++tghqos_red_enqueue_nonempty (const struct tghqos_red_config *red_cfg,
++                             struct tghqos_red *red, const unsigned q)
++{
++  ASSERT (red_cfg != NULL);
++  ASSERT (red != NULL);
++
++  /**
++   * EWMA filter (Sally Floyd and Van Jacobson):
++   *    avg = (1 - wq) * avg + wq * q
++   *    avg = avg + q * wq - avg * wq
++   *
++   * We select: wq = 2^(-n).
++   * Let scaled version of avg be: avg_s =avg * 2^(N+n).
++   * We get: avg_s = avg_s + q * 2^N - avg_s * 2^(-n)
++   *
++   * By using shift left/right operations, we get:
++   *    avg_s = avg_s + (q << N) - (avg_s >> n)
++   *    avg_s += (q << N) - (avg_s >> n)
++   */
++
++  /* avg update */
++  red->avg += (q << TGHQOS_RED_SCALING) - (red->avg >> red_cfg->wq_log2);
++
++  /* avg < min_th: do not mark the packet  */
++  if (red->avg < red_cfg->min_th)
++    {
++      red->count++;
++      return 0;
++    }
++
++  /* min_th <= avg < max_th: mark the packet with pa probability */
++  if (red->avg < red_cfg->max_th)
++    {
++      if (!__tghqos_red_drop (red_cfg, red))
++        {
++          red->count++;
++          return 0;
++        }
++
++      red->count = 0;
++      return 2;
++    }
++
++  /* max_th <= avg: always mark the packet */
++  red->count = 0;
++  return 1;
++}
++
++/**
++ * @brief Decides if new packet should be enqeued or dropped
++ * Updates run time data based on new queue size value.
++ * Based on new queue average and RED configuration parameters
++ * gives verdict whether to enqueue or drop the packet.
++ *
++ * @param red_cfg [in] config pointer to a RED configuration parameter
++ * structure
++ * @param red [in,out] data pointer to RED runtime data
++ * @param q [in] updated queue size in packets
++ * @param time [in] current time stamp
++ *
++ * @return Operation status
++ * @retval 0 enqueue the packet
++ * @retval 1 drop the packet based on max threshold criteria
++ * @retval 2 drop the packet based on mark probability criteria
++ */
++static inline int tghqos_red_enqueue (const struct tghqos_red_config *red_cfg,
++                                      struct tghqos_red *red, const unsigned q,
++                                      const uint64_t time)
++{
++  ASSERT (red_cfg != NULL);
++  ASSERT (red != NULL);
++
++  if (q != 0)
++    {
++      return tghqos_red_enqueue_nonempty (red_cfg, red, q);
++    }
++  else
++    {
++      return tghqos_red_enqueue_empty (red_cfg, red, time);
++    }
++}
++
++/**
++ * @brief Callback to records time that queue became empty
++ *
++ * @param red [in,out] data pointer to RED runtime data
++ * @param time [in] current time stamp
++ */
++static inline void tghqos_red_mark_queue_empty (struct tghqos_red *red,
++                                                const uint64_t time)
++{
++  red->q_time = time;
++}
++
++#endif /* __TGHQOS_RED_H_INCLUDED__ */
+-- 
+2.30.2
+

@@ -1,0 +1,109 @@
+Add IPv6 client support.
+
+Merged in THRIFT-5282.
+
+Upstream-Status: Accepted
+
+--- a/lib/lua/src/luasocket.c
++++ b/lib/lua/src/luasocket.c
+@@ -344,11 +344,8 @@
+   // Create and connect loop for timeout milliseconds
+   end = __gettime() + timeout/1000;
+   do {
+-    // Create the socket
+-    err = tcp_create(&sock);
+-    if (!err) {
+-        // Connect
+-        err = tcp_connect(&sock, host, port, timeout);
++    // Create and connect the socket
++    err = tcp_create_and_connect(&sock, host, port, timeout);
+         if (err) {
+           tcp_destroy(&sock);
+           usleep(100000); // sleep for 100ms
+@@ -360,7 +357,6 @@
+           tcp->timeout = timeout;
+           return 1; // Return userdata
+         }
+-    }
+   } while (err && __gettime() < end);
+
+   LUA_CHECK_RETURN(L, err);
+--- a/lib/lua/src/socket.h
++++ b/lib/lua/src/socket.h
+@@ -75,4 +75,7 @@
+ const char * tcp_connect(p_socket sock, const char *host, unsigned short port,
+                          int timeout);
+
++const char * tcp_create_and_connect(p_socket sock, const char *host,
++                                    unsigned short port, int timeout);
++
+ #endif
+--- a/lib/lua/src/usocket.c
++++ b/lib/lua/src/usocket.c
+@@ -352,6 +352,66 @@
+   ERRORSTR_RETURN(err);
+ }
+
++const char * tcp_create_and_connect(p_socket sock,
++                                    const char *host,
++                                    unsigned short port,
++                                    int timeout) {
++  int err;
++  struct sockaddr_in sa4;
++  struct sockaddr_in6 sa6;
++
++  memset(&sa4, 0, sizeof(sa4));
++  sa4.sin_family = AF_INET;
++  sa4.sin_port = htons(port);
++  memset(&sa6, 0, sizeof(sa6));
++  sa6.sin6_family = AF_INET6;
++  sa6.sin6_port = htons(port);
++
++  if (inet_pton(AF_INET, host, &sa4.sin_addr)) {
++    socket_create(sock, AF_INET, SOCK_STREAM, 0);
++    err = socket_connect(sock, (p_sa) &sa4, sizeof(sa4), timeout);
++    ERRORSTR_RETURN(err);
++  } else if (inet_pton(AF_INET6, host, &sa6.sin6_addr)) {
++    socket_create(sock, AF_INET6, SOCK_STREAM, 0);
++    err = socket_connect(sock, (p_sa) &sa6, sizeof(sa6), timeout);
++    ERRORSTR_RETURN(err);
++  } else {
++    struct addrinfo hints, *servinfo, *rp;
++    char portStr[6];
++    int rv;
++
++    memset(&hints, 0, sizeof(hints));
++    hints.ai_family = AF_UNSPEC;
++    hints.ai_socktype = SOCK_STREAM;
++
++    sprintf(portStr, "%u", port);
++
++    if ((rv = getaddrinfo(host, portStr, &hints, &servinfo)) != 0) {
++      return gai_strerror(rv);
++    }
++
++    err = TIMEOUT;
++    for (rp = servinfo; rp != NULL; rp = rp->ai_next) {
++      err = socket_create(sock, rp->ai_family, rp->ai_socktype, rp->ai_protocol);
++      if (err != SUCCESS) {
++        continue;
++      }
++      err = socket_connect(sock, (p_sa) rp->ai_addr, rp->ai_addrlen, timeout);
++      if (err == SUCCESS) {
++        break;
++      }
++      close(*sock);
++    }
++    freeaddrinfo(servinfo);
++    if (rp == NULL) {
++      *sock = -1;
++      return "Failed to connect";
++    } else {
++      ERRORSTR_RETURN(err);
++    }
++  }
++}
++
+ #define WRITE_STEP 8192
+ const char * tcp_send(
+   p_socket sock, const char * data, size_t w_len, int timeout) {

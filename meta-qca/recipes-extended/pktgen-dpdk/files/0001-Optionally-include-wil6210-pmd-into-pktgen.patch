@@ -1,0 +1,50 @@
+From edd312bcf481ecdb0fbf1c499ae7db0d578fbae4 Mon Sep 17 00:00:00 2001
+From: Terragraph <tg-precommit@fb.com>
+Date: Fri, 26 Jul 2019 12:49:53 -0700
+Subject: [PATCH] Optionally include wil6210 pmd into pktgen
+
+Add a make variable that, when set, slurps up the whole
+librte_pmd_wil6210.a into pktgen.  Said library is expected to be
+installed into (e.g.) /usr/lib separately.
+---
+ app/meson.build   | 14 ++++++++++++--
+ meson_options.txt |  1 +
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/app/meson.build b/app/meson.build
+index 89a37a3..a67f2c9 100644
+--- a/app/meson.build
++++ b/app/meson.build
+@@ -37,8 +37,18 @@ deps += [cc.find_library('pcap', required: true)]
+ deps += [cc.find_library('dl', required: false)]
+ deps += [cc.find_library('m', required: false)]
+ 
+-pktgen = executable('pktgen',
++pmd_deps = []
++if get_option('link_wil6210_pmd') == true
++	# hacky, the problem is meson doesn't seem to support passing external libraries
++	# found with `find_library` to `executable(link_whole)`
++	pmd_deps += declare_dependency(link_args: [
++		'-Wl,--whole-archive', '-Wl,-lrte_pmd_wil6210', '-Wl,--no-whole-archive'])
++	pmd_deps += dependency('libnl-3.0')
++	pmd_deps += dependency('libnl-genl-3.0')
++endif
++
++pktgen = executable('dpdk-pktgen',
+ 		sources,
+ 		c_args: cflags,
+ 		install: true,
+-		dependencies: [deps, lua_dep, dpdk_bond])
++		dependencies: [pmd_deps, deps, lua_dep, dpdk_bond])
+diff --git a/meson_options.txt b/meson_options.txt
+index 80fcbcd..0eb1448 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -3,3 +3,4 @@ option('enable_gui', type: 'boolean', value: false, description: 'build the gui'
+ option('enable_docs', type: 'boolean', value: false, description: 'build documentation')
+ option('enable-avx', type: 'boolean', value: true, description: 'Try to compile with AVX support')
+ option('enable-avx2', type: 'boolean', value: true, description: 'Try to compile with AVX2 support')
++option('link_wil6210_pmd', type: 'boolean', value: true, description: 'Link whole wil6210 pmd library into app')
+-- 
+2.30.2
+

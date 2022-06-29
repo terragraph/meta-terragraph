@@ -1,0 +1,21 @@
+#!/bin/sh
+
+if [ -z "${NMS_CONFIG_FILE}" ]; then
+  echo "NMS_CONFIG_FILE not set"
+  exit 1
+fi
+
+PATH=${PATH}:/bin
+
+# read aggregator config file
+if [ ! -f "/data/${NMS_CONFIG_FILE}" ]; then
+  echo "NMS_CONFIG_FILE not found, copying default file..."
+  cp -v "/etc/stats_config/aggregator_config_default.json" "/data/${NMS_CONFIG_FILE}"
+fi
+CONFIG_ARGS=$(/usr/sbin/config_print_flags "/data/${NMS_CONFIG_FILE}")
+if [ $? -ne 0 ]; then
+  echo "Aggregator config file (/data/${NMS_CONFIG_FILE}) had errors: ${CONFIG_ARGS}"
+  exit 1
+fi
+
+eval /usr/sbin/nms_aggregator -aggregator-config-file "/data/${NMS_CONFIG_FILE}" -controller_host "${TG_CONTROLLER_HOST}" ${CONFIG_ARGS}

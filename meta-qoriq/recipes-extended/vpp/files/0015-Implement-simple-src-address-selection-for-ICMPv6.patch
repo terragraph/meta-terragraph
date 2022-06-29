@@ -1,0 +1,149 @@
+From 4eb2b51cbb6255e0e1622ee1b0432cf022944b0a Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Wed, 25 Mar 2020 07:50:18 -0700
+Subject: [PATCH] Implement simple src address selection for ICMPv6
+
+Use three rules to select source address for ICMPv6 errors generated
+by vpp. If the packet is for one of our global addresses, use that
+address. If the receiving interface has global address configured,
+use that address. Failing that, just grab any available address,
+preferring one with the longer shared prefix with the original packet
+source address, and use that.
+---
+ src/vnet/ip/icmp6.c | 106 +++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 94 insertions(+), 12 deletions(-)
+
+diff --git a/src/vnet/ip/icmp6.c b/src/vnet/ip/icmp6.c
+index 4bba430fa..d534f8b8e 100644
+--- a/src/vnet/ip/icmp6.c
++++ b/src/vnet/ip/icmp6.c
+@@ -468,6 +468,95 @@ icmp6_icmp_type_to_error (u8 type)
+     }
+ }
+ 
++static inline int
++ip6_addr_match_len (const ip6_address_t *src, const ip6_address_t *dst)
++{
++  int match = 0;
++  const u8 *s = src->as_u8;
++  const u8 *d = dst->as_u8;
++  u8 *lim = s + 16, r;
++
++  while (s < lim)
++     if ((r = (*d++ ^ *s++)) != 0)
++	{
++	  while (r < 128)
++	   {
++	     match++;
++	     r <<= 1;
++	   }
++	  break;
++	} else
++	  match += 8;
++  return match;
++}
++
++static bool
++ip6_icmp_select_src_addr (ip_lookup_main_t *lm,
++			  u32 sw_if_index,
++			  const ip6_address_t *src_addr,
++			  const ip6_address_t *dst_addr,
++			  ip6_address_t *out_src_addr)
++{
++  ip6_main_t *im = &ip6_main;
++  ip6_address_fib_t addr_fib, * addr_fib_p;
++  u64 * index_p;
++  u32 if_add_index, fib_index;
++  int best_match_len = -1;
++
++  fib_index = vec_elt (im->fib_index_by_sw_if_index, sw_if_index);
++
++  /*
++   * Prefer own address if packet did happen to be
++   * addressed to us.
++   */
++  ip6_addr_fib_init (&addr_fib, dst_addr, fib_index);
++  if (((u32)~ 0) != ip_interface_address_find (lm, &addr_fib, 0)) {
++    *out_src_addr = *dst_addr;
++    return true;
++  }
++
++  /*
++   * Prefer to use the receiving interface IP address.
++   */
++  if_add_index =
++    lm->if_address_pool_index_by_sw_if_index[sw_if_index];
++  if (PREDICT_TRUE (if_add_index != ~0))
++    {
++      ip_interface_address_t *if_add =
++	pool_elt_at_index (lm->if_address_pool, if_add_index);
++      ip6_address_t *if_ip =
++	ip_interface_address_get_address (lm, if_add);
++      *out_src_addr = *if_ip;
++      return true;
++    }
++
++  /*
++   * Grab any known global address on any interface known, preferring
++   * one that shares the largest prefix with the original packet source
++   * address.
++   * This can be made much more sofisticated to follow RFC 6724, but that
++   * is left for an exercise for the reader.
++   */
++  /* *INDENT-OFF* */
++  mhash_foreach(addr_fib_p, index_p, &lm->address_to_if_address_index,
++    ({
++       int match_len;
++
++	(void)index_p;
++	if (addr_fib_p->fib_index != fib_index)
++	  continue;
++	match_len = ip6_addr_match_len (src_addr, &addr_fib_p->ip6_addr);
++	if (match_len > best_match_len)
++	  {
++	    *out_src_addr = addr_fib_p->ip6_addr;
++	    best_match_len = match_len;
++	  }
++    }));
++  /* *INDENT-ON* */
++
++  return best_match_len >= 0;
++}
++
+ static uword
+ ip6_icmp_error (vlib_main_t * vm,
+ 		vlib_node_runtime_t * node, vlib_frame_t * frame)
+@@ -507,7 +596,7 @@ ip6_icmp_error (vlib_main_t * vm,
+ 	  vlib_buffer_t *p0, *org_p0;
+ 	  ip6_header_t *ip0, *out_ip0;
+ 	  icmp46_header_t *icmp0;
+-	  u32 sw_if_index0, if_add_index0;
++	  u32 sw_if_index0;
+ 	  int bogus_length;
+ 
+ 	  org_p0 = vlib_get_buffer (vm, org_pi0);
+@@ -547,17 +636,10 @@ ip6_icmp_error (vlib_main_t * vm,
+ 	  out_ip0->protocol = IP_PROTOCOL_ICMP6;
+ 	  out_ip0->hop_limit = 0xff;
+ 	  out_ip0->dst_address = ip0->src_address;
+-	  if_add_index0 =
+-	    lm->if_address_pool_index_by_sw_if_index[sw_if_index0];
+-	  if (PREDICT_TRUE (if_add_index0 != ~0))
+-	    {
+-	      ip_interface_address_t *if_add =
+-		pool_elt_at_index (lm->if_address_pool, if_add_index0);
+-	      ip6_address_t *if_ip =
+-		ip_interface_address_get_address (lm, if_add);
+-	      out_ip0->src_address = *if_ip;
+-	    }
+-	  else			/* interface has no IP6 address - should not happen */
++	  if (PREDICT_FALSE (!ip6_icmp_select_src_addr(lm, sw_if_index0,
++						       &ip0->src_address,
++						       &ip0->dst_address,
++						       &out_ip0->src_address)))
+ 	    {
+ 	      next0 = IP6_ICMP_ERROR_NEXT_DROP;
+ 	      error0 = ICMP6_ERROR_DROP;
+-- 
+2.30.2
+

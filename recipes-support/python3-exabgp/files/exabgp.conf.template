@@ -1,0 +1,42 @@
+process all_peer_events {
+    run $ROUTE_PROCESS_CMD;
+    encoder json;
+}
+
+template {
+    neighbor nt {
+        local-address $LOCAL_ADDRESS;
+        local-as $LOCAL_ASN;
+        router-id $ROUTERID;
+        hold-time $HOLDTIME;
+        md5-password $MD5PASSWORD;
+        api all {
+            processes [all_peer_events];
+            neighbor-changes;
+            receive {
+                parsed;
+                update;
+            }
+            send {
+                parsed;
+                update;
+            }
+        }
+        capability {
+            asn4 enable;
+            route-refresh enable;
+            graceful-restart 30;
+        }
+        family v6_only {
+            ipv6 unicast;
+        }
+    }
+}
+
+# Example Peer Template - exaconf defines these per neighbor
+# neighbor PEERADDRESS {
+#    inherit nt;
+#    peer-as PEERAS;
+# }
+
+$NEIGHBORS

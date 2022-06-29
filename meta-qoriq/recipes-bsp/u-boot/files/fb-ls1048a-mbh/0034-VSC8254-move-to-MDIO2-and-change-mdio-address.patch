@@ -1,0 +1,63 @@
+From 1206b8fe7ac565f45b48568af083c7482ae2bd25 Mon Sep 17 00:00:00 2001
+From: Sreedev Sreedev <ssreedev@fb.com>
+Date: Wed, 27 Jan 2021 17:38:03 -0800
+Subject: [PATCH] VSC8254: move to MDIO2 and change mdio address
+
+---
+ .../fb_ls1048a_mbh/eth_fb_ls1048a_mbh.c       | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/board/freescale/fb_ls1048a_mbh/eth_fb_ls1048a_mbh.c b/board/freescale/fb_ls1048a_mbh/eth_fb_ls1048a_mbh.c
+index 5fd636c9a8..f86e2bc333 100644
+--- a/board/freescale/fb_ls1048a_mbh/eth_fb_ls1048a_mbh.c
++++ b/board/freescale/fb_ls1048a_mbh/eth_fb_ls1048a_mbh.c
+@@ -32,6 +32,7 @@ int board_eth_init(bd_t *bis)
+ 	cfg >>= FSL_CHASSIS3_SRDS1_PRTCL_SHIFT;
+ 
+ 	srds_s1 = serdes_get_number(FSL_SRDS_1, cfg);
++	printf("SerDes1 protocol: 0x%x \n",srds_s1);
+ 
+ 	reg = (struct memac_mdio_controller *)CONFIG_SYS_FSL_WRIOP1_MDIO1;
+ 	mdio_info.regs = reg;
+@@ -40,16 +41,22 @@ int board_eth_init(bd_t *bis)
+ 	/* Register the EMI 1 */
+ 	fm_memac_mdio_init(bis, &mdio_info);
+ 
++	/* Register the EMI 2 */
++	reg = (struct memac_mdio_controller *)CONFIG_SYS_FSL_WRIOP1_MDIO2;
++	mdio_info.regs = reg;
++	mdio_info.name = DEFAULT_WRIOP_MDIO2_NAME;
++	fm_memac_mdio_init(bis, &mdio_info);
++
+ 	switch (srds_s1) {
+ 	case 0x15:
+-		wriop_set_phy_address(WRIOP1_DPMAC1, 0, 0);  /* XFI */
+-		wriop_set_phy_address(WRIOP1_DPMAC2, 0, 1);  /* XFI */
++		wriop_set_phy_address(WRIOP1_DPMAC1, 0, 16);  /* XFI */
++		wriop_set_phy_address(WRIOP1_DPMAC2, 0, 17);  /* XFI */
+ 		wriop_set_phy_address(WRIOP1_DPMAC3, 0, 2);  /* SGMII */
+ 
+ 		break;
+ 
+ 	default:
+-		printf("SerDes1 protocol 0x%x is not supported on FB-LS1048A-PUMA Proto 2\n",
++		printf("SerDes1 protocol 0x%x is not supported on FB-LS1048A-MBH\n",
+ 		       srds_s1);
+ 		break;
+ 	}
+@@ -59,7 +66,11 @@ int board_eth_init(bd_t *bis)
+ 		printf("WRIOP1_DPMAC%d: inerface:%d(%x)\n",i,interface,interface);
+ 		switch (interface) {
+ 			case PHY_INTERFACE_MODE_SFI:
+-				dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO1_NAME);
++				dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO2_NAME);
++				wriop_set_mdio(i, dev);
++				break;
++			case PHY_INTERFACE_MODE_XGMII:
++				dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO2_NAME);
+ 				wriop_set_mdio(i, dev);
+ 				break;
+ 			case PHY_INTERFACE_MODE_SGMII:
+-- 
+2.24.1
+

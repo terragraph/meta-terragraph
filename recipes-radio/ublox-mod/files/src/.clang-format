@@ -1,0 +1,9 @@
+BasedOnStyle: LLVM
+IndentWidth: 8
+UseTab: Always
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: false
+# We are not ready for this
+SortIncludes: false
+AllowShortFunctionsOnASingleLine: false

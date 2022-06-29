@@ -1,0 +1,11 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides: ubootversion
+# Required-Start:
+# Required-Stop:
+# Default-Start:     S
+# Default-Stop:
+### END INIT INFO
+
+# Write the version of uboot at start-up
+ubootversion > /tmp/ubootversion

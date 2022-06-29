@@ -1,0 +1,287 @@
+From 3c8ff056db742e196c6bdc1e4c9ab0976710a0b2 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 26 Mar 2021 13:21:02 -0700
+Subject: [PATCH] wil6210-dpdk: clean up various compile warnings
+
+Signed-off-by: Frank Li <frankli1@fb.com>
+Signed-off-by: Michael Callahan <michaelcallahan@fb.com>
+---
+diff --git a/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c b/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c
+index 4186d0e..e8dcc46 100644
+--- a/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c
++++ b/dpdk/drivers/wil6210/dpdk-dhd-ctrl/dpdk-dhd-ctrl.c
+@@ -46,8 +46,8 @@ dhd_setup_queues(struct dhd_state *dhd)
+ {
+ 	struct sockaddr_ll sockaddr;
+ 	struct tpacket_req *req;
+-	struct dhd_rx_queue *rx_queue;
+-	struct dhd_tx_queue *tx_queue;
++	struct dhd_rx_queue *rx_queue = NULL;
++	struct dhd_tx_queue *tx_queue = NULL;
+ 	int i, q, qsockfd, nb_queues = DHD_NUM_QUEUES;
+ 	int rc, tpver, discard, qdisc_bypass;
+ 	size_t rdsize;
+@@ -202,6 +202,14 @@ dhd_setup_queues(struct dhd_state *dhd)
+ 	return 0;
+ 
+ error:
++	if (rx_queue != NULL && rx_queue->rd != NULL) {
++		free(rx_queue->rd);
++		rx_queue->rd = NULL;
++	}
++	if (tx_queue != NULL && tx_queue->rd != NULL) {
++		free(tx_queue->rd);
++		tx_queue->rd = NULL;
++	}
+ 	return rc;
+ }
+ 
+diff --git a/dpdk/drivers/wil6210/wil6210_ethdev.c b/dpdk/drivers/wil6210/wil6210_ethdev.c
+index 1a6ae56..abcb9f4 100644
+--- a/dpdk/drivers/wil6210/wil6210_ethdev.c
++++ b/dpdk/drivers/wil6210/wil6210_ethdev.c
+@@ -209,7 +209,6 @@ wil6210_tx_get_pipe_size(void *q, uint16_t *size,
+ 	if (unlikely(q == NULL || size == NULL
+ 			|| nb_peers > ARRAY_SIZE(internals->tx_ethdev_queues)))
+ 		return -EINVAL;
+-	struct wil6210_priv *wil = internals->wil;
+ 
+ 	for (int peer=0; peer < nb_peers; peer++) {
+ 		*size++ = wil_tx_ring_config_size();
+@@ -235,7 +234,6 @@ wil6210_tx_feedback(void *q, uint32_t *avail, uint32_t *pending,
+ 	struct ethdev_tx_queue *txq;
+ 	struct wil6210_priv *wil = NULL;
+ 	struct wil_ring *ring;
+-	unsigned i;
+ 	int rc = 0;
+ 
+ 	wil = internals->wil;
+@@ -347,7 +345,7 @@ wil6210_send_queue_stats(void *q, struct rte_eth_tx_pending_stats *pending,
+ 	struct pmd_internals *internals = q;
+ 	struct wil6210_priv *wil = NULL;
+ 	struct ethdev_tx_queue *txq;
+-	int peer, num_links;
++	int peer;
+ 	struct wil_ring *ring;
+ 	int ring_index;
+ 	struct wil_ring_tx_data *txdata;
+@@ -644,9 +642,8 @@ wil_tx_burst(void *qdata, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+ 	internals = qdata;
+ 	tx_total = 0;
+ 	tx_left = nb_pkts;
+-	struct wil6210_priv *wil = internals->wil;
+-
+ #ifdef ENABLE_PMC_STATS
++	struct wil6210_priv *wil = internals->wil;
+ 	u64 prev_count[RTE_PMC_NUM_COUNTERS];
+ 	/* Use first index of first peer */
+ 	u64 start = rte_get_timer_cycles();
+diff --git a/dpdk/drivers/wil6210/wil6210_fw_trace.c b/dpdk/drivers/wil6210/wil6210_fw_trace.c
+index 325aa51..ad054a3 100644
+--- a/dpdk/drivers/wil6210/wil6210_fw_trace.c
++++ b/dpdk/drivers/wil6210/wil6210_fw_trace.c
+@@ -1110,6 +1110,7 @@ printf_core(struct wil_fw_log_state *log_s, FILE *f,
+ 			p = max((size_t)p, 2 * sizeof(void *));
+ 			t = 'x';
+ 			fl |= ALT_FORM;
++			/* fallthrough */
+ 		case 'x':
+ 		case 'X':
+ 			a = fmt_x(arg.i, z, t & 32);
+@@ -1153,7 +1154,9 @@ printf_core(struct wil_fw_log_state *log_s, FILE *f,
+ 		case 'm':
+ 			if (1)
+ 				a = strerror(errno);
++				/* fallthrough */
+ 			else
++				/* fallthrough */
+ 		case 's':
+ 				a = (char *)(arg.p ? arg.p : "(null)");
+ 			z = a + string_length(a, p < 0 ? INT_MAX : p);
+@@ -1167,6 +1170,7 @@ printf_core(struct wil_fw_log_state *log_s, FILE *f,
+ 			wc[1] = 0;
+ 			arg.p = wc;
+ 			p = -1;
++			/* fallthrough */
+ 		case 'S':
+ 			ws = arg.p;
+ 			for (i = l = 0;
+@@ -1755,6 +1759,7 @@ close_pipe:
+ 			wil->log_pipe[i] = -1;
+ 		}
+ 	}
++	return rc;
+ }
+ 
+ void
+@@ -1771,7 +1776,7 @@ wil_fw_set_log_offset_entries(struct wil6210_priv *wil)
+ 	u32 rgf_addr[] = { RGF_USER_USAGE_1, RGF_USER_USAGE_2 };
+ 	int rc, i;
+ 	void *data;
+-	struct fw_map *fw_peri, *uc_data, *rgf_map;
++	struct fw_map *fw_peri, *uc_data;
+ 
+ 	fw_peri = wil_find_fw_mapping("fw_peri");
+ 	if (!fw_peri) {
+diff --git a/dpdk/drivers/wil6210/wil6210_ioctl.c b/dpdk/drivers/wil6210/wil6210_ioctl.c
+index 48a43cf..227bc2b 100644
+--- a/dpdk/drivers/wil6210/wil6210_ioctl.c
++++ b/dpdk/drivers/wil6210/wil6210_ioctl.c
+@@ -49,7 +49,7 @@ wil_try_ioctl_async(struct wil6210_priv *wil, u8 *req_buf, u16 req_len,
+ 		struct wmi_cmd_hdr wmi;
+ 		struct wmi_internal_fw_ioctl_event evt;
+ 	} __packed *reply;
+-	u16 cmd_len, reply_len, evt_len;
++	u16 cmd_len, reply_len;
+ 	int rc;
+ 
+ 	vif = ndev_to_vif(wil->main_ndev);
+diff --git a/dpdk/drivers/wil6210/wil6210_main.c b/dpdk/drivers/wil6210/wil6210_main.c
+index 419dd50..7e5aa9a 100644
+--- a/dpdk/drivers/wil6210/wil6210_main.c
++++ b/dpdk/drivers/wil6210/wil6210_main.c
+@@ -558,7 +558,7 @@ void wil_delete_peers(struct wil6210_priv *wil)
+ 	wil_info(wil, "Deleting all peers\n");
+ 
+ 	mutex_lock(&wil->mutex);
+-	for (int i = 0; i < WIL6210_MAX_CID; i++) {
++	for (i = 0; i < WIL6210_MAX_CID; i++) {
+ 		sta = &wil->sta[i];
+ 		if (sta->status == wil_sta_unused)
+ 			continue;
+@@ -592,6 +592,7 @@ void wil_delete_peers(struct wil6210_priv *wil)
+ 	mutex_unlock(&wil->mutex);
+ }
+ 
++#ifndef WIL6210_PMD
+ static int wil_wait_for_recovery(struct wil6210_priv *wil)
+ {
+ 	if (wait_event_interruptible(wil->wq, wil->recovery_state !=
+@@ -606,6 +607,7 @@ static int wil_wait_for_recovery(struct wil6210_priv *wil)
+ 	wil_info(wil, "Proceed with recovery\n");
+ 	return 0;
+ }
++#endif
+ 
+ void wil_set_recovery_state(struct wil6210_priv *wil, int state)
+ {
+@@ -2057,7 +2059,6 @@ int __wil_up(struct wil6210_priv *wil)
+ 	struct net_device *ndev = wil->main_ndev;
+ 	struct wireless_dev *wdev = ndev->ieee80211_ptr;
+ 	int rc;
+-	u16 val;
+ 	u32 pcie_lane_count, pcie_gen;
+ 
+ 	WARN_ON(!mutex_is_locked(&wil->mutex));
+diff --git a/dpdk/drivers/wil6210/wil6210_memio.c b/dpdk/drivers/wil6210/wil6210_memio.c
+index e51add0..1abbe16 100644
+--- a/dpdk/drivers/wil6210/wil6210_memio.c
++++ b/dpdk/drivers/wil6210/wil6210_memio.c
+@@ -100,7 +100,6 @@ int wil_memio_dword(struct wil6210_priv *wil, struct wil_memio *io)
+ 
+ int wil_memio_block(struct wil6210_priv *wil, struct wil_memio_block *io)
+ {
+-	void *block;
+ 	void __iomem *a;
+ 	int rc = 0;
+ 
+@@ -122,7 +121,6 @@ int wil_memio_block(struct wil6210_priv *wil, struct wil_memio_block *io)
+ 
+ 	rc = wil_mem_access_lock(wil);
+ 	if (rc) {
+-		kfree(block);
+ 		return rc;
+ 	}
+ 
+@@ -143,7 +141,6 @@ int wil_memio_block(struct wil6210_priv *wil, struct wil_memio_block *io)
+ 		break;
+ 	}
+ 
+-out_unlock:
+ 	wil_mem_access_unlock(wil);
+ 	return rc;
+ }
+diff --git a/dpdk/drivers/wil6210/wil6210_nl60g.c b/dpdk/drivers/wil6210/wil6210_nl60g.c
+index 6d51893..d783b11 100644
+--- a/dpdk/drivers/wil6210/wil6210_nl60g.c
++++ b/dpdk/drivers/wil6210/wil6210_nl60g.c
+@@ -1872,7 +1872,6 @@ nl60g_close_connection(struct nl60g_port *port)
+ {
+ 	struct nl60g_state *nl60g = port->nl60g;
+ 	struct wil6210_priv *wil = nl60g->wil;
+-	int i, j;
+ 
+ 	/* perform some actions without the lock to avoid
+ 	 * delaying other operations too much (such as sending events).
+@@ -1991,7 +1990,7 @@ nl60g_start_poll_worker(struct nl60g_state *nl60g)
+ {
+ 	struct wil6210_priv *wil = nl60g->wil;
+ 	rte_cpuset_t cpuset;
+-	int i, rc;
++	int rc;
+ 
+ 	rc = socketpair(AF_UNIX, SOCK_STREAM, 0, nl60g->exit_sockets);
+ 	if (rc == -1) {
+diff --git a/dpdk/drivers/wil6210/wil6210_pcidev.c b/dpdk/drivers/wil6210/wil6210_pcidev.c
+index 6c3a2d1..b463c8d 100644
+--- a/dpdk/drivers/wil6210/wil6210_pcidev.c
++++ b/dpdk/drivers/wil6210/wil6210_pcidev.c
+@@ -684,6 +684,7 @@ static int wil_if_pcie_enable(struct wil6210_priv *wil)
+ 	return rc;
+ }
+ 
++#ifndef WIL6210_PMD
+ static int wil_if_pcie_disable(struct wil6210_priv *wil)
+ {
+ 	//struct rte_pci_device *pdev = wil->pdev;
+@@ -698,6 +699,7 @@ static int wil_if_pcie_disable(struct wil6210_priv *wil)
+ 	/* TODO: disable HW */
+ 	return 0;
+ }
++#endif
+ 
+ static int wil_platform_rop_ramdump(void *wil_handle, void *buf, uint32_t size)
+ {
+diff --git a/dpdk/drivers/wil6210/wil6210_pmc.c b/dpdk/drivers/wil6210/wil6210_pmc.c
+index 83598e4..44df162 100644
+--- a/dpdk/drivers/wil6210/wil6210_pmc.c
++++ b/dpdk/drivers/wil6210/wil6210_pmc.c
+@@ -538,8 +538,8 @@ __wil_pmc_read(struct wil_pmc_reader_ctx *pmcr, char *buf, size_t size,
+ {
+ 	struct wil6210_priv *wil = pmcr->wil;
+ 	struct pmc_ctx *pmc = &wil->pmc;
+-	uint32_t total_size, unit_size, written, desc;
+-	ssize_t asize;
++	uint32_t total_size, written, desc;
++	ssize_t asize = 0;
+ 
+ 	if (wil->pmc_continuous_mode) {
+ 		wil_err(wil, "legacy PMC is not supported\n");
+@@ -596,7 +596,6 @@ out:
+ static ssize_t wil_pmc_read(void *ctx, char *buf, size_t size)
+ {
+ 	struct wil_pmc_reader_ctx *pmcr = ctx;
+-	struct wil6210_priv *wil = pmcr->wil;
+ 	ssize_t rc;
+ 
+ 	rc = __wil_pmc_read(pmcr, buf, size, pmcr->offset, false);
+@@ -691,7 +690,6 @@ static ssize_t wil_pmc_available(void *ctx)
+ static ssize_t wil_pmcring_read(void *ctx, char *buf, size_t size)
+ {
+ 	struct wil_pmc_reader_ctx *pmcr = ctx;
+-	struct wil6210_priv *wil = pmcr->wil;
+ 	ssize_t rc;
+ 
+ 	rc = __wil_pmc_read(pmcr, buf, size, pmcr->offset, true);
+diff --git a/dpdk/drivers/wil6210/wil6210_wmi.c b/dpdk/drivers/wil6210/wil6210_wmi.c
+index 7f6781f..2bec336 100644
+--- a/dpdk/drivers/wil6210/wil6210_wmi.c
++++ b/dpdk/drivers/wil6210/wil6210_wmi.c
+@@ -2332,7 +2332,6 @@ wmi_call_async(struct wil6210_priv *wil, u16 cmdid, u8 mid, void *buf, u16 len,
+ 	       u16 reply_id, void *reply, u16 reply_size, u64 to_msec)
+ {
+ 	int rc;
+-	unsigned long remain;
+ 	ulong flags;
+ 	u64 curr_time_ms;
+ 

@@ -1,0 +1,1092 @@
+From 099dfeadf2d201e8bf20d83bc5dc79f5407496e7 Mon Sep 17 00:00:00 2001
+From: Sreedev Sreedev <ssreedev@fb.com>
+Date: Tue, 26 Jan 2021 16:23:37 -0800
+Subject: [PATCH] Integrate spi and mdio read/write functions.
+
+Integrate MDIO read and write (16bit and 32bit
+versions) transactions.  Fixed app crash and
+reg read inconsistency.
+---
+ base/phy/common/vtss_phy_common.c             |  22 +-
+ base/phy/phy_10g/vtss_phy_10g.c               |  10 +
+ base/phy/phy_1g/vtss_phy.c                    |   6 +-
+ include/vtss_init_api.h                       |  21 ++
+ include/vtss_port_api.h                       |  30 +--
+ phy_demo_appl/appl/vtss_8254_phy_read.c       | 270 +++++++++++++++++++++
+ phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c |  63 +++--
+ phy_demo_appl/appl/vtss_appl_board_malibu.c   | 327 +++++++++++++++++++++++++-
+ phy_demo_appl/build_malibu.sh                 |   1 +
+ 9 files changed, 694 insertions(+), 56 deletions(-)
+ create mode 100644 phy_demo_appl/appl/vtss_8254_phy_read.c
+ create mode 100755 phy_demo_appl/build_malibu.sh
+
+diff --git a/base/phy/common/vtss_phy_common.c b/base/phy/common/vtss_phy_common.c
+index da8818b..d8bf415 100755
+--- a/base/phy/common/vtss_phy_common.c
++++ b/base/phy/common/vtss_phy_common.c
+@@ -694,6 +694,7 @@ vtss_rc csr_wr(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOOL i
+
+     if (clause45) {
+         vtss_mmd_write_t  mmd_write_func = vtss_state->init_conf.mmd_write;
++        vtss_mmd_write32_t  mmd_write_func32 = vtss_state->init_conf.mmd_write32;
+         vtss_port_no_t p = port_no;
+ #ifdef VTSS_CHIP_10G_PHY
+         if((vtss_state->phy_10g_state[port_no].mode.alternate_port_ena) && (vtss_state->phy_10g_state[port_no].family == VTSS_PHY_FAMILY_MALIBU))
+@@ -707,10 +708,9 @@ vtss_rc csr_wr(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOOL i
+             if (!use_base_port) {
+                 p = port_no;
+             }
+-            /* Write the Upper 2 Bytes */
+-            VTSS_RC(mmd_write_func(vtss_state, p, mmd, (reg_addr | 1), reg_value_upper));
+-            /* Write the Lower 2 Bytes */
+-            VTSS_RC(mmd_write_func(vtss_state, p, mmd, reg_addr, reg_value_lower));
++
++            /* 32 bit writes need to be atomic*/
++            VTSS_RC(mmd_write_func32(vtss_state, p, mmd, reg_addr, value));
+         } else {
+             VTSS_RC(mmd_write_func(vtss_state, p, mmd, addr, reg_value_lower));
+         }
+@@ -996,6 +996,7 @@ vtss_rc csr_wr_64(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOO
+
+     if (clause45) {
+         vtss_mmd_write_t  mmd_write_func = vtss_state->init_conf.mmd_write;
++        vtss_mmd_write32_t  mmd_write_func32 = vtss_state->init_conf.mmd_write32;
+         vtss_port_no_t  p = port_no;
+ #ifdef VTSS_CHIP_10G_PHY
+         if((vtss_state->phy_10g_state[port_no].mode.alternate_port_ena) && (vtss_state->phy_10g_state[port_no].family == VTSS_PHY_FAMILY_MALIBU))
+@@ -1010,16 +1011,13 @@ vtss_rc csr_wr_64(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOO
+             p = port_no;
+         }
+         /* Start writing from the Lower 2 Bytes */
+-        reg_val = value_low & 0xffff;
+-        VTSS_RC(mmd_write_func(vtss_state, p, mmd, reg_addr, reg_val));
+-        reg_val = value_low >> 16;
+-        VTSS_RC(mmd_write_func(vtss_state, p, mmd, (reg_addr | 1), reg_val));
++
++        VTSS_RC(mmd_write_func32(vtss_state, p, mmd, reg_addr, reg_val));
++
+         VTSS_RC(get_base_adr(vtss_state, port_no, mmd, addr2, &base_addr, &target, &offset, &use_base_port));
+         reg_addr = base_addr | (offset << 1);
+-        reg_val = value_hi & 0xffff;
+-        VTSS_RC(mmd_write_func(vtss_state, p, mmd, reg_addr, reg_val));
+-        reg_val = value_hi >> 16;
+-        VTSS_RC(mmd_write_func(vtss_state, p, mmd, (reg_addr | 1), reg_val));
++
++        VTSS_RC(mmd_write_func32(vtss_state, p, mmd, reg_addr, reg_val));
+     } else {
+         // 1G PHY access
+ #ifdef VTSS_CHIP_CU_PHY
+diff --git a/base/phy/phy_10g/vtss_phy_10g.c b/base/phy/phy_10g/vtss_phy_10g.c
+index 20ea222..531604e 100755
+--- a/base/phy/phy_10g/vtss_phy_10g.c
++++ b/base/phy/phy_10g/vtss_phy_10g.c
+@@ -762,6 +762,16 @@ static vtss_rc vtss_phy_10g_reset_blocks(vtss_state_t *vtss_state,
+ }
+
+
++/* Verify the Phy  */
++static vtss_rc vtss_inst_phy_10G_port_no_check_private(const vtss_inst_t    inst,
++                                                  vtss_state_t         **vtss_state,
++                                                  const vtss_port_no_t port_no)
++{
++
++    return vtss_inst_port_no_check(inst, vtss_state, port_no);
++
++}
++
+ /* Verify the Phy  */
+ static vtss_rc vtss_inst_phy_10G_no_check_private(const vtss_inst_t    inst,
+                                                   vtss_state_t         **vtss_state,
+diff --git a/base/phy/phy_1g/vtss_phy.c b/base/phy/phy_1g/vtss_phy.c
+index 89e925d..066e890 100644
+--- a/base/phy/phy_1g/vtss_phy.c
++++ b/base/phy/phy_1g/vtss_phy.c
+@@ -82,13 +82,13 @@ static vtss_rc vtss_phy_conf_1g_set_private(vtss_state_t *vtss_state,
+ static vtss_rc vtss_phy_debug_reg_dump_private(vtss_state_t *vtss_state, const vtss_debug_printf_t pr,
+                                                BOOL clear, const vtss_port_no_t port_no);
+
++static vtss_rc vtss_phy_detect_base_ports_private(vtss_state_t *vtss_state);
++
+ #if defined(VTSS_FEATURE_SERDES_MACRO_SETTINGS)
+ static BOOL vtss_phy_chk_serdes_init_mac_mode_private(vtss_state_t                      *vtss_state,
+                                                       vtss_port_no_t                     port_no,
+                                                       const vtss_phy_reset_conf_t *const conf);
+
+-static vtss_rc vtss_phy_detect_base_ports_private(vtss_state_t *vtss_state);
+-
+ u8 vtss_phy_cfg_buf_size(vtss_state_t *vtss_state, const vtss_port_no_t    port_no);
+
+ #endif
+@@ -1446,7 +1446,7 @@ static vtss_rc vtss_phy_detect(vtss_state_t *vtss_state, const vtss_port_no_t po
+                 ps->family = VTSS_PHY_FAMILY_TESLA;
+                 ps->type.port_cnt = 4;
+                 ps->type.channel_id = vtss_phy_chip_port(vtss_state, port_no);
+-
++
+                 VTSS_RC(vtss_phy_page_gpio(vtss_state, port_no));      // Switch to micro/GPIO register-page
+                 VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_EXTENDED_REVISION, &reg30));
+                 if (reg30 & VTSS_F_PHY_EXTENDED_REVISION_TESLA_E) {
+diff --git a/include/vtss_init_api.h b/include/vtss_init_api.h
+index 554d2da..c3fe601 100644
+--- a/include/vtss_init_api.h
++++ b/include/vtss_init_api.h
+@@ -321,6 +321,24 @@ typedef vtss_rc (*vtss_mmd_write_t)(const vtss_inst_t    inst,
+                                     const u16            addr,
+                                     const u16            value);
+
++/**
++ * \brief MMD management write 32bit value function (IEEE 802.3 clause 45)
++ *
++ * \param inst [IN]    Target instance reference.
++ * \param port_no [IN] Port number
++ * \param mmd [IN]     MMD address (0-31)
++ * \param addr [IN]    Start register address (0-65535)
++ * \param buf [IN]     The 32 bit register value
++ *
++ * \return Return code.
++ **/
++typedef vtss_rc (*vtss_mmd_write32_t)(const vtss_inst_t    inst,
++                                    const vtss_port_no_t port_no,
++                                    const u8             mmd,
++                                    const u16            addr,
++                                    const u32            value32);
++
++
+ /** \brief PI data width */
+ typedef enum {
+     VTSS_PI_WIDTH_16 = 0, /* 16 bit (default) */
+@@ -438,13 +456,16 @@ typedef struct {
+     vtss_mmd_read_t     mmd_read;     /**< MMD management read function */
+     vtss_mmd_read_inc_t mmd_read_inc; /**< MMD management read increment function */
+     vtss_mmd_write_t    mmd_write;    /**< MMD management write function */
++    vtss_mmd_write32_t  mmd_write32;  /**< MMD management write 32bit value function */
+
+     vtss_spi_read_write_t   spi_read_write;/**< Board specific SPI read/write callout function */
+
+     vtss_spi_32bit_read_write_t   spi_32bit_read_write;/**< Board specific SPI read/write callout function for 32 bit data */
+     vtss_spi_64bit_read_write_t   spi_64bit_read_write;/**< Board specific SPI read/write callout function for 64 bit data*/
+
++#if defined(VTSS_GPIOS)
+     vtss_gpio_func_info_get_t gpio_func_info_get;       /**< GPIO functionallity information get callout function */
++#endif
+
+     vtss_port_serdes_tap_get_t serdes_tap_get;  /**< Serdes tap get callout function */
+
+diff --git a/include/vtss_port_api.h b/include/vtss_port_api.h
+index 0588b42..0c48408 100644
+--- a/include/vtss_port_api.h
++++ b/include/vtss_port_api.h
+@@ -33,6 +33,21 @@ typedef enum
+     VTSS_MIIM_CONTROLLER_NONE = -1  /**< Unassigned MIIM controller */
+ } vtss_miim_controller_t;
+
++/** \brief Different media/cable types attached to the 10G Serdes */
++typedef enum {
++    VTSS_SD10G_MEDIA_PR_NONE,    /**< No preset > */
++    VTSS_SD10G_MEDIA_SR,         /**< SR, Short Range > */
++    VTSS_SD10G_MEDIA_ZR,         /**< ZR, Long Range > */
++    VTSS_SD10G_MEDIA_DAC,        /**< DAC (Direct attached copper) cable, unspecified lenght > */
++    VTSS_SD10G_MEDIA_DAC_1M,     /**< 1m DAC > */
++    VTSS_SD10G_MEDIA_DAC_2M,     /**< 2m DAC > */
++    VTSS_SD10G_MEDIA_DAC_3M,     /**< 3m DAC > */
++    VTSS_SD10G_MEDIA_DAC_5M,     /**< 5m DAC > */
++    VTSS_SD10G_MEDIA_BP,         /**< Backplane > */
++    VTSS_SD10G_MEDIA_B2B,        /**< Bord to Board > */
++    VTSS_SD10G_MEDIA_10G_KR,     /**< 10G Base KR > */
++} vtss_sd10g_media_type_t;
++
+ #if defined(VTSS_FEATURE_PORT_CONTROL)
+
+ /** \brief The internal bandwidth allocated for the port */
+@@ -219,21 +234,6 @@ typedef enum
+     VTSS_PORT_LOOP_PCS_HOST,  /**< PCS host port loop */
+ } vtss_port_loop_t;
+
+-/** \brief Different media/cable types attached to the 10G Serdes */
+-typedef enum {
+-    VTSS_SD10G_MEDIA_PR_NONE,    /**< No preset > */
+-    VTSS_SD10G_MEDIA_SR,         /**< SR, Short Range > */
+-    VTSS_SD10G_MEDIA_ZR,         /**< ZR, Long Range > */
+-    VTSS_SD10G_MEDIA_DAC,        /**< DAC (Direct attached copper) cable, unspecified lenght > */
+-    VTSS_SD10G_MEDIA_DAC_1M,     /**< 1m DAC > */
+-    VTSS_SD10G_MEDIA_DAC_2M,     /**< 2m DAC > */
+-    VTSS_SD10G_MEDIA_DAC_3M,     /**< 3m DAC > */
+-    VTSS_SD10G_MEDIA_DAC_5M,     /**< 5m DAC > */
+-    VTSS_SD10G_MEDIA_BP,         /**< Backplane > */
+-    VTSS_SD10G_MEDIA_B2B,        /**< Bord to Board > */
+-    VTSS_SD10G_MEDIA_10G_KR,     /**< 10G Base KR > */
+-} vtss_sd10g_media_type_t;
+-
+ /** \brief SFI Serdes configuration */
+ typedef struct
+ {
+diff --git a/phy_demo_appl/appl/vtss_8254_phy_read.c b/phy_demo_appl/appl/vtss_8254_phy_read.c
+new file mode 100644
+index 0000000..02ea8de
+--- /dev/null
++++ b/phy_demo_appl/appl/vtss_8254_phy_read.c
+@@ -0,0 +1,270 @@
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <linux/i2c-dev.h>
++#include <linux/i2c.h>
++#include <errno.h>
++
++
++/*/dev/i2c-3*/
++
++int open_vsc8254_i2c_dev(int *fd)
++{
++	if ((*fd = open("/dev/i2c-3", O_RDWR)) < 0) {
++    printf(" Error opening /dev/i2c-3!!\n");
++		return -1;
++	}
++return 0;
++}
++
++int close_vsc8254_i2c_dev(int *fd)
++{
++  close(*fd);
++}
++
++int read_vsc8254( int *fd,
++    int port,
++    unsigned char dev_addr,
++    unsigned short reg_addr,
++    unsigned char dataSize,
++    unsigned long long *pullData)
++{
++/*
++ * This is the structure as used in the I2C_RDWR ioctl call *
++struct i2c_rdwr_ioctl_data {
++	struct i2c_msg *msgs;	/* pointers to i2c_msgs *
++	__u32 nmsgs;			/* number of i2c_msgs *
++};
++
++struct i2c_msg {
++	__u16 addr;	/* slave address			*
++	__u16 flags;
++#define I2C_M_RD		0x0001	/* read data, from slave to master *
++					/* I2C_M_RD is guaranteed to be 0x0001! *
++#define I2C_M_TEN		0x0010	/* this is a ten bit chip address *
++#define I2C_M_DMA_SAFE		0x0200	/* the buffer of this message is DMA safe *
++					/* makes only sense in kernelspace *
++					/* userspace buffers are copied anyway *
++#define I2C_M_RECV_LEN		0x0400	/* length will be first received byte *
++#define I2C_M_NO_RD_ACK		0x0800	/* if I2C_FUNC_PROTOCOL_MANGLING *
++#define I2C_M_IGNORE_NAK	0x1000	/* if I2C_FUNC_PROTOCOL_MANGLING *
++#define I2C_M_REV_DIR_ADDR	0x2000	/* if I2C_FUNC_PROTOCOL_MANGLING *
++#define I2C_M_NOSTART		0x4000	/* if I2C_FUNC_NOSTART *
++#define I2C_M_STOP		0x8000	/* if I2C_FUNC_PROTOCOL_MANGLING *
++	__u16 len;		/* msg length				*
++	__u8 *buf;		/* pointer to msg data			*
++};
++*/
++
++struct i2c_rdwr_ioctl_data i2c_ictl_dat[1];
++struct i2c_msg i2cmsgs[2];
++unsigned char inbuf[8] = {0}, outbuf[8] = {0};
++int ix;
++
++if (0 == port) {
++  inbuf[0] = 0x0;
++}
++else if (1 == port) {
++  inbuf[0] = 0x20;
++}
++else {
++  return -1;
++}
++
++  inbuf[0] |= dev_addr & 0x1f;
++  inbuf[1] = (reg_addr >> 8) & 0xff;
++  inbuf[2] = reg_addr & 0xff;
++//printf("%s(): in[0]:0x%02x in[1]:0x%02x in[2]:0x%02x\n",__func__,inbuf[0],inbuf[1],inbuf[2]);
++  i2cmsgs[0].addr = 0x44;
++  i2cmsgs[0].flags = 0;
++  i2cmsgs[0].len = 3;
++  i2cmsgs[0].buf = inbuf;
++
++  i2cmsgs[1].addr = 0x44;
++  i2cmsgs[1].flags = I2C_M_RD | I2C_M_NOSTART;
++  i2cmsgs[1].len = dataSize;
++  i2cmsgs[1].buf = outbuf;
++
++  i2c_ictl_dat->msgs = i2cmsgs;
++  i2c_ictl_dat->nmsgs = 2;
++
++  if (ioctl(*fd, I2C_RDWR, i2c_ictl_dat) < 0 ) {
++    printf(" Read Error!\n");
++    return -1;
++  }
++
++  //printf("%s(): ",__func__);
++  //for (ix = 0; ix < dataSize; ix++)
++    //printf(" val[%d]:0x%02x ",ix,outbuf[ix]);
++  //printf("Done!\n");
++  if (4 == dataSize) {
++    *pullData = (outbuf[0] << 24) | (outbuf[1] << 16) | (outbuf[2] << 8) | (outbuf[3]);
++  }
++  else {
++    *pullData = (outbuf[0] << 8) | (outbuf[1]);
++  }
++  return 0;
++}
++
++int write_vsc8254(int *fd,
++    int port,
++    unsigned char dev_addr,
++    unsigned short reg_addr,
++    unsigned char dataSize,
++    unsigned long long *pullData)
++{
++  struct i2c_rdwr_ioctl_data i2c_ictl_dat[1];
++  struct i2c_msg i2cmsgs[2];
++  unsigned char inbuf[8] = {0};
++  int ix;
++
++if (0 == port) {
++  inbuf[0] = 0x0;
++}
++else if (1 == port) {
++  inbuf[0] = 0x20;
++}
++else {
++  return -1;
++}
++
++  inbuf[0] |= dev_addr & 0x1f;
++  inbuf[1] = (reg_addr >> 8) & 0xff;
++  inbuf[2] = reg_addr & 0xff;
++  switch (dataSize) {
++    case 2:
++      inbuf[3] = (*pullData >> 8) & 0xff;
++      inbuf[4] = (*pullData) & 0xff;
++      break;
++    case 4:
++      inbuf[3] = (*pullData >> 24) & 0xff;
++      inbuf[4] = (*pullData >> 16) & 0xff;
++      inbuf[5] = (*pullData >> 8) & 0xff;
++      inbuf[6] = (*pullData) & 0xff;
++      break;
++    case 8:
++      printf("Error! Unsupported data width(%d bytes)\n",dataSize);
++      return -1;
++    default:
++      printf("Error! Unsupported data width(%d bytes)\n",dataSize);
++      return -1;
++  }
++  //printf("%s(): in[0]:0x%02x in[1]:0x%02x in[2]:0x%02x\n",__func__,inbuf[0],inbuf[1],inbuf[2]);
++  i2cmsgs[0].addr = 0x44;
++  i2cmsgs[0].flags = 0;
++  i2cmsgs[0].len = 3;
++  i2cmsgs[0].buf = inbuf;
++
++  i2c_ictl_dat->msgs = i2cmsgs;
++  i2c_ictl_dat->nmsgs = 1;
++
++  if (ioctl(*fd, I2C_RDWR, i2c_ictl_dat) < 0 ) {
++    printf(" Write Error!\n");
++    return -1;
++  }
++
++  return 0;
++}
++
++int vsc8254_i2c_rw( unsigned char port,
++                    unsigned char rd, // 1=rd, 0=wr
++                    unsigned short dev_addr,
++                    unsigned short reg_addr,
++                    unsigned long *value
++                    )
++{
++  unsigned char datasize = 4;
++  unsigned long long ulldata;
++  int fdi2c, i2caddr;
++  int nret;
++
++  //printf("%s : %s port=%d dev_addr:0x%x reg_addr:0x%x\n",__func__,(1==rd)?"READ":"WRITE",port,dev_addr,reg_addr);
++  datasize = 4;
++  if (open_vsc8254_i2c_dev(&fdi2c)) {
++    return -1;
++  }
++
++  i2caddr = 0x44;
++  if (nret = ioctl(fdi2c, I2C_SLAVE, i2caddr) < 0) {
++    int errval = errno;
++    printf(" Error setting i2c addr! nret=0x%x(%d) errval=%x(%d)\n",nret,nret,errval,errval);
++    perror(NULL);
++    close_vsc8254_i2c_dev(&fdi2c);
++    return -1;
++  }
++
++  if (1 == rd) {
++    if (read_vsc8254(&fdi2c,port,dev_addr,reg_addr,datasize,&ulldata)) {
++      close_vsc8254_i2c_dev(&fdi2c);
++      printf("%s(): Read returned ERROR!\n",__func__);
++      return -1;
++    }
++    *value = (unsigned long) ulldata;
++    //printf(" READ: dev_addr:0x%x reg_addr:0x%x value:0x%x\n",dev_addr,reg_addr,*value);
++  }
++  else {
++    ulldata = *value;
++    if (write_vsc8254(&fdi2c,port,dev_addr,reg_addr,datasize,&ulldata)) {
++      close_vsc8254_i2c_dev(&fdi2c);
++      printf("%s(): Write returned ERROR!\n",__func__);
++      return -1;
++    }
++    //printf(" WRITE: dev_addr:0x%x reg_addr:0x%x value:0x%x\n",dev_addr,reg_addr,*value);
++  }
++
++  close_vsc8254_i2c_dev(&fdi2c);
++return 0;
++}
++
++#if 0
++int main( int argc, char *argv[])
++{
++  unsigned char port;
++  unsigned long regnum;
++  unsigned short dev_addr, reg_addr;
++  unsigned char datasize = 2;
++  unsigned long long ulldata;
++  int fdi2c, i2caddr;
++  int nret;
++
++  if (3 != argc) {
++    printf(" Usage %s portno regnum \n", argv[0]);
++    return -1;
++  }
++
++  if ('1' == argv[1][0])
++    port = 1;
++  else
++    port = 0;
++
++  regnum = strtol(argv[2], NULL, 0);
++
++  reg_addr = regnum & 0xffff;
++  dev_addr = (regnum >> 16) & 0x1f;
++  printf("%s : port=%d regnum=0x%x(%d) dev_addr:0x%x reg_addr:0x%x\n",argv[0],port,regnum,regnum,dev_addr,reg_addr);
++  datasize = 4;
++  if (open_vsc8254_i2c_dev(&fdi2c)) {
++    return -1;
++  }
++
++  i2caddr = 0x44;
++  if (nret = ioctl(fdi2c, I2C_SLAVE, i2caddr) < 0) {
++    int errval = errno;
++    printf(" Error setting i2c addr! nret=0x%x(%d) errval=%x(%d)\n",nret,nret,errval,errval);
++    perror(NULL);
++    close_vsc8254_i2c_dev(&fdi2c);
++    return -1;
++  }
++
++  if (read_vsc8254(&fdi2c,port,dev_addr,reg_addr,datasize,&ulldata)) {
++    close_vsc8254_i2c_dev(&fdi2c);
++    return -1;
++  }
++
++  printf(" dev_addr:0x%x reg_addr:0x%x value:0x%x\n",dev_addr,reg_addr,ulldata);
++
++  close_vsc8254_i2c_dev(&fdi2c);
++return 0;
++}
++#endif
+diff --git a/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c b/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
+index f8f22f6..dbbf814 100644
+--- a/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
++++ b/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
+@@ -226,8 +226,10 @@ BOOL  vtss_appl_malibu_spi_io_test(const vtss_inst_t   inst, const vtss_port_no_
+ {
+     u32 val32 = 0;
+     u32 val32B = 0;
+-    u16 addr;
+-    u8 dev;
++    // On LS1048A, reg reads were not consistent probably due to compiler
++    // optimization.  Adding register keyword solved the issue.
++    register u16 addr;
++    register u8 dev;
+
+     dev = 0x1E; addr = 0x0;
+     inst->init_conf.spi_32bit_read_write(inst, 0, SPI_RD, dev, addr, &val32);
+@@ -1696,9 +1698,10 @@ BOOL  vtss_appl_malibu_gpio_out_set(vtss_inst_t   inst, vtss_port_no_t   port_no
+     // VTSS_F_LINE_PMA_Vendor_Specific_PMA_Control_2_Vendor_Specific_PMA_Control_2_RX_LED_BLINK_TIME:
+     // 0: 50ms interval, 1(DEFAULT): 100 ms interval
+
+-    inst->init_conf.spi_32bit_read_write(inst, port_no, SPI_RD, 0x1, 0xA100, &val32);
+-    val32 |= (3 << 5);
+-    inst->init_conf.spi_32bit_read_write(inst, port_no, SPI_WR, 0x1, 0xA100, &val32);
++    //inst->init_conf.spi_32bit_read_write(inst, port_no, SPI_RD, 0x1, 0xA100, &val32);
++    //val32 |= (3 << 5);
++    //inst->init_conf.spi_32bit_read_write(inst, port_no, SPI_WR, 0x1, 0xA100, &val32);
++
+     // CSR_COLD_WRM(port_no, VTSS_LINE_PMA_Vendor_Specific_PMA_Control_2_Vendor_Specific_PMA_Control_2,
+     // 		 VTSS_F_LINE_PMA_Vendor_Specific_PMA_Control_2_Vendor_Specific_PMA_Control_2_TX_LED_MODE(3),
+     // 		 VTSS_M_LINE_PMA_Vendor_Specific_PMA_Control_2_Vendor_Specific_PMA_Control_2_TX_LED_MODE);
+@@ -1788,7 +1791,8 @@ BOOL  vtss_appl_malibu_gpio_in_set(vtss_inst_t   inst, vtss_port_no_t   port_no)
+ #endif
+ }
+
+-
++//Global socket fd for mdio ioctl calls
++extern int g_fd;
+ /* ================================================================= *
+  *  START_OF_MAIN
+  * ================================================================= */
+@@ -1875,8 +1879,10 @@ int main(int argc, const char **argv) {
+         T_E("Could not initialize");
+         return 1;
+   }
++  g_fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+   if (board->inst->init_conf.spi_32bit_read_write) {
++    printf("Calling vtss_appl_malibu_spi_io_test()\n");
+       vtss_appl_malibu_spi_io_test(board->inst, port_no);
+   }
+
+@@ -1910,10 +1916,11 @@ int main(int argc, const char **argv) {
+   /* ********************************************************** */
+
+
+-  printf ("Configuring Operating MODE for ALL Ports; 0=MODE_10GLAN;  1=MODE_1GLAN;  2=MODE_10GWAN, Enter Oper_MODE (0/1/2): ");
++  //printf ("Configuring Operating MODE for ALL Ports; 0=MODE_10GLAN;  1=MODE_1GLAN;  2=MODE_10GWAN, Enter Oper_MODE (0/1/2): ");
+   memset (&value_str[0], 0, sizeof(value_str));
+-  scanf("%s", &value_str[0]);
+-  phy_mode = atoi(value_str);
++  //scanf("%s", &value_str[0]);
++  //phy_mode = atoi(value_str);
++  phy_mode = 0;
+
+   printf ("\n");
+
+@@ -1988,11 +1995,11 @@ int main(int argc, const char **argv) {
+       printf("vtss_phy_10g_init failed, port %d\n", port_no);
+     }
+
+-    // if (vtss_phy_10g_mode_get(board->inst, port_no, &oper_mode) != VTSS_RC_OK) {
+-    //   T_E("vtss_phy_10g_mode_get failed, port %d\n", port_no);
+-    //   printf("vtss_phy_10g_mode_get failed, port %d\n", port_no);
+-    // }
+-
++    printf(" Calling vtss_phy_10g_mode_get()\n");
++    if (vtss_phy_10g_mode_get(board->inst, port_no, &oper_mode) != VTSS_RC_OK) {
++      T_E("vtss_phy_10g_mode_get failed, port %d\n", port_no);
++      printf("vtss_phy_10g_mode_get failed, port %d\n", port_no);
++    }
+     switch (phy_mode) {
+     case PHY_MODE_10G_LAN:   /* 0=MODE_10GLAN */
+         oper_mode.oper_mode = VTSS_PHY_LAN_MODE;
+@@ -2009,8 +2016,10 @@ int main(int argc, const char **argv) {
+         // or backplane on the host side
+         oper_mode.h_media = VTSS_MEDIA_TYPE_KR_SC;
+         oper_mode.l_media = VTSS_MEDIA_TYPE_SR2_SC;
++        //oper_mode.l_media = VTSS_MEDIA_TYPE_DAC_SC;
+         // oper_mode.l_media = VTSS_MEDIA_TYPE_KR_SC;
+
++printf(" Set to: PHY_MODE_10G_LAN\n");
+         break;
+
+     case PHY_MODE_1G_LAN: /* 1=MODE_1GLAN */
+@@ -2046,7 +2055,7 @@ int main(int argc, const char **argv) {
+         // or backplane on the host side
+         oper_mode.h_media = VTSS_MEDIA_TYPE_KR_SC;
+         oper_mode.l_media = VTSS_MEDIA_TYPE_SR2_SC;
+-        // oper_mode.l_media = VTSS_MEDIA_TYPE_KR_SC;
++        //oper_mode.l_media = VTSS_MEDIA_TYPE_DAC_SC;
+
+         break;
+
+@@ -2064,12 +2073,15 @@ int main(int argc, const char **argv) {
+     // H/LREFCLK is_high_amp :
+     // --> TRUE (1100mV to 2400mV diff swing)
+     // --> FALSE (200mV to 1200mV diff swing)
+-    oper_mode.h_clk_src.is_high_amp = TRUE;
+-    oper_mode.l_clk_src.is_high_amp = TRUE;
++    // MBH platform amp uses ~1000mV signal.  Setting to FALSE
++    oper_mode.h_clk_src.is_high_amp = FALSE;
++    oper_mode.l_clk_src.is_high_amp = FALSE;
+
++    oper_mode.lref_for_host = TRUE;
+     /* Setup Port */
+     printf("vtss_phy_10g_mode_set: port %d, oper_mode = %d\n", port_no, oper_mode.oper_mode);
+
++    printf(" Calling vtss_phy_10g_mode_set()\n");
+     if (vtss_phy_10g_mode_set(board->inst, port_no, &oper_mode) != VTSS_RC_OK) {
+       T_E("vtss_phy_10g_mode_set failed, port %d\n", port_no);
+       printf("vtss_phy_10g_mode_set failed, port %d\n", port_no);
+@@ -2152,6 +2164,23 @@ int main(int argc, const char **argv) {
+     //vtss_appl_malibu_gpio_in_set(board->inst, port_no);
+
+   } // End of For loop looping through channels
++printf(" DEBUG: adding vtss_debug_info_print() \n");
++  {
++    vtss_debug_info_t  dbg_info;
++    int ix_dbg;
++    memset (&dbg_info, 0, sizeof(vtss_debug_info_t));
++    vtss_debug_info_get (&dbg_info); /* This turns on ALL Ports in port list */
++#if 0
++    for (ix_dbg=0; ix_dbg<VTSS_PORT_ARRAY_SIZE; ix_dbg++) {
++      dbg_info.port_list[ix_dbg] = 0;
++    }
++#endif
++    dbg_info.port_list[port_no] = 1;
++    dbg_info.layer = VTSS_DEBUG_LAYER_ALL;
++    dbg_info.group = VTSS_DEBUG_GROUP_PHY;
++    dbg_info.full = 1;
++    vtss_debug_info_print(board->inst, (vtss_debug_printf_t) printf, &dbg_info);
++  }
+
+   fflush(stdout);
+
+diff --git a/phy_demo_appl/appl/vtss_appl_board_malibu.c b/phy_demo_appl/appl/vtss_appl_board_malibu.c
+index d61b552..4efa380 100755
+--- a/phy_demo_appl/appl/vtss_appl_board_malibu.c
++++ b/phy_demo_appl/appl/vtss_appl_board_malibu.c
+@@ -28,25 +28,30 @@
+ #include <stdlib.h> // for EXIT_SUCCESS
+ #include "vtss/api/options.h"
+
++#include <unistd.h>
++#include <pthread.h>
+ // // Fixed socket port for the CPU board used
+ // For Malibu Char Board - Rabbit 6000 series - port is 2310
+ // For Malibu EVAL Board - Rabbit 4200 series - port is 26
+
+ #undef MDIO_ENABLED
+ #undef SPI32_ENABLED
+-#define RBT_RCM6710
++//#define RBT_RCM6710
+ //#define RBT_RCM4210
++//#define SPI32_ENABLED
++#define MDIO_ENABLED
+
+ //#undef RBT_RCM6710
+ #ifdef RBT_RCM6710
+
+ #define RBT_RCM6710_CPU_BOARD_PORT "2310"
+-#define SPI32_ENABLED
++//#define SPI32_ENABLED
++#define MDIO_ENABLED
+
+ #elif defined RBT_RCM4210
+
+ #define RBT_RCM4210_CPU_BOARD_PORT "26"
+-#define SPI32_ENABLED
++//#define SPI32_ENABLED
+ //#define MDIO_ENABLED
+
+ #endif
+@@ -74,6 +79,8 @@ FILE *miim_read_fp;
+ FILE *miim_write_fp;
+ char miim_read_file[64];
+
++pthread_mutex_t i2c_lock;
++
+ // Function for doing read access from the Rabbit CPU via socket
+ // In :  Buffer - Pointer for the data read via the socket.
+ static void socket_read (char *buffer) {
+@@ -130,13 +137,244 @@ static void socket_init (const char *server_addr, const char *port) {
+
+
+ #if defined(VTSS_CHIP_10G_PHY)
++#include "net/if.h"
++#include "sys/ioctl.h"
++#include "linux/mii.h"
++#include "linux/sockios.h"
++
++#define MII_C45_READ_16BIT   0x0
++#define MII_C45_READ_32BIT   0x1
++#define MII_C45_WRITE_16BIT   0x10
++#define MII_C45_WRITE_32BIT   0x11
++
++struct mii_ioctl_data_C45 {
++  unsigned short   phy_id;
++  unsigned short   reg_num;
++  unsigned int     val_in;
++  unsigned int     val_out;
++  unsigned short   dev_addr;
++  unsigned short   operation; //Read/Write 16bit/32bit
++};
++
++static int g_rw_dbg;
++int g_fd;
++vtss_rc mmd_read_vsc8254_phy(const vtss_inst_t    inst,
++         const vtss_port_no_t port_no,
++                     const u8             mmd,
++                           u16            addr,
++                           u16            *const value)
++{
++  int if_ix;
++  int err;
++  int fd;
++  struct ifreq ifr;
++  memset(&ifr, 0, sizeof(ifr));
++
++  if (0 == port_no) {
++    if_ix = 1; //nic1
++  }
++  else if (1 == port_no) {
++    if_ix = 2; //nic2
++  }
++  else {
++    return VTSS_RC_ERROR;
++  }
++
++
++  struct mii_ioctl_data_C45 mii_c45;
++  struct mii_ioctl_data_C45 *mii = &mii_c45;
++  mii->phy_id = port_no + 0x10; //phy addresses are 0x10 and 0x11
++  mii->reg_num = addr;
++  mii->val_in = 0;
++  mii->val_out = 0;
++  mii->dev_addr = mmd;
++  mii->operation = MII_C45_READ_16BIT;
++  ifr.ifr_data = (void *)(mii);
++
++  sprintf(ifr.ifr_name,"mac%d",if_ix);
++  err = ioctl(g_fd, SIOCDEVPRIVATE, &ifr);
++  *value = (u16) mii->val_out;
++
++  if (0 == err) {
++    if (g_rw_dbg)
++      printf(" %s():Interface: %s phy:0x%x devaddr:0x%02x regaddr:0x%04x value=0x%x\n",
++        __func__,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->val_out);
++    return VTSS_RC_OK;
++  }
++  else {
++    printf("%s():ERROR!! Err=%d Interface: %s phy:0x%x dev_addr:0x%x regaddr:0x%x \n",
++        __func__,err,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->reg_num);
++    return VTSS_RC_ERROR;
++  }
++}
++
++vtss_rc mmd_read_inc_vsc8254_phy(const vtss_inst_t    inst,
++                                       const vtss_port_no_t port_no,
++                                       const u8             mmd,
++                                       const u16            addr,
++                                       u16                  *const buf,
++                                       u8                   count)
++{
++  int if_ix;
++  int err;
++  int fd;
++  struct ifreq ifr;
++  memset(&ifr, 0, sizeof(ifr));
++
++  if (0 == port_no) {
++    if_ix = 1; //nic1
++  }
++  else if (1 == port_no) {
++    if_ix = 2; //nic2
++  }
++  else {
++    return VTSS_RC_ERROR;
++  }
++
++  if (2 != count) {
++    printf("%s():%d: ERROR: only 32 bit reads are supported! count=%d devaddr:0x%x regaddr:0x%x\n",__func__,__LINE__,count,mmd,addr);
++    return VTSS_RC_ERROR;
++  }
++
++  struct mii_ioctl_data_C45 mii_c45;
++  struct mii_ioctl_data_C45 *mii = &mii_c45;
++  mii->phy_id = port_no + 0x10; //phy addresses are 0x10 and 0x11
++  mii->reg_num = addr;
++  mii->val_in = 0;
++  mii->val_out = 0;
++  mii->dev_addr = mmd;
++  mii->operation = MII_C45_READ_32BIT;
++  ifr.ifr_data = (void *)(mii);
++
++  sprintf(ifr.ifr_name,"mac%d",if_ix);
++  err = ioctl(g_fd, SIOCDEVPRIVATE, &ifr);
++
++  //NOTE: It appears that buf[0] should contain low byte
++  //buf[0] = (mii->val_out >> 16) & 0xffff;
++  //buf[1] = mii->val_out & 0xffff;
++  buf[0] = mii->val_out & 0xffff;
++  buf[1] = (mii->val_out >> 16) & 0xffff;
++
++  if (0 == err) {
++    if (g_rw_dbg)
++    printf("%s(): Interface: %s phy:0x%x devaddr:0x%02x regaddr:0x%04x value=0x%x\n",
++        __func__,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->val_out);
++    return VTSS_RC_OK;
++  }
++  else {
++    printf("%s(): ##### ERROR! Err=0x%x ReadINC(%d) Interface: %s phy:0x%x devaddr:0x%x regaddr:0x%x(%d) value=0x%x\n",
++        __func__,err,count,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->reg_num,mii->val_out);
++    return VTSS_RC_ERROR;
++  }
++}
++
++
++vtss_rc mmd_write_vsc8254_phy(const vtss_inst_t    inst,
++          const vtss_port_no_t port_no,
++                      const u8             mmd,
++                            u16            addr,
++                            u16            data)
++{
++  int if_ix;
++  int err;
++  int fd;
++  struct ifreq ifr;
++  memset(&ifr, 0, sizeof(ifr));
++
++  if (0 == port_no) {
++    if_ix = 1; //nic1
++  }
++  else if (1 == port_no) {
++    if_ix = 2; //nic2
++  }
++  else {
++    return VTSS_RC_ERROR;
++  }
++
++
++  struct mii_ioctl_data_C45 mii_c45;
++  struct mii_ioctl_data_C45 *mii = &mii_c45;
++  mii->phy_id = port_no + 0x10; //phy addresses are 0x10 and 0x11
++  mii->reg_num = addr;
++  mii->val_in = data;
++  mii->val_out = 0;
++  mii->dev_addr = mmd;
++  mii->operation = MII_C45_WRITE_16BIT;
++  ifr.ifr_data = (void *)(mii);
++
++
++  sprintf(ifr.ifr_name,"mac%d",if_ix);
++  err = ioctl(g_fd, SIOCDEVPRIVATE, &ifr);
++
++  if (0 == err) {
++    if (g_rw_dbg)
++    printf("%s():Interface: %s phy:0x%x devaddr:0x%02x regaddr:0x%04x value=0x%x\n",
++        __func__,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->val_in);
++    return VTSS_RC_OK;
++  }
++  else {
++    printf("%s():ERROR! Err=0x%xInterface: %s phy:0x%x devaddr:0x%x regaddr:0x%x(%d) value=0x%x\n",
++        __func__,err,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->reg_num,mii->val_in);
++    return VTSS_RC_ERROR;
++  }
++}
++
++vtss_rc mmd_write32_vsc8254_phy(const vtss_inst_t    inst,
++                              const vtss_port_no_t port_no,
++                              const u8             mmd,
++                              u16            addr,
++                              u32            data)
++{
++  int if_ix;
++  int err;
++  int fd;
++  struct ifreq ifr;
++  memset(&ifr, 0, sizeof(ifr));
++
++  if (0 == port_no) {
++    if_ix = 1; //nic1
++  }
++  else if (1 == port_no) {
++    if_ix = 2; //nic2
++  }
++  else {
++    return VTSS_RC_ERROR;
++  }
++
++
++  struct mii_ioctl_data_C45 mii_c45;
++  struct mii_ioctl_data_C45 *mii = &mii_c45;
++  mii->phy_id = port_no + 0x10; //phy addresses are 0x10 and 0x11
++  mii->reg_num = addr;
++  mii->val_in = data;
++  mii->val_out = 0;
++  mii->dev_addr = mmd;
++  mii->operation = MII_C45_WRITE_32BIT;
++  ifr.ifr_data = (void *)(mii);
++
++  sprintf(ifr.ifr_name,"mac%d",if_ix);
++  err = ioctl(g_fd, SIOCDEVPRIVATE, &ifr);
++
++  if (0 == err) {
++    if (g_rw_dbg)
++    printf("%s():Interface: %s phy:0x%x devaddr:0x%02x regaddr:0x%04x value=0x%x\n",
++        __func__,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->val_in);
++    return VTSS_RC_OK;
++  }
++  else {
++    printf("%s():ERROR! Err=0x%xInterface: %s phy:0x%x devaddr:0x%x regaddr:0x%x(%d) value=0x%x\n",
++        __func__,err,ifr.ifr_name,mii->phy_id,mii->dev_addr,mii->reg_num,mii->reg_num,mii->val_in);
++    return VTSS_RC_ERROR;
++  }
++}
++
+
+ ////////////////////////////////////////////////////////////////////////////////
+ // MMD_Read and MMD_Write Code for Rabbit
+ // ---Unfinished because the rabbit code is optimized for neumonic values not straight port/mmd/addr hex values
+ ////////////////////////////////////////////////////////////////////////////////
+ vtss_rc mmd_read_rbt(const vtss_inst_t    inst,
+-		     const vtss_port_no_t port_no,
++         const vtss_port_no_t port_no,
+                      const u8             mmd,
+                            u16            addr,
+                            u16            *const value)
+@@ -191,6 +429,9 @@ vtss_rc mmd_read_rbt_test( u8 port_no,
+   char buffer[255];
+   int v;
+
++  vtss_inst_t    inst;
++  return mmd_read_vsc8254_phy(inst, port_no, mmd, addr, value);
++
+   //sprintf(buffer, "mmdrd %x %x %x ", port_no, mmd, addr);
+   //sprintf(buffer, "mmd_rd %x %x %x ", port_no, mmd, addr);
+   //sprintf(buffer, "mdio_rd %x %x %x ", port_no, mmd, addr);
+@@ -225,6 +466,11 @@ vtss_rc mmd_read_rbt_test( u8 port_no,
+   return VTSS_RC_OK;
+ }
+
++
++vtss_rc spi_32bit_read_write_vsc8254(vtss_inst_t inst, vtss_port_no_t port_no,
++                                     BOOL rd, u8 mmd, u16 addr, u32 *value);
++
++
+ vtss_rc spi_read_rbt_test( u8 port_no,
+                            u8             mmd,
+                            u16            addr,
+@@ -232,9 +478,19 @@ vtss_rc spi_read_rbt_test( u8 port_no,
+ {
+   char buffer[255];
+   u16 v;
++  vtss_rc vtss_ret;
++  vtss_inst_t    inst;
++  u32 u32val;
++
++  vtss_ret = spi_32bit_read_write_vsc8254(inst, (vtss_port_no_t) port_no, 1, mmd, addr, &u32val);
++  if (VTSS_RC_OK == vtss_ret) {
++    *value = (u16) u32val;
++    printf("mmd_read port_no = 0x%X, mmd = 0x%X, addr = 0x%X, value = 0x%X\n", port_no, mmd, addr, *value);
++  }
++
++  return vtss_ret;
+
+   sprintf(buffer, "spird %x %x %x\n", port_no, mmd, addr);
+-  //printf ("%s\n", buffer);
+   T_N("spi_read_rbt_test: %s", buffer);
+   socket_write(&buffer[0]);
+   memset(buffer, 0, sizeof(buffer));
+@@ -253,6 +509,37 @@ vtss_rc spi_read_rbt_test( u8 port_no,
+   return VTSS_RC_OK;
+ }
+
++extern int vsc8254_i2c_rw( unsigned char port, unsigned char rd, // 1=rd, 0=wr
++           unsigned short dev_addr, unsigned short reg_addr, unsigned long *value);
++
++////////////////////////////////////////////////////////////////////////////////
++// SPI_Read_Write Code for VSC8254 using I2C
++////////////////////////////////////////////////////////////////////////////////
++vtss_rc spi_32bit_read_write_vsc8254(vtss_inst_t    inst,
++		                             vtss_port_no_t port_no,
++				                         BOOL           rd, // (1=rd, 0=wr)
++                                 u8             mmd,
++                                 u16            addr,
++                                 u32            *value)
++{
++  unsigned short dev_addr = mmd;
++  unsigned short reg_addr = addr;
++
++  pthread_mutex_lock(&i2c_lock);
++  /*if (vsc8254_i2c_rw( (unsigned char) port_no, (unsigned char) rd,
++        (unsigned short) mmd, (unsigned short) addr, (unsigned long *) value)) { */
++  if (vsc8254_i2c_rw( port_no, rd, dev_addr, reg_addr, (unsigned long *) value)) {
++printf("    ERROR: %s(): %s port:%d dev_addr:%x(mmd:%x) reg_addr:%x(addr:%x)  val:%x\n",
++    __func__,(rd==1)?"READ":"WRITE",port_no,dev_addr,mmd,reg_addr,addr,*value);
++    pthread_mutex_unlock(&i2c_lock);
++    return VTSS_RC_ERROR;
++  }
++printf(" %s(): %s port:%d dev_addr:%x(mmd:%x) reg_addr:%x(addr:%x)  val:%x\n",
++    __func__,(rd==1)?"READ":"WRITE",port_no,dev_addr,mmd,reg_addr,addr,*value);
++  pthread_mutex_unlock(&i2c_lock);
++//printf("    AFTER %s(): dev_addr:%x(mmd:%x)  reg_addr:%x(addr:%x) val:%x\n",__func__,dev_addr,mmd,reg_addr,addr,*value);
++  return VTSS_RC_OK;
++}
+
+ ////////////////////////////////////////////////////////////////////////////////
+ // SPI_Read_Write Code for Rabbit
+@@ -327,6 +614,8 @@ vtss_rc spi_32bit_read_write_rbt(vtss_inst_t    inst,
+ // Function for initializing the Rabbit Char board.
+ int malibu_char_board_init(int argc, const char **argv, vtss_appl_board_t *board)
+ {
++  int i;
++
+   printf("In malibu_char_board_init\n"); fflush(stdout);
+   board->descr = "Malibu_Char";
+   board->target = VTSS_TARGET_10G_PHY;  // 10G PHY
+@@ -334,33 +623,53 @@ int malibu_char_board_init(int argc, const char **argv, vtss_appl_board_t *board
+
+   board->port_interface = port_interface; // Define the port interface
+
++  // Handle command-line arguments
++  for (i = 1; i < argc; i++) {
++    if (strcmp(argv[i], "--debug") == 0) {
++      g_rw_dbg = 1;
++    }
++  }
++
++  if (pthread_mutex_init(&i2c_lock, NULL) != 0) {
++     printf("\n mutex init has failed\n");
++     return 1;
++  }
++
+   // board->init.init_conf->miim_read =  miim_read; // Set pointer to the MIIM read function for this board.
+   // board->init.init_conf->miim_write = miim_write; // Set pointer to the MIIM write function for this board.
+   //#if defined(VTSS_CHIP_10G_PHY)
+ #ifdef MDIO_ENABLED
+   printf("API being configured for MDIO Accessor Functions (mmd_read/mmd_write) \n" );
+-  board->init.init_conf->mmd_read =  mmd_read_rbt; // Set pointer to the MMD read function for this board.
++  //board->init.init_conf->mmd_read =  mmd_read_rbt; // Set pointer to the MMD read function for this board.
+   //board->init.init_conf->mmd_read_inc =  *mmd_read_inc_rbt; // Set pointer to the MMD read function for this board.
+-  board->init.init_conf->mmd_write = mmd_write_rbt; // Set pointer to the MMD write function for this board.
++  //board->init.init_conf->mmd_write = mmd_write_rbt; // Set pointer to the MMD write function for this board.
++
++  board->init.init_conf->mmd_read =  mmd_read_vsc8254_phy; // Set pointer to the MMD read function for this board.
++  board->init.init_conf->mmd_read_inc =  mmd_read_inc_vsc8254_phy; // Set pointer to the MMD read function for this board.
++  board->init.init_conf->mmd_write = mmd_write_vsc8254_phy; // Set pointer to the MMD write function for this board.
++  board->init.init_conf->mmd_write32 = mmd_write32_vsc8254_phy;
+ #ifndef SPI32_ENABLED
+   board->init.init_conf->spi_32bit_read_write = NULL; // Set pointer to the SPI read function for this board.
+ #endif
+ #endif
+
+ #ifdef SPI32_ENABLED
+-  printf("API being configured for MDIO Accessor Functions (mmd_read/mmd_write) \n" );
+-  board->init.init_conf->spi_32bit_read_write = *spi_32bit_read_write_rbt; // Set pointer to the SPI read function for this board.
++  printf("Using SPI/I2C MDIO Accessor Functions (mmd_read/mmd_write) \n" );
++  //board->init.init_conf->spi_32bit_read_write = *spi_32bit_read_write_rbt; // Set pointer to the SPI read function for this board.
++  board->init.init_conf->spi_32bit_read_write = *spi_32bit_read_write_vsc8254; // Set pointer to the SPI/I2C read function for VSC8254
+ #endif
+
+   //#endif /* VTSS_CHIP_10G_PHY */
+
+   //board->init.init_conf->warm_start_enable = FALSE; // Rob R. 1/17/17
+   //if (board->init.init_conf->warm_start_enable != TRUE) {
++#if defined(RBT_RCM6710) || defined(RBT_RCM4210)
+   if (argc != 2) {
+     printf("Usage  : %s <Rabbit IP Address> \n"  , argv[0]);
+     printf("Example: %s 10.10.132.59 \n"  , argv[0]);
+     exit(EXIT_SUCCESS);
+   }
++#endif
+
+   //socket_init(argv[1], "2310"); // Connect to the CPU board
+
+diff --git a/phy_demo_appl/build_malibu.sh b/phy_demo_appl/build_malibu.sh
+new file mode 100755
+index 0000000..233445e
+--- /dev/null
++++ b/phy_demo_appl/build_malibu.sh
+@@ -0,0 +1 @@
++../../recipe-sysroot-native/usr/libexec/aarch64-poky-linux/gcc/aarch64-poky-linux/9.2.0/aarch64-poky-linux-gcc  --sysroot=../../recipe-sysroot -L   ../../recipe-sysroot/usr/lib/aarch64-poky-linux/9.2.0  -I ../include -I  ../base/phy/phy_10g -I ../../recipe-sysroot-native/usr/include  -std=gnu89 appl/vtss_appl_board_malibu.c appl/vtss_8254_phy_read.c appl/vtss_appl_10g_phy_malibu.c  appl/vtss_appl_macsec_demo.c    appl/vtss_appl_ts_demo.c  ../base/ail/vtss_wis_api.c ../base/ail/vtss_api.c ../base/ail/vtss_port_api.c ../base/ail/vtss_common.c     ../base/ail/vtss_sd10g65_procs.c  ../base/ail/vtss_sd10g65_apc_procs.c ../base/ail/vtss_pll5g_procs.c ../base/phy/common/vtss_phy_common.c appl/vtss_version.c  ../base/phy/phy_10g/vtss_malibu_b_f2df_df2f_sd10g65_setup.c ../base/phy/phy_10g/vtss_malibu_b_host_pma_sd10g65_setup.c  ../base/phy/phy_10g/vtss_malibu_b_line_pma_sd10g65_setup.c ../base/phy/phy_10g/vtss_malibu_b_pll5g_setup.c  ../base/phy/phy_10g/vtss_malibu_f2df_df2f_sd10g65_setup.c ../base/phy/phy_10g/vtss_malibu_host_pma_sd10g65_setup.c  ../base/phy/phy_10g/vtss_malibu_line_pma_sd10g65_setup.c ../base/phy/phy_10g/vtss_phy_10g.c ../base/phy/phy_10g/vtss_phy_10g_malibu.c  ../base/phy/phy_10g/vtss_phy_10g_venice.c ../base/phy/phy_10g/vtss_venice_c_f2df_sd10g65_setup.c ../base/phy/phy_10g/vtss_venice_c_sd10g65_setup.c  ../base/phy/phy_10g/vtss_venice_f2df_sd10g65_setup.c ../base/phy/ts/vtss_phy_ewis.c ../base/phy/ts/vtss_phy_ts_api.c ../base/phy/ts/vtss_phy_ts_util.c   ../base/phy/macsec/vtss_macsec_api.c -DVTSS_OPT_PORT_COUNT=2 -DVTSS_OPSYS_LINUX=1 -DVTSS_FEATURE_10G -DVTSS_FEATURE_10GBASE_KR -DVTSS_FEATURE_SERDES_MACRO_SETTINGS -DVTSS_USE_STDINT_H  -D_INCLUDE_DEBUG_TERM_PRINT_ -DMALIBU_CHAR_BOARD -DVTSS_FEATURE_MACSEC -DVTSS_FEATURE_PHY_TIMESTAMP -o malibu_char

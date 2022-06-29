@@ -1,0 +1,24 @@
+From 475fc3c23cef9c22e25fbb831db0dde9e0c237f9 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Mon, 6 Nov 2017 21:23:52 -0500
+Subject: [PATCH 1/4] Add SPI NOR chip.
+
+---
+ drivers/mtd/spi-nor/spi-nor.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+Index: git/drivers/mtd/spi-nor/spi-nor.c
+===================================================================
+--- git.orig/drivers/mtd/spi-nor/spi-nor.c
++++ git/drivers/mtd/spi-nor/spi-nor.c
+@@ -1161,6 +1161,10 @@ static const struct flash_info spi_nor_i
+ 	{ "w25x64", INFO(0xef3017, 0, 64 * 1024, 128, SECT_4K) },
+ 	{ "w25q64", INFO(0xef4017, 0, 64 * 1024, 128, SECT_4K) },
+ 	{
++		"w25q80ew", INFO(0xef6014, 0, 64 * 1024, 16,
++			   SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ)
++	},
++	{
+ 		"w25q64dw", INFO(0xef6017, 0, 64 * 1024, 128,
+ 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+ 			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)

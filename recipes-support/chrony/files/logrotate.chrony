@@ -1,0 +1,16 @@
+/var/log/chrony/tracking.log
+/var/log/chrony/measurements.log
+/var/log/chrony/statistics.log
+/var/log/chrony/rtc.log
+/var/log/chrony/refclocks.log
+/var/log/chrony/tempcomp.log
+/var/log/chrony/chrony.log
+{
+    rotate 1
+    missingok
+    notifempty
+    compress
+    delaycompress
+    nodateext
+    size 1M
+}

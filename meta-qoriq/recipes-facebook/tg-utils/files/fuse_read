@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+import argparse
+import collections
+import mmap
+import os
+import struct
+
+
+SFP_MEM_START = 0x1E80000
+SFP_MEM_LEN = 0x288
+
+Reg = collections.namedtuple("Reg", "name offset size bits")
+REGS = [
+    Reg("INGR", 0x20, 1, None),
+    Reg("SVHESR", 0x24, 1, None),
+    Reg("SFPCR", 0x28, 1, {"SB": 29, "SFPWDL": 30, "SFPWD": 31}),
+    Reg("VER", 0x38, 1, {"Major": (16, 4), "Minor": (8, 4), "Sub": (0, 4)}),
+    Reg(
+        "OSPR0",
+        0x200,
+        1,
+        {
+            "WP": 0,
+            "CSFF": 1,
+            "ITS": 2,
+            "NSEC": 4,
+            "ZUCD": 5,
+            "KREV6": 9,
+            "KREV5": 10,
+            "KREV4": 11,
+            "KREV3": 12,
+            "KREV2": 13,
+            "KREV1": 14,
+            "KREV0": 15,
+        },
+    ),
+    Reg("OSPR1", 0x204, 1, None),
+    Reg("DCVR", 0x208, 2, None),
+    Reg("DRVR", 0x210, 2, None),
+    Reg(
+        "FSWPR",
+        0x218,
+        1,
+        {
+            "WP": 0,
+            "NSEC": 1,
+            "NB": 2,
+            "CSFF": 3,
+            "DPL": 4,
+            "RT": 5,
+            "RDPL0": 8,
+            "RDPL1": 9,
+        },
+    ),
+    Reg("FUIDR", 0x21C, 2, None),
+    Reg("ISBCCR", 0x224, 1, None),
+    Reg("FSSPR", 0x228, 3, None),
+    Reg("OTPMKR", 0x234, 8, None),
+    Reg("SRKHR", 0x254, 8, None),
+    Reg("OUIDR", 0x274, 5, None),
+]
+
+
+def read_regs(mm):
+    regs = {}
+    for reg_schema in REGS:
+        mm.seek(reg_schema.offset)
+        if reg_schema.size == 1:
+            # A single word is returned as an integer
+            regs[reg_schema.name] = struct.unpack("I", mm.read(4))[0]
+        else:
+            # Multiple words are returned as a list
+            regs[reg_schema.name] = [
+                struct.unpack("I", mm.read(4))[0] for i in range(reg_schema.size)
+            ]
+    return regs
+
+
+def print_regs(regs):
+    for reg_schema in REGS:
+        reg = regs[reg_schema.name]
+        print("{:<8s}: ".format(reg_schema.name), end="")
+        if reg_schema.size == 1:
+            print("0x{:x}".format(reg), end="")
+            if reg_schema.bits is not None:
+                print("  ", end="")
+                for (bit_name, bit_index) in reg_schema.bits.items():
+                    if isinstance(bit_index, tuple):
+                        # It's an integer field at a given bit position and size in bits
+                        (start, size) = bit_index
+                        val = (reg >> start) & ((1 << size) - 1)
+                        print(
+                            "  {}({}:{})=0x{:x}={}".format(
+                                bit_name, start + size - 1, start, val, val
+                            ),
+                            end="",
+                        )
+                    else:
+                        # It's a flag bit at position bit_index
+                        if reg & (1 << bit_index) != 0:
+                            print("  {}({})".format(bit_name, bit_index), end="")
+            print()
+        else:
+            print(" ".join("0x{:x}".format(word) for word in reg))
+
+
+def issue_read_command(mm):
+    # Write READFB instruction to register INGR
+    mm.seek(0x20)
+    mm.write(struct.pack("I", 0x1))
+    # Wait until command complete
+    while True:
+        mm.seek(0x20)
+        val = struct.unpack("I", mm.read(4))[0]
+        if val & 0xFF == 0:
+            break
+    if val & 0x100:
+        print("ERROR in READFB command, register values might not be up to date")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Read Secure Fuse Processor (SFP) registers"
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Read from fusebox to SFP registers before reading registers",
+    )
+
+    args = parser.parse_args()
+
+    f = os.open("/dev/mem", os.O_SYNC | (os.O_RDWR if args.force else os.O_RDONLY))
+    mm = mmap.mmap(
+        f,
+        SFP_MEM_LEN,
+        mmap.MAP_SHARED,
+        mmap.PROT_READ | (mmap.PROT_WRITE if args.force else 0),
+        offset=SFP_MEM_START,
+    )
+
+    if args.force:
+        issue_read_command(mm)
+
+    regs = read_regs(mm)
+
+    # Sanity check - version should be 3.5.0
+    if regs["VER"] != 0x30500:
+        print(
+            "BAD VERSION 0x{:x}, should be 0x30500. Values might not make sense.".format(
+                regs["VER"]
+            )
+        )
+
+    print_regs(regs)
+
+    mm.close()
+    os.close(f)
+
+
+if __name__ == "__main__":
+    main()

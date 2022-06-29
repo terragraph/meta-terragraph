@@ -1,0 +1,72 @@
+From ec2db4dd72ccd68639c95201a43b6aff4b2c2692 Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Fri, 7 Aug 2020 19:44:38 -0700
+Subject: [PATCH] CLI for set link local address
+
+Add new CLI for set link local address
+---
+ src/vnet/ip/ip6_link.c | 48 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+
+diff --git a/src/vnet/ip/ip6_link.c b/src/vnet/ip/ip6_link.c
+index 082033a9d..dbc6ce673 100644
+--- a/src/vnet/ip/ip6_link.c
++++ b/src/vnet/ip/ip6_link.c
+@@ -832,6 +832,54 @@ VLIB_CLI_COMMAND (disable_ip6_interface_command, static) =
+ };
+ /* *INDENT-ON* */
+ 
++clib_error_t *
++set_ip6_link_local_address_cmd (vlib_main_t * vm,
++                                unformat_input_t * input,
++                                vlib_cli_command_t * cmd)
++{
++  vnet_main_t *vnm = vnet_get_main ();
++  clib_error_t *error = 0;
++  u32 sw_if_index;
++  ip6_address_t ip6_addr;
++  int rc;
++
++  if (unformat_user (input, unformat_vnet_sw_interface, vnm, &sw_if_index))
++    {
++      /* get the rest of the command */
++      while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
++        {
++          if (unformat (input, "%U", unformat_ip6_address, &ip6_addr))
++            break;
++        else
++          return (unformat_parse_error (input));
++      }
++    }
++  rc = ip6_link_set_local_address (sw_if_index, &ip6_addr);
++  if (rc)
++    error =
++      clib_error_return (0, "error setting ip6 link local address: %d", rc);
++  return error;
++}
++
++/*?
++ * This command is used to assign an IPv6 Link-local address to an
++ * interface. This command will enable IPv6 on an interface if it
++ * is not already enabled. Use the '<em>show ip6 interface</em>' command
++ * to display the assigned Link-local address.
++ *
++ * @cliexpar
++ * Example of how to assign an IPv6 Link-local address to an interface:
++ * @cliexcmd{set ip6 link-local address GigabitEthernet2/0/0 FE80::AB8}
++?*/
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (set_ip6_link_local_address_command, static) =
++{
++  .path = "set ip6 link-local address",
++  .short_help = "set ip6 link-local address <interface> <ip6-address>",
++  .function = set_ip6_link_local_address_cmd,
++};
++ /* *INDENT-ON* */
++
+ /*
+  * fd.io coding-style-patch-verification: ON
+  *
+-- 
+2.30.2
+

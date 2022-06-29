@@ -1,0 +1,3216 @@
+{
+  "bgpParams": {
+    "localAsn": {
+      "desc": "The local autonomous system (AS) number",
+      "action": "REDO_POP_CONFIG",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[0, 4294967295]]
+      }
+    },
+    "noPrefixCheck": {
+      "desc": "Toggle Zebra / Quagga BGP Prefix Checks - use as last resort around Quagga 1.2.4 bug",
+      "action": "REDO_POP_CONFIG",
+      "type": "BOOLEAN"
+    },
+    "neighbors": {
+      "desc": "The list of BGP neighbors. Map keys can be arbitrary strings and are ignored.",
+      "action": "REDO_POP_CONFIG",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "asn": {
+              "desc": "The neighbor's autonomous system number (remote-as)",
+              "type": "INTEGER",
+              "intVal": {
+                "allowedRanges": [[0, 4294967295]]
+              },
+              "required": true
+            },
+            "domainname": {
+              "desc": "The neighbor's domainname - Save a DNS lookup",
+              "type": "STRING",
+              "required": false
+            },
+            "hostname": {
+              "desc": "The neighbor's hostname - Save a DNS lookup",
+              "type": "STRING",
+              "required": false
+            },
+            "ipv6": {
+              "desc": "The neighbor's IPv6 address",
+              "type": "STRING",
+              "required": true
+            },
+            "maximumPrefixes": {
+              "desc": "The maximum prefixes we can learn from our neighbor",
+              "type": "INTEGER",
+              "intVal": {
+                "allowedRanges": [[1, 4294967295]]
+              },
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "keepalive": {
+      "desc": "The BGP keepalive period in seconds (default 10 seconds)",
+      "action": "REDO_POP_CONFIG",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 65535]]
+      }
+    },
+    "cpeNetworkPrefix": {
+      "desc": "CPE network prefix (Entire Range)",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+/[0-9]+"
+      }
+    },
+    "delegatedNetworkPrefixes": {
+      "desc": "Specific delegated network prefixes from nearby CPEs to be advertised via BGP (comma separated)",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+/[0-9]+(,[0-9a-fA-F:]+/[0-9]+)+"
+      }
+    },
+    "specificNetworkPrefixes": {
+      "desc": "Specific allocated network prefixes to be advertised via BGP (comma separated)",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+/[0-9]+(,[0-9a-fA-F:]+/[0-9]+)*"
+      }
+    },
+    "md5Password": {
+      "desc": "Clear text password to use for BGP MD5 challenges",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": ".{1,128}"
+      }
+    },
+    "cpePrefixesAutoAdvertisement": {
+      "desc": "Enable automatic advertisement of CPE prefixes, instead of static `cpeNetworkPrefix`",
+      "action": "REDO_POP_CONFIG",
+      "type": "BOOLEAN"
+    },
+    "allowNonDefaultRoutes": {
+      "desc": "Allow non-default routes to be learned from BGP peers",
+      "action": "REDO_POP_CONFIG",
+      "type": "BOOLEAN"
+    }
+  },
+  "dhcpParams": {
+    "dhcpGlobalConfigAppend": {
+      "desc": "DHCP global config append",
+      "action": "RESTART_SQUIRE",
+      "type": "STRING"
+    },
+    "dhcpNameServer": {
+      "desc": "DHCP name server",
+      "action": "RESTART_SQUIRE",
+      "type": "STRING"
+    },
+    "dhcpRangeMax": {
+      "desc": "DHCP range max",
+      "action": "RESTART_SQUIRE",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[2, 65535]]
+      }
+    },
+    "dhcpRangeMin": {
+      "desc": "DHCP range min",
+      "action": "RESTART_SQUIRE",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[2, 65535]]
+      }
+    },
+    "dhcpInterface": {
+      "desc": "DHCP interface",
+      "action": "RESTART_KEA",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|(nic[0-9]+)"
+      }
+    },
+    "dhcpPreferredLifetime": {
+      "desc": "DHCP lease preferred lifetime",
+      "action": "RESTART_KEA",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 65535]]
+      }
+    },
+    "dhcpValidLifetime": {
+      "desc": "DHCP lease valid lifetime",
+      "action": "RESTART_KEA",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 65535]]
+      }
+    },
+    "dhcpRenewTimer": {
+      "desc": "DHCP renew timer",
+      "action": "RESTART_KEA",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 65535]]
+      }
+    },
+    "dhcpRebindTimer": {
+      "desc": "DHCP rebind timer",
+      "action": "RESTART_KEA",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 65535]]
+      }
+    },
+    "dhcpPdPool": {
+      "desc": "DHCP PD Pool",
+      "action": "RESTART_KEA",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+/[0-9]+"
+      }
+    },
+    "dhcpPdDelegatedLen": {
+      "desc": "DHCP PD delegated prefix length",
+      "action": "RESTART_KEA",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[2, 128]]
+      }
+    },
+    "keaEnabled": {
+      "desc": "Controls if dhcp is handled by Kea",
+      "action": "RESTART_KEA",
+      "type": "BOOLEAN"
+    },
+    "optionData": {
+      "desc": "dhcp options data. Please refer http://kea.isc.org/docs/kea-guide.html#dhcp6-std-options-list",
+      "action": "RESTART_KEA",
+      "type": "MAP",
+      "mapVal": {
+        "type": "STRING"
+      }
+    },
+    "prefixSplitEnabled": {
+      "desc": "Allow splitting prefixes down to /64 on Marvell Hardware",
+      "action": "RESTART_KEA",
+      "type": "BOOLEAN"
+    }
+  },
+  "envParams": {
+    "BH_AMSDU_FRAME_FORMAT": {
+      "desc": "Default A-MSDU frame format",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["tg-short", "std-short"]
+      }
+    },
+    "CPE_INTERFACE": {
+      "desc": "Enable CPE Interface Functionality on this interface",
+      "deprecated": true,
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|((nic)|(TenGigabitEthernet))[0-9]+"
+      }
+    },
+    "CPE_IFACE_IP_PREFIX": {
+      "desc": "Override prefix on CPE interface, instead of configuring from lo address",
+      "deprecated": true,
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+/(1[6-9]|[2-5][0-9]|6[0-4])"
+      }
+    },
+    "CPE_TUNNEL_ENDPOINT": {
+      "desc": "Enable L2 tunnel on CPE Interface",
+      "deprecated": true,
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+"
+      }
+    },
+    "DPDK_ENABLED": {
+      "desc": "Use DPDK as the wireless driver",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "DVPP_ENABLED": {
+      "desc": "Use VPP directly with the Wigig kernel driver",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "E2E_ENABLED": {
+      "desc": "Enables E2E control-plane on device. E2E may be disabled for manual testing.",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "FB_DRIVER_VERBOSE": {
+      "desc": "Debug bitmask for FB driver, i.e. terragraph_{dhd,qca}. A value of 0 is treated as 0x10001. (0x1 = CTRL_ERROR, 0x2 = CTRL_DBG, 0x4 = CTRL_INFO, 0x8 = GPS_DBG, 0x10 = QUEUE_STATS_DBG, 0x20 = QUEUE_STATS_DISABLE_THROTTLE, 0x40 = CFG80211_DBG, 0x10000 = DATA_ERROR, 0x20000 = DATA_DBG, 0x40000 = DATA_INFO)",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "([0-9]+)|(0[xX][0-9a-fA-F]+)"
+      }
+    },
+    "FW_IF2IF": {
+      "desc": "This param is deprecated. To be removed in release M18.",
+      "deprecated": true,
+      "action": "NO_ACTION",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "FW_LOGGING_ENABLED": {
+      "desc": "Enables firmware and microcode log collection. Not recommended for production use.",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "FW_LOGGING_FILE_COUNT": {
+      "desc": "When using 'FW_LOGGING_ENABLED', set the maximum number of log files retained",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      }
+    },
+    "FW_LOGGING_FILESIZE_MB": {
+      "desc": "When using 'FW_LOGGING_ENABLED', set the maximum single uncompressed log file size (will be compressed when rotated)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 2147483647]]
+      }
+    },
+    "FW_LOG_VERBOSE": {
+      "desc": "Logging verbosity for firmware and microcode logs. (0:default of ERROR+WARN+INFO, 1:ERROR, 2:+WARN, 3:+INFO, 4:+VERBOSE)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[0, 4]]
+      }
+    },
+    "FW_USE_NATIVE_BOARDFILE": {
+      "desc": "Use manually calibrated native board file on each RF baseband by reading baseband eeprom",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "FW_TX_RING_DEPTH": {
+      "desc": "WiGig FW Tx ring depth using credits - does not alter actual Tx ring size (4096)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[128, 4096]]
+      }
+    },
+    "GPSD_BAUD_RATE": {
+      "desc": "Set the baud rate on GPSD_DEVICE (empty = use default)",
+      "action": "REBOOT",
+      "type": "STRING"
+    },
+    "GPSD_DEVICE": {
+      "desc": "Set the GPS device (ex. /dev/ttyS1)",
+      "action": "REBOOT",
+      "type": "STRING"
+    },
+    "GPSD_ENABLED": {
+      "desc": "Enables gpsd and timestamp forwarding via driver-if",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "GPSD_GPS_MODULE": {
+      "desc": "Name of the GPS module and vendor. This may enable module-specific functionality.",
+      "action": "REBOOT",
+      "type": "STRING"
+    },
+    "GPSD_NMEA_TIME_OFFSET": {
+      "desc": "The time offset calibration factor for NMEA messages from the GPS module (in other words, the latency between emitted time messages and 'real' time), in fractional seconds. If set, this is used as the NMEA refclock offset in chronyd.",
+      "action": "REBOOT",
+      "type": "STRING"
+    },
+    "GPSD_POSITION_HOLD_ENABLED": {
+      "desc": "When using gpsd, enable single-satellite mode operation on GPS devices which support it",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "GPSD_PPS_DEVICE": {
+      "desc": "Set the PPS device (ex. /dev/pps1), only required for syncing system time with NTP",
+      "action": "REBOOT",
+      "type": "STRING"
+    },
+    "HMAC_VERBOSE": {
+      "desc": "Debug level for MAC and PHY modules. (0:+error, 1:+hli, 2:+bh, 3:+inform,+trace)",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+"
+      }
+    },
+    "KMOD_VERBOSE": {
+      "desc": "Debug level for kernel module. (0:+error,+bh, 1:+inform, 2:+trace, 3:+prhdrs,+prpkt)",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+"
+      }
+    },
+    "LED_AGENT_ENABLED": {
+      "desc": "Enables led-agent for controlling LEDs",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "LOGTAIL_ENABLED": {
+      "desc": "Enable Terragraph log tailer (e.g. if not using Fluent Bit)",
+      "action": "RESTART_LOGTAIL",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OOB_INTERFACE": {
+      "desc": "Enable backdoor access for device recovery via an out-of-band interface",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|(nic[0-9]+)"
+      }
+    },
+    "OOB_NETNS": {
+      "desc": "Put OOB interface in its own linux namespace, if enabled",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_ALLOC_PREFIX": {
+      "desc": "Enable node prefix allocation",
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_ENABLED": {
+      "desc": "Enable Open/R based routing",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_ENABLE_SPARK2": {
+      "desc": "Enable Open/R Spark2 functionality in favor of Spark1",
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_ENABLE_DEPRECATED_PREFIXES": {
+      "desc": "Enable compatibility between Open/R versions before/after release M80. E2E minion will inject prefix entries into KvStore to support the deprecated Open/R prefix format.",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_USE_FIB_NSS": {
+      "desc": "Use NSS (Marvell A390x Network Subsystem) hardware acceleration for packet forwarding",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_USE_FIB_VPP": {
+      "desc": "Program routes learned via Open/R into VPP's FIB",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_USE_RTT_METRIC": {
+      "desc": "[Test-only] Open/R RTT metric configuration",
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "OPENR_STATIC_PREFIX_ALLOC": {
+      "desc": "Open/R enable static prefix allocation",
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["true", "false"]
+      }
+    },
+    "OPENR_LINK_FLAP_MAX_BACKOFF_MS": {
+      "desc": "Open/R link flap max backoff time(ms)",
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1000, 60000]]
+      }
+    },
+    "OPENR_IFACE_PREFIXES": {
+      "desc": "Open/R CSV list of interfaces to run on - Can be a prefix/substr of interface name. Deprecated in favor of 'OPENR_IFACE_REGEX_INCLUDE'",
+      "deprecated": true,
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "(terra[0-9]*|nic[0-9]*|tap1)(,(terra[0-9]*|nic[0-9]*|tap1))*"
+      }
+    },
+    "OPENR_IFACE_REGEX_INCLUDE": {
+      "desc": "Regular expression of the interfaces Open/R runs on",
+      "action": "RESTART_ROUTING",
+      "type": "STRING"
+    },
+    "OPENR_VERBOSE": {
+      "desc": "Logging verbosity for Open/R. Show all VLOG(m) messages for m <= this",
+      "action": "RESTART_ROUTING",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-2147483648, 2147483647]]
+      }
+    },
+    "MINION_VERBOSE": {
+      "desc": "Logging verbosity for E2E minion. Show all VLOG(m) messages for m <= this",
+      "action": "UPDATE_GLOG_LEVEL",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-2147483648, 2147483647]]
+      }
+    },
+    "MINION_VMODULE": {
+      "desc": "Logging verbosity for specific modules in E2E minion ('-vmodule' flag). Show all VLOG(m) messages for m <= this",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|(([A-Za-z0-9_]+=-?[0-9]+)(,[A-Za-z0-9_]+=-?[0-9]+)*)"
+      }
+    },
+    "SLIP_BAUD_RATE": {
+      "desc": "Baud rate for SLIP UART. Note that before changing this value, the ESP32 configuration needs to be updated to match (make_esp32_cfg -w -b <BAUD_RATE> -f)",
+      "action": "RESTART_SLIP",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["115200", "230400", "460800", "576000"]
+      }
+    },
+    "SLIP_ENABLED": {
+      "desc": "Enables SLIP for ESP32 WiFi",
+      "action": "RESTART_SLIP",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "SLIP_SERIAL_PORT": {
+      "desc": "SLIP serial port for ESP32 WiFi (e.g. /dev/ttyS2)",
+      "action": "RESTART_SLIP",
+      "type": "STRING"
+    },
+    "SNMP_ENABLED": {
+      "desc": "Enables SNMP and TG SNMP agent daemons",
+      "action": "RESTART_SNMP",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "STATS_AGENT_VERBOSE": {
+      "desc": "Logging verbosity for stats agent. Show all VLOG(m) messages for m <= this",
+      "action": "RESTART_STATS_AGENT",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[-2147483648, 2147483647]]
+      }
+    },
+    "SSH_ENABLED": {
+      "desc": "Enable SSH access",
+      "action": "RELOAD_SSHD",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "TIMEZONE": {
+      "desc": "Linux zoneinfo timezone name to set on nodes",
+      "action": "SYMLINK_TIMEZONE",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": [
+          "Africa/Cairo",
+          "America/Anchorage",
+          "America/Caracas",
+          "America/Chicago",
+          "America/Denver",
+          "America/Los_Angeles",
+          "America/New_York",
+          "America/Sao_Paulo",
+          "Asia/Bangkok",
+          "Asia/Dhaka",
+          "Asia/Dubai",
+          "Asia/Hong_Kong",
+          "Asia/Karachi",
+          "Asia/Tokyo",
+          "Australia/Adelaide",
+          "Australia/Brisbane",
+          "Australia/Darwin",
+          "Australia/Sydney",
+          "CET",
+          "CST6CDT",
+          "EET",
+          "EST",
+          "EST5EDT",
+          "Etc/GMT",
+          "Etc/GMT0",
+          "Etc/GMT-0",
+          "Etc/GMT+0",
+          "Etc/GMT-1",
+          "Etc/GMT+1",
+          "Etc/GMT-10",
+          "Etc/GMT+10",
+          "Etc/GMT-11",
+          "Etc/GMT+11",
+          "Etc/GMT-12",
+          "Etc/GMT+12",
+          "Etc/GMT-13",
+          "Etc/GMT-14",
+          "Etc/GMT-2",
+          "Etc/GMT+2",
+          "Etc/GMT-3",
+          "Etc/GMT+3",
+          "Etc/GMT-4",
+          "Etc/GMT+4",
+          "Etc/GMT-5",
+          "Etc/GMT+5",
+          "Etc/GMT-6",
+          "Etc/GMT+6",
+          "Etc/GMT-7",
+          "Etc/GMT+7",
+          "Etc/GMT-8",
+          "Etc/GMT+8",
+          "Etc/GMT-9",
+          "Etc/GMT+9",
+          "Etc/Greenwich",
+          "Etc/UCT",
+          "Etc/Universal",
+          "Etc/UTC",
+          "Etc/Zulu",
+          "Europe/London",
+          "Europe/Moscow",
+          "Europe/Paris",
+          "GB",
+          "GMT",
+          "GMT0",
+          "GMT-0",
+          "GMT+0",
+          "Greenwich",
+          "HST",
+          "MET",
+          "MST",
+          "MST7MDT",
+          "NZ",
+          "NZ-CHAT",
+          "Pacific/Honolulu",
+          "Pacific/Noumea",
+          "PRC",
+          "PST8PDT",
+          "ROC",
+          "ROK",
+          "UCT",
+          "Universal",
+          "UTC",
+          "WET",
+          "W-SU",
+          "Zulu"
+        ]
+      }
+    },
+    "UDP_PING_SERVER_ENABLED": {
+      "desc": "Enable UDP ping server on the node",
+      "action": "RESTART_UDP_PING_SERVER",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "VPP_COREDUMP_ENABLED": {
+      "desc": "Capture core dumps when VPP crashes. This can take a very long time (minutes), and is not recommended for production use.",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "VPP_DPDK_LOG_STR": {
+      "desc": "Comma-separated DPDK debug log settings, used for device-specific debug logs, e.g. \"pmd.wil.wmi:debug\". For wil6210 logs see the source file wil6210_debug.c for options. For DPAA2 logs use pmd.net.dpaa2 and bus.fslmc. See log levels in dpdk/lib/librte_eal/include/rte_log.h (8 is debug).",
+      "action": "REBOOT",
+      "type": "STRING"
+    },
+    "VPP_FW_RECOVERY_ENABLED": {
+      "desc": "Enable VPP to restart Wigig devices that experience firmware errors; otherwise VPP crashes on device firmware error.",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "VPP_ULA_TEST_PREFIX": {
+      "desc": "Define a /64 IPv6 ULA test prefix that will never be forwarded to Linux over slowpath.  This is useful for performance testing and is not recommended for production use.",
+      "action": "RESTART_MINION",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[fF][dD][0-9a-fA-F:]+/64"
+      }
+    },
+    "VPP_USE_EEPROM_MACS": {
+      "desc": "When using VPP, use radio MAC addresses from the digital board EEPROM instead of OTP MAC addresses",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "WEBUI_ENABLED": {
+      "desc": "Enables HTTP server for controlling minion.",
+      "action": "RESTART_WEBUI",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    }
+  },
+  "kvstoreParams": {
+    "desc": "The Open/R KvStore keys and values",
+    "action": "INJECT_KVSTORE_KEYS",
+    "type": "OBJECT",
+    "objVal": {
+      "properties": {
+        "e2e-ctrl-url": {
+          "desc": "The E2E controller URL (in ZMQ socket endpoint format), e.g. \"tcp://[2001::1]:7007\"",
+          "type": "STRING",
+          "strVal": {
+            "__copy_block__": "statsAgentParams.sources.mapVal.objVal.properties.zmq_url.strVal"
+          }
+        },
+        "e2e-ctrl-url-backup": {
+          "desc": "The E2E backup controller URL (in ZMQ socket endpoint format), e.g. \"tcp://[2001::2]:7007\"",
+          "type": "STRING",
+          "strVal": {
+            "__copy_block__": "statsAgentParams.sources.mapVal.objVal.properties.zmq_url.strVal"
+          }
+        },
+        "e2e-aggr-url": {
+          "desc": "The NMS aggregator URL (in ZMQ socket endpoint format), e.g. \"tcp://[2001::1]:8002\". Multiple URLs can be provided (for load balancing) by adding additional keys prefixed with this key's name, e.g. \"e2e-aggr-url-2\".",
+          "type": "STRING",
+          "strVal": {
+            "__copy_block__": "statsAgentParams.sources.mapVal.objVal.properties.zmq_url.strVal"
+          }
+        },
+        "e2e-network-prefix": {
+          "desc": "The Terragraph network seed prefix and allocation prefix length (in CIDR format, followed by a comma and then the bit-length of prefixes allocated to each node), e.g. \"3001::/56,64\"",
+          "type": "STRING",
+          "strVal": {
+            "regexMatches": "([^/]+)(/([0-9]{1,3}))(,([0-9]{1,3}))"
+          }
+        }
+      }
+    }
+  },
+  "linkParamsBase": {
+    "desc": "Link parameters",
+    "action": "NO_ACTION",
+    "type": "OBJECT",
+    "objVal": {
+      "properties": {
+        "fwParams": {
+          "desc": "Firmware parameters for links",
+          "type": "OBJECT",
+          "objVal": {
+            "properties": {
+              "beamConfig": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.beamConfig"
+              },
+              "bfAgc": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.bfAgc"
+              },
+              "controlSuperframe": {
+                "desc": "Control superframe for the link (0-1: DN-DN link, 0-15: DN-CN link, 255: Auto-assign by fw)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 15]],
+                  "allowedValues": [255]
+                }
+              },
+              "crsScale": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.crsScale",
+                "action": "SET_FW_PARAMS"
+              },
+              "laConvergenceFactordBperSFQ8": {
+                "desc": "Controls how quickly the outer loop offset (in dB) will change ([0.1-1]dB in Q8 notation)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[25, 256]]
+                }
+              },
+              "laInvPERTarget": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.laInvPERTarget"
+              },
+              "laMaxMcs": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.laMaxMcs",
+                "action": "SET_FW_PARAMS"
+              },
+              "laMinMcs": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.laMinMcs",
+                "action": "SET_FW_PARAMS"
+              },
+              "latpcLinkImpairConfig": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.latpcLinkImpairConfig"
+              },
+              "latpc100PercentPERDrop": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.latpc100PercentPERDrop"
+              },
+              "latpcUseIterations": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.latpcUseIterations"
+              },
+              "linkAgc": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.linkAgc",
+                "action": "SET_FW_PARAMS"
+              },
+              "linkImpairmentDetectionEnable": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.linkImpairmentDetectionEnable",
+                "action": "SET_FW_PARAMS"
+              },
+              "maxAgcMinRssi": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.maxAgcMinRssi"
+              },
+              "maxAgcTrackingEnabled": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.maxAgcTrackingEnabled",
+                "action": "SET_FW_PARAMS"
+              },
+              "maxAgcTrackingMargindB": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.maxAgcTrackingMargindB",
+                "action": "SET_FW_PARAMS"
+              },
+              "maxTxPower": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.maxTxPower",
+                "action": "SET_FW_PARAMS"
+              },
+              "maxTxPowerSet1": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.maxTxPowerSet1",
+                "action": "RELOAD_FIRMWARE"
+              },
+              "autoPbfMtpoTxPower": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.autoPbfMtpoTxPower"
+              },
+              "mcs": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.mcs",
+                "action": "SET_FW_PARAMS"
+              },
+              "minRssi": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.minRssi",
+                "action": "SET_FW_PARAMS"
+              },
+              "minTxPower": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.minTxPower",
+                "action": "SET_FW_PARAMS"
+              },
+              "respNodeType": {
+                "desc": "Node type of the responder (1: CN, 2: DN)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 2]]
+                }
+              },
+              "restrictToSfParity": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.restrictToSfParity",
+                "action": "SET_FW_PARAMS"
+              },
+              "rxBeamIndex": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.rxBeamIndex",
+                "action": "SET_FW_PARAMS"
+              },
+              "rxBuffer": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.rxBuffer"
+              },
+              "rxGolayIdx": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.rxGolayIdx",
+                "action": "SET_FW_PARAMS_SYNC_OR_RELOAD_FIRMWARE"
+              },
+              "tpcEnable": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.tpcEnable",
+                "action": "SET_FW_PARAMS"
+              },
+              "tpcPBEnable": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.tpcPBEnable",
+                "action": "SET_FW_PARAMS"
+              },
+              "txBeamIndex": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.txBeamIndex",
+                "action": "SET_FW_PARAMS"
+              },
+              "txGolayIdx": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.txGolayIdx",
+                "action": "SET_FW_PARAMS_SYNC_OR_RELOAD_FIRMWARE"
+              },
+              "txPower": {
+                "__copy_block__": "radioParamsBase.objVal.properties.fwParams.objVal.properties.txPower",
+                "action": "SET_FW_PARAMS"
+              }
+            }
+          }
+        },
+        "openrLinkParams": {
+          "desc": "Open/R link parameters",
+          "type": "OBJECT",
+          "objVal": {
+            "properties": {
+              "softDisable": {
+                "desc": "Soft drain this link by setting a very high link metric (overrides all other metrics)",
+                "type": "BOOLEAN",
+                "action": "SYNC_LINK_MONITOR"
+              },
+              "fixedMetric": {
+                "desc": "Set a fixed link metric",
+                "type": "INTEGER",
+                "action": "SYNC_LINK_MONITOR",
+                "intVal": {
+                  "allowedRanges": [[1, 2147483647]]
+                }
+              }
+            }
+          }
+        },
+        "airtimeConfig": {
+          "desc": "Link airtime allocation",
+          "type": "OBJECT",
+          "objVal": {
+            "properties": {
+              "txIdeal": {
+                "desc": "The ideal TX airtime fraction to the link (in 1/100%)",
+                "type": "INTEGER",
+                "action": "SET_AIRTIME_PARAMS",
+                "intVal": {
+                  "allowedRanges": [[0, 10000]]
+                }
+              },
+              "txMin": {
+                "desc": "The minimum TX airtime fraction to the link (in 1/100%)",
+                "type": "INTEGER",
+                "action": "SET_AIRTIME_PARAMS",
+                "intVal": {
+                  "allowedRanges": [[0, 10000]]
+                }
+              },
+              "txMax": {
+                "desc": "The maximum TX airtime fraction to the link (in 1/100%)",
+                "type": "INTEGER",
+                "action": "SET_AIRTIME_PARAMS",
+                "intVal": {
+                  "allowedRanges": [[0, 10000]]
+                }
+              },
+              "rxIdeal": {
+                "desc": "The ideal RX airtime fraction from the link (in 1/100%)",
+                "type": "INTEGER",
+                "action": "SET_AIRTIME_PARAMS",
+                "intVal": {
+                  "allowedRanges": [[0, 10000]]
+                }
+              },
+              "rxMin": {
+                "desc": "The minimum RX airtime fraction from the link (in 1/100%)",
+                "type": "INTEGER",
+                "action": "SET_AIRTIME_PARAMS",
+                "intVal": {
+                  "allowedRanges": [[0, 10000]]
+                }
+              },
+              "rxMax": {
+                "desc": "The maximum RX airtime fraction from the link (in 1/100%)",
+                "type": "INTEGER",
+                "action": "SET_AIRTIME_PARAMS",
+                "intVal": {
+                  "allowedRanges": [[0, 10000]]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "linkParamsOverride": {
+    "desc": "The per-link config overrides",
+    "action": "NO_ACTION",
+    "type": "MAP",
+    "mapVal": {
+      "type": "OBJECT",
+      "objVal": {
+        "properties": {
+          "__copy_block__": "linkParamsBase.objVal.properties"
+        }
+      }
+    }
+  },
+  "logTailParams": {
+    "sources": {
+      "desc": "The tail sources",
+      "action": "RESTART_LOGTAIL",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "enabled": {
+              "desc": "Enable tailing from this source",
+              "type": "BOOLEAN",
+              "required": true
+            },
+            "filename": {
+              "desc": "The log file name",
+              "type": "STRING",
+              "required": true
+            },
+            "eventFilters": {
+              "desc": "Generate events from log lines using a regular expression. Map keys represent names with which events will be published.",
+              "type": "MAP",
+              "required": false,
+              "mapVal": {
+                "type": "OBJECT",
+                "objVal": {
+                  "properties": {
+                    "regex": {
+                      "desc": "Regular expression that indicates the event has occurred",
+                      "type": "STRING"
+                    },
+                    "level": {
+                      "desc": "Event level to assign if the regular expression matches",
+                      "type": "STRING",
+                      "allowedValues": ["INFO", "WARNING", "ERROR", "FATAL"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "openrParams": {
+    "linkMetricConfig": {
+      "enabled": {
+        "desc": "Enables adaptive Open/R link metric changes based on current link statistics",
+        "action": "UPDATE_LINK_METRICS",
+        "type": "BOOLEAN"
+      },
+      "metricMap": {
+        "desc": "The map of MCS to Open/R link metric",
+        "action": "UPDATE_LINK_METRICS",
+        "type": "MAP",
+        "mapVal": {
+          "type": "INTEGER",
+          "intVal": {
+            "allowedRanges": [[1, 100000]]
+          }
+        }
+      },
+      "tokenGenRate": {
+        "desc": "The number of tokens to generate per second for the token bucket rate-limiter on link metric changes",
+        "action": "UPDATE_LINK_METRICS",
+        "type": "FLOAT",
+        "floatVal": {
+          "allowedRanges": [[0, 10]]
+        }
+      },
+      "tokenBurstSize": {
+        "desc": "The maximum burst size for the token bucket rate-limiter on link metric changes",
+        "action": "UPDATE_LINK_METRICS",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      },
+      "successiveChangeCount": {
+        "desc": "The number of successive link metric changes (in one direction) required before actually switching link metric",
+        "action": "UPDATE_LINK_METRICS",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      }
+    }
+  },
+  "popParams": {
+    "GW_ADDR": {
+      "desc": "The IP address of the Gateway (link-local IP)",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING"
+    },
+    "NAT64_IPV4_ADDR": {
+      "desc": "IPv4 Address for NAT64 interface",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$"
+      }
+    },
+    "NAT64_IPV6_PREFIX": {
+      "desc": "NAT64 IPv6 prefix. Can use 64:ff9b::/96 (well-known prefix).",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9a-fA-F:]+/(32|40|48|56|64|96)"
+      }
+    },
+    "NAT64_POP_ENABLED": {
+      "desc": "Enable NAT64 on POP interface for IPv6 <-> IPv4 NAT",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "POP_ADDR": {
+      "desc": "The IP address of the interface on the POP node that routes to the gateway",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING"
+    },
+    "POP_ADDR_PREFIX_LEN": {
+      "desc": "The IP address prefix length of the interface on the POP node that routes to the gateway",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[64, 126]]
+      }
+    },
+    "POP_BGP_ROUTING": {
+      "desc": "Enable BGP routing on the POP",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "POP_IFACE": {
+      "desc": "The interface on the POP node that routes traffic to the Gateway",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING"
+    },
+    "POP_VLAN_ID": {
+      "desc": "The VLAN of interface on the POP node that routes traffic to the Gateway",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "intRanges": [[1, 4094]]
+      }
+    },
+    "POP_STATIC_ROUTING": {
+      "desc": "Enable static routing on the POP",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
+    "VPP_ADDR": {
+      "desc": "The IP address of the interface within VPP on the POP node (Fast Path edge address)",
+      "action": "REDO_POP_CONFIG",
+      "type": "STRING"
+    }
+  },
+  "radioParamsBase": {
+    "desc": "Radio parameters",
+    "action": "NO_ACTION",
+    "type": "OBJECT",
+    "objVal": {
+      "properties": {
+        "fwParams": {
+          "desc": "Firmware parameters for radios",
+          "type": "OBJECT",
+          "objVal": {
+            "properties": {
+              "beamConfig": {
+                "desc": "Enum indicating beam forming mode (0: Deprecated, 1: Use [tx|rx]BeamIndex specified in config, 2: Use indices from the BF scan)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 2]]
+                }
+              },
+              "bfAgc": {
+                "desc": "[Test-only] AGC to use in BF Slots (33279: Use free running AGC, [?]: Max or Freeze AGC)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "bfMode": {
+                "desc": "Enum to choose between different beamforming modes (0: Disable BF scan, 1: Enable initial BF scan)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "cb2Enable": {
+                "desc": "Enable channel bonding (CB2) mode (0: Disabled, 1: Enabled)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "crsScale": {
+                "desc": "Threshold used to detect packets",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 255]]
+                }
+              },
+              "forceGpsDisable": {
+                "desc": "Boolean to prevent GPS sync check at initiator/responder during assoc (0: Enable sync check, 1: Disable sync check)",
+                "action": "SET_FW_PARAMS",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "gpioConfig": {
+                "desc": "[Deprecated] Param to set output on GPIO for open board debug. (0: MAC scheduler debug, 1: Air Tx/Rx mode, 2: Tx beam read, 3: Rx beam read)",
+                "deprecated": true,
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 3]]
+                }
+              },
+              "key0": {
+                "desc": "This param is deprecated. To be removed in release M18.",
+                "deprecated": true,
+                "type": "INTEGER"
+              },
+              "key1": {
+                "desc": "This param is deprecated. To be removed in release M18.",
+                "deprecated": true,
+                "type": "INTEGER"
+              },
+              "key2": {
+                "desc": "This param is deprecated. To be removed in release M18.",
+                "deprecated": true,
+                "type": "INTEGER"
+              },
+              "key3": {
+                "desc": "This param is deprecated. To be removed in release M18.",
+                "deprecated": true,
+                "type": "INTEGER"
+              },
+              "laConvergenceFactordBperSFQ8": {
+                "desc": "Controls how quickly the outer loop offset (in dB) will change ([0.1-1]dB in Q8 notation)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "laInvPERTarget": {
+                "desc": "PER target is 1/laInvPERTarget - for example, for 1e-3 PER target set laInvPERTarget to 1000",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 1000]]
+                }
+              },
+              "laMaxMcs": {
+                "desc": "Max MCS when link adaptation is enabled. (i.e.: mcs=35)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 16]]
+                }
+              },
+              "laMinMcs": {
+                "desc": "Min MCS when link adaptation is enabled. i.e.: mcs=35)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 16]]
+                }
+              },
+              "latpcLinkImpairConfig": {
+                "desc": "Configure fast link impairment (see documents)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "latpc100PercentPERDrop": {
+                "desc": "Configure 100% PER offset drop, allow TPC disable, and calibration filtering (see documents)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 65535]]
+                }
+              },
+              "latpcUseIterations": {
+                "desc": "The LA TPC joint algorithm will adjust the offset using LDPC iterations if latpcUseIterations is set (0: Disabled, 1: Enabled)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "linkAgc": {
+                "desc": "AGC to use in Data Slots (33269: Use free running AGC, [bit 15]: Max(1) or Freeze(0) AGC)",
+                "action": "NO_ACTION",
+                "type": "INTEGER"
+              },
+              "linkImpairmentDetectionEnable": {
+                "desc": "Flag to enable/disable link impairment detection",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "linkImpairmentLongPending": {
+                "desc": "Time a link has to stay in LONGLINKPENDINGTIME before move to LINK_UP (Unit is SF, 1.6ms)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 60000]]
+                }
+              },
+              "linkImpairmentShortPending": {
+                "desc": "Time a link has to stay in SHORTLINKPENDINGTIME before move to SHORT_LINK_UP (Unit is SF, 1.6ms)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 60000]]
+                }
+              },
+              "linkImpairmentShortUp": {
+                "desc": "Time a link has to stay in SHORTLINKUPTIME before move to LINK_UP (Unit is SF, 1.6ms)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 60000]]
+                }
+              },
+              "lsmAssocRespAckTimeout": {
+                "desc": "Timeout (in ms) on reception of Assoc Resp Ack at responder",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 60000]]
+                }
+              },
+              "lsmAssocRespTimeout": {
+                "desc": "Timeout (in ms) on reception of Assoc Resp at initiator",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 60000]]
+                }
+              },
+              "lsmFirstHeartbTimeout": {
+                "desc": "Wait time (in ms) for first heartbeat after completion of association procedure",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 1000]]
+                }
+              },
+              "lsmRepeatAck": {
+                "desc": "Number of retransmissions of Assoc Resp Ack",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 10]]
+                }
+              },
+              "lsmRepeatAckInterval": {
+                "desc": "Interval (in ms) between retransmissions of Assoc Resp Ack by initiator",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[10, 500]]
+                }
+              },
+              "lsmSendAssocReqRetry": {
+                "desc": "Max number of retries by initiator when waiting for Assoc Resp",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 100]]
+                }
+              },
+              "lsmSendAssocRespRetry": {
+                "desc": "Max number of retries by responder when waiting for Assoc Resp Ack",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 100]]
+                }
+              },
+              "maxAgcIfGaindBperIndexQ8": {
+                "desc": "Gain per IF index in dB (Q8).  Only used when maxAgcUseRssi is not enabled.",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "maxAgcMaxIfGainIndex": {
+                "desc": "Highest allowed IF gain index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "maxAgcMaxRfGainIndex": {
+                "desc": "Highest allowed RF gain index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 15]]
+                }
+              },
+              "maxAgcMaxIfSweetGainRange": {
+                "desc": "Upper end of the desired IF gain range",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "maxAgcMinIfGainIndex": {
+                "desc": "Lowest allowed IF gain index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "maxAgcMinIfSweetGainRange": {
+                "desc": "Lower end of the desired IF gain range",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "maxAgcMinRfGainIndex": {
+                "desc": "Lowest allowed RF gain index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 15]]
+                }
+              },
+              "maxAgcMinRssi": {
+                "desc": "Used if maxAgcUseMinRssi is set. This will be the minRssi set if maxAgcTracking is not enabled (otherwise the algorithm will overwrite it)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "maxAgcRawAdcScaleFactorQ8": {
+                "desc": "Number of dB per index for the raw ADC RSSI in Q8 (e.g. 0.5 would mean 0.5dB per raw ADC RSSI index)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "maxAgcRfGaindBperIndexQ8": {
+                "desc": "Gain per RF index in dB (Q8).  Only used when maxAgcUseRssi is not enabled.",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "maxAgcRfGainHiLo": {
+                "desc": "Vendor proprietary.  Bit 0 enables, bits [15:8] are threshold in dB",
+                "action": "SET_FW_PARAMS",
+                "type": "INTEGER"
+              },
+              "maxAgcTargetRawAdc": {
+                "desc": "The nominal raw ADC RSSI level",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER"
+              },
+              "maxAgcTrackingEnabled": {
+                "desc": "If not enabled, max AGC will be set to linkAgc - otherwise, linkAgc will be overwritten as soon as the max AGC tracking algorithm starts (0: Disabled, 1: Enabled)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "maxAgcTrackingMargindB": {
+                "desc": "The amount by which the max AGC is set higher than the AGC that corresponds to the current IIR averaged rssi - the larger this value, the more conservative in terms of the max AGC causing PER but the less effective the AGC will be to combat early-weak interference ([0-50]dB)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 50]]
+                }
+              },
+              "maxAgcUseMinRssi": {
+                "desc": "Set to 1 to use min RSSI; otherwise use max AGC",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "maxAgcUseSameForAllSta": {
+                "desc": "Set to 1 to apply the same min RSSI or max AGC to all stations in a P2MP setting; otherwise each station is configured independently",
+                "action": "SET_FW_PARAMS",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "maxTxPower": {
+                "desc": "The maximum Tx power index assigned when TPC algorithm is enabled",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "maxTxPowerSet1": {
+                "desc": "The maximum Tx power index assigned while set1RficBitmap is active in massive if set1RficBitmap!=set2RficBitmap",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "autoPbfMtpoTxPower": {
+                "desc": "Tx Power used by autoPBF when MTPO succeeds. ",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "mcs": {
+                "desc": "MCS used by transmitter (1-16: Static MCS, 35: Joint LA-TPC)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 16]],
+                  "allowedValues": [35]
+                }
+              },
+              "minRssi": {
+                "desc": "[Test-only] RSSI threshold used for packet detection",
+                "action": "NO_ACTION",
+                "type": "INTEGER"
+              },
+              "minTxPower": {
+                "desc": "The minimum Tx power index assigned when TPC algorithm is enabled",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "msduPerMpdu": {
+                "desc": "Configure number of MSDU aggregation (AMSDU)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[2, 4]]
+                }
+              },
+              "noLinkTimeout": {
+                "desc": "If no link is up for timeout minutes, fw will mark itself as not healthy - this will lead to minion restart ([1, 30000] (units = minutes))",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 30000]]
+                }
+              },
+              "numOfHbLossToFail": {
+                "desc": "Count of consecutive number of HBs that if lost will cause the link to be declared as a failure. Note: A HB is sent once every BWGD",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 10000]]
+                }
+              },
+              "polarity": {
+                "desc": "Polarity for the radio (1: ODD, 2: EVEN, 3: HYBRID_ODD, 4: HYBRID_EVEN)",
+                "action": "SET_FW_PARAMS_SYNC_OR_RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1,4]]
+                }
+              },
+              "restrictToSfParity": {
+                "desc": "Restrict scheduling to some superframes based on parity (0: No Restriction, 1: only schedule on odd superframes, 2: only schedule on even superframes)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 2]]
+                }
+              },
+              "rxBeamIndex": {
+                "desc": "The index of the Rx Beam when beamConfig==1",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 63]],
+                  "allowedValues": [-1]
+                }
+              },
+              "rxBuffer": {
+                "desc": "Block-ack receive window size ([8,63], but only 63 supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[8, 63]]
+                }
+              },
+              "rxGolayIdx": {
+                "desc": "Tranmission golay index.",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1,3]]
+                }
+              },
+              "rxSlot0End": {
+                "desc": "Time (in us) from start of frame to end of Rx slot 0 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "rxSlot0Start": {
+                "desc": "Time (in us) from start of frame to start of Rx slot 0 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "rxSlot1End": {
+                "desc": "Time (in us) from start of frame to end of Rx slot 1 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "rxSlot1Start": {
+                "desc": "Time (in us) from start of frame to start of Rx slot 1 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "rxSlot2End": {
+                "desc": "Time (in us) from start of frame to end of Rx slot 2 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "rxSlot2Start": {
+                "desc": "Time (in us) from start of frame to start of Rx slot 2 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "statsLogInterval": {
+                "desc": "Periodicity (in ms) for logging of stats",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[200, 3600000]]
+                }
+              },
+              "statsPrintInterval": {
+                "desc": "Periodicity (in ms) for printing of per-station stats to kernel-log (0: Disable, [200:3600000]: Enable)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[200, 3600000]],
+                  "allowedValues": [0]
+                }
+              },
+              "topoScanEnable": {
+                "desc": "Enable topology scan (0: Disabled, 1: Enabled)",
+                "action": "SET_FW_PARAMS",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "tpcAlphaDownRssiStep3Q10": {
+                "desc": "TPC step 3 (steady state) tpcAlphaXXXRssiStep3Q10 controls how quickly the algorithm tracks the RSSI, a larger value means it tracks more slowly. AlphaDown controls how quickly the RSSI is allowed to decrease setting ([0-1] in Q10 notation)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1024]]
+                }
+              },
+              "tpcAlphaDownTargetRssiStep3Q10": {
+                "desc": "See tpcAlphaUpTargetRssiStep3Q10 ([0-1] in Q10 notation)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1024]]
+                }
+              },
+              "tpcAlphaUpRssiStep3Q10": {
+                "desc": "TPC step 3 (steady state) tpcAlphaXXXRssiStep3Q10 controls how quickly the algorithm tracks the RSSI, a larger value means it tracks more slowly. AlphaUp controls how quickly the RSSI is allowed to increase ([0-1] in Q10 notation)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1024]]
+                }
+              },
+              "tpcAlphaUpTargetRssiStep3Q10": {
+                "desc": "TPC step 3 (steady state) tpcAlphaXXXTargetRssiStep3Q10 controls how quickly the algorithm tracks the target RSSI, a larger value means it tracks more slowly ([0-1] in Q10 notation)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1024]]
+                }
+              },
+              "tpcDelPowerStep1": {
+                "desc": "tpcDelPowerStep1",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-20, 255]]
+                }
+              },
+              "tpcDelPowerStep2": {
+                "desc": "tpcDelPowerStep2",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-20, 255]]
+                }
+              },
+              "tpcDelPowerStep3": {
+                "desc": "tpcDelPowerStep3",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-20, 255]]
+                }
+              },
+              "tpcEnable": {
+                "desc": "Enable Transmit Power Control (0: Disable, 1: after initial BF only, 2: after initial BF and assoc, 3: after initial BF, assoc, and steady-state)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 3]]
+                }
+              },
+              "tpcPBEnable": {
+                "desc": "Enable Transmit Power Control Power Boost (0: Disable, 1: Enable Power Boost option after initial BF, assoc, and steady-state)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "tpcRefRssi": {
+                "desc": "tpcRefRssi",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-60, 60]]
+                }
+              },
+              "tpcRefStfSnrStep1": {
+                "desc": "tpcRefStfSnr1",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-20, 40]]
+                }
+              },
+              "tpcRefStfSnrStep2": {
+                "desc": "tpcRefStfSnr2",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-20, 40]]
+                }
+              },
+              "tpcRefStfSnrStep3": {
+                "desc": "tpcRefStfSnr3",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[-20, 40]]
+                }
+              },
+              "txBeamIndex": {
+                "desc": "The index of the Tx Beam when beamConfig==1",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 63]],
+                  "allowedValues": [-1]
+                }
+              },
+              "txGolayIdx": {
+                "desc": "Tranmission golay index.",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1,3]]
+                }
+              },
+              "txPower": {
+                "desc": "Transmit power index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 31]]
+                }
+              },
+              "txPowerTableLinear": {
+                "desc": "Use original transmit power table if 0, otherwise use 1dB per index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "txSlot0End": {
+                "desc": "Time (in us) from start of frame to end of Tx slot 0 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "txSlot0Start": {
+                "desc": "Time (in us) from start of frame to start of Tx slot 0 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "txSlot1End": {
+                "desc": "Time (in us) from start of frame to end of Tx slot 1 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "txSlot1Start": {
+                "desc": "Time (in us) from start of frame to start of Tx slot 1 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "txSlot2End": {
+                "desc": "Time (in us) from start of frame to end of Tx slot 2 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "txSlot2Start": {
+                "desc": "Time (in us) from start of frame to start of Tx slot 2 ([1:399], but only default supported)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 399]],
+                  "allowedValues": [0]
+                }
+              },
+              "wsecEnable": {
+                "desc": "Enable airlink encryption (0: Disabled, 1: Enabled, 2: Enabled with 802.1X)",
+                "action": "REBOOT",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 2]]
+                }
+              },
+              "maxTxPowerPerMcs": {
+                "desc": "Max Tx Power per MCS level (bits 0:7 MCS1-9, bits 8:15 MCS10, bits 16:23 MCS11, bits 24:31 MCS12)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 522133279]]
+                }
+              },
+              "maxTxPowerPerMcsEdmg": {
+                "desc": "Max Tx Power per MCS level (bits 0:7 MCS13, bits 8:15 MCS14, bits 16:23 MCS15, bits 24:31 MCS16)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 522133279]]
+                }
+              },
+              "noTrafficMaxMcsFallback": {
+                "desc": "Set max MCS to this level when there is no traffic",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 16]]
+                }
+              },
+              "autoPbfEnable": {
+                "desc": "Enable or Disable AUTO PBF after link ignition",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "channel": {
+                "desc": "Transmission channel index",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 4], [9, 11]]
+                }
+              },
+              "ibfProcedureType": {
+                "desc": "Type of IBF procedure to perform 0=Massive, 1=Diversity",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "ibfNumberOfBeams": {
+                "desc": "Number of beams to use during IBF procedure",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedValues": [31, 61]
+                }
+              },
+              "ibfSet1RficBitmap": {
+                "desc": "Bitmap of RFIC to enable for ibfProcedureType Massive and Diversity set 1; behavior for all zeros is software-defined",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 255]]
+                }
+              },
+              "ibfSet2RficBitmap": {
+                "desc": "Bitmap of RFIC to enable for ibfProcedureType Massive and Diversity set 2; For Massive ibfSet1RficBitmap and ibfSet2RficBitmap should be same; behavior for all zeros is software-defined",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 255]]
+                }
+              },
+              "ibfCodebookVariant": {
+                "desc": "Codebook variant (0 - legacy, 1 - 1D 1x120, 2 - 2D 3x40)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 2]]
+                }
+              },
+              "useUpdateAwvForPbf": {
+                "desc": "Use update AWV for PBF when applicable (as determined by firmware)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "latpcBlerToPer": {
+                "desc": "The lower (bits 3:0) and upper (bits 7:4) bound for BLER to PER conversion as pwr of 2",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 255]]
+                }
+              },
+              "mcsLqmQ3_1_4": {
+                "desc": "Packed MCS table for MCS 1-4 in Q3 (times 2^3) with 8 lsbs -> MCS1",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "mcsLqmQ3_5_8": {
+                "desc": "Packed MCS table for MCS 5-8 in Q3 (times 2^3) with 8 lsbs -> MCS5",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "mcsLqmQ3_9_12": {
+                "desc": "Packed MCS table for MCS 9-12 in Q3 (times 2^3) with 8 lsbs -> MCS9",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "mcsLqmQ3_13_16": {
+                "desc": "Packed MCS table for MCS 13-16 in Q3 (times 2^3) with 8 lsbs -> MCS13 (EDMG only)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "ibfUseRssi": {
+                "desc": "Flag to use RSSI instead of SNR as initial beamforming criteria",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "rxMaxMcs": {
+                "desc": "Max MCS value supported during reception by the node (based on PCIE and CPU capabilities)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[1, 16]]
+                }
+              },
+              "tcpTuningConfig": {
+                "desc": "TCP performance tuning configuration (LSB byte - Slot efficiency factor [1% - 100%]; MSB byte - TCP headroom [0 - 64 frames])",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 65535]]
+                }
+              },
+              "htsfMsgInterval": {
+                "desc": "Periodicity (in BWGDs) for sending HTSF Info messages to host (0 - Disable, 1 - sent once every BWGD (~25ms), 40 - sent once every ~1 second)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 40]]
+                }
+              },
+              "htsfSyncEnable": {
+                "desc": "Set to 1 to enable high-resolution (ns-level) TSF synchronization, 0 otherwise",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "htsfRfSyncKpKi": {
+                "desc": "RF HTSF sync PI control loop coefficients (bits 16:31 RF_KP, bits 0:15 RF_KI)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "htsfPpsSyncKpKi": {
+                "desc": "PPS HTSF sync PI control loop coefficients (bits 16:31 PPS_KP, bits 0:15 PPS_KI)",
+                "action": "NO_ACTION",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 4294967295]]
+                }
+              },
+              "mtpoEnabled": {
+                "desc": "Set to 1 to enable MTPO, 0 otherwise.  Has no effect in diversity or single tile modes",
+                "action": "SET_FW_PARAMS",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 1]]
+                }
+              },
+              "mtpoPhaseHysteresis_dBQ2": {
+                "desc": "Do not apply new MTPO phases unless the improvement exceeds this value (Q2 means x4)",
+                "action": "RELOAD_FIRMWARE",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 255]]
+                }
+              }
+            }
+          }
+        },
+        "fwStatsConfig": {
+          "desc": "Enable/disable categories of stats exported by firmware (tgfStatsType), e.g. 'TGF_STATS_BF'.",
+          "action": "SET_FW_STATS_CONFIG",
+          "type": "MAP",
+          "mapVal": {
+            "type": "BOOLEAN"
+          }
+        },
+        "wsecParams": {
+          "desc": "Airlink encryption parameters",
+          "action": "RESTART_MINION",
+          "type": "OBJECT",
+          "objVal": {
+            "properties": {
+              "hostapdVerbosity": {
+                "desc": "Logging verbosity for hostapd. (bitmask: 0=<default>, 1=\"-d\", 2=\"-dd\", 4=\"-t\", 8=\"-K\")",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 15]]
+                }
+              },
+              "supplicantVerbosity": {
+                "desc": "Logging verbosity for wpa_supplicant. (bitmask: 0=<default>, 1=\"-d\", 2=\"-dd\", 4=\"-t\", 8=\"-K\")",
+                "type": "INTEGER",
+                "intVal": {
+                  "allowedRanges": [[0, 15]]
+                }
+              },
+              "wpaPskParams": {
+                "desc": "WPA-PSK parameters",
+                "type": "OBJECT",
+                "objVal": {
+                  "properties": {
+                    "wpa_passphrase": {
+                      "desc": "Default WPA pre-shared key, in ASCII passphrase format (8-63 characters)",
+                      "type": "STRING",
+                      "strVal": {
+                        "regexMatches": ".{8,63}"
+                      }
+                    },
+                    "wpa_passphrase_override": {
+                      "desc": "Link-specific WPA pre-shared keys in ASCII passphrase format (8-63 characters). This is comprised of a map of neighbor radio MAC addresses to their passphrases. Note that the default passphrase is also still allowed by the authenticator.",
+                      "type": "MAP",
+                      "mapVal": {
+                        "type": "STRING",
+                        "strVal": {
+                          "regexMatches": ".{8,63}"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "radioParamsOverride": {
+    "desc": "The per-radio config overrides",
+    "action": "NO_ACTION",
+    "type": "MAP",
+    "mapVal": {
+      "type": "OBJECT",
+      "objVal": {
+        "properties": {
+          "__copy_block__": "radioParamsBase.objVal.properties"
+        }
+      }
+    }
+  },
+  "snmpConfig": {
+    "contact": {
+      "desc": "System contact",
+      "type": "STRING",
+      "action": "RESTART_SNMP"
+    },
+    "location": {
+      "desc": "System location",
+      "type": "STRING",
+      "action": "RESTART_SNMP"
+    },
+    "snmpV2C": {
+      "desc": "SNMP V2C (community) access",
+      "type": "MAP",
+      "action": "RESTART_SNMP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "community": {
+              "desc": "SNMP community with read-only access to all OIDs",
+              "action": "RESTART_SNMP",
+              "type": "STRING",
+              "required": true
+            },
+            "source": {
+              "desc": "Allowed IPv6 source address or prefix",
+              "action": "RESTART_SNMP",
+              "type": "STRING",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "snmpV3": {
+      "desc": "SNMP V3 USM access",
+      "type": "MAP",
+      "action": "RESTART_SNMP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "username": {
+              "desc": "Username for SNMP requests",
+              "type": "STRING",
+              "action": "RESTART_SNMP",
+              "required": true
+            },
+            "authPassphrase": {
+              "desc": "Passphrase for SNMP requests",
+              "type": "STRING",
+              "action": "RESTART_SNMP",
+              "required": true
+            },
+            "authType": {
+              "desc": "Authentication type",
+              "type": "STRING",
+              "action": "RESTART_SNMP",
+              "required": true,
+              "strVal": {
+                "allowedValues": ["MD5", "SHA", "SHA-512", "SHA-384", "SHA-256", "SHA-224"]
+              }
+            },
+            "privPassphrase": {
+              "desc": "Privacy (encryption) passphrase",
+              "type": "STRING",
+              "action": "RESTART_SNMP",
+              "required": false
+            },
+            "privProtocol": {
+              "desc": "Privacy (encryption) protocol",
+              "type": "STRING",
+              "action": "RESTART_SNMP",
+              "required": false,
+              "strVal": {
+                "allowedValues": ["DES", "AES"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "statsAgentParams": {
+    "sources": {
+      "desc": "The stats sources",
+      "action": "RESTART_STATS_AGENT",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "enabled": {
+              "desc": "Enable stats for this source",
+              "type": "BOOLEAN",
+              "required": true
+            },
+            "zmq_url": {
+              "desc": "The ZMQ endpoint",
+              "type": "STRING",
+              "required": true,
+              "strVal": {
+                "regexMatches": "(inproc://(.{1,256}))|(ipc://(.{1,107}))|(tcp://((\\*|[^:]+|\\[[^\\]]+\\]):(\\*|[0-9]{1,5}))(;((\\*|[^:]+|\\[[^\\]]+\\]):(\\*|[0-9]{1,5})))?)"
+              }
+            }
+          }
+        }
+      }
+    },
+    "endpointParams": {
+      "kafkaParams": {
+        "enabled": {
+          "desc": "Enable data publishing to Kafka",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN"
+        },
+        "config": {
+          "brokerEndpointList": {
+            "desc": "[metadata.broker.list] Kafka broker endpoint list (comma-separated)",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          },
+          "queueBufferingMaxMs": {
+            "desc": "[queue.buffering.max.ms] Delay in milliseconds to wait for messages in the producer queue to accumulate before constructing message batches (MessageSets) to transmit to brokers. A higher value allows larger and more effective (less overhead, improved compression) batches of messages to accumulate at the expense of increased message delivery latency.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[0, 900000]]
+            }
+          },
+          "queueBufferingMaxMessages": {
+            "desc": "[queue.buffering.max.messages] Maximum number of messages allowed on the producer queue. This queue is shared by all topics and partitions.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[1, 10000000]]
+            }
+          },
+          "queueBufferingMaxKbytes": {
+            "desc": "[queue.buffering.max.kbytes] Maximum total message size sum allowed on the producer queue. This queue is shared by all topics and partitions. This property has higher priority than queue.buffering.max.messages.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[1, 2097151]]
+            }
+          },
+          "batchNumMessages": {
+            "desc": "[batch.num.messages] Maximum number of messages batched in one MessageSet. The total MessageSet size is also limited by message.max.bytes.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[1, 1000000]]
+            }
+          },
+          "enableIdempotence": {
+            "desc": "[enable.idempotence] When set to true, the producer will ensure that messages are successfully produced exactly once and in the original produce order.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "BOOLEAN"
+          },
+          "compressionCodec": {
+            "desc": "[compression.codec] Compression codec to use for compressing message sets",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING",
+            "strVal": {
+              "allowedValues": ["none", "gzip", "snappy", "lz4", "zstd"]
+            }
+          },
+          "compressionLevel": {
+            "desc": "[compression.level] Compression level parameter for algorithm selected by configuration property compression.codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: [0-9] for gzip; [0-12] for lz4; only 0 for snappy; -1 = codec-dependent default compression level.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[-1, 12]]
+            }
+          },
+          "messageTimeoutMs": {
+            "desc": "[message.timeout.ms] Local message timeout. This value is only enforced locally and limits the time a produced message waits for successful delivery. A time of 0 is infinite. This is the maximum time librdkafka may use to deliver a message (including retries). Delivery error occurs when either the retry count or the message timeout are exceeded.",
+            "action": "RESTART_STATS_AGENT",
+            "type": "INTEGER",
+            "intVal": {
+              "allowedRanges": [[0, 2147483647]]
+            }
+          }
+        },
+        "topics": {
+          "eventsTopic": {
+            "desc": "Kafka events topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          },
+          "hfStatsTopic": {
+            "desc": "Kafka high-frequency stats topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          },
+          "statsTopic": {
+            "desc": "Kafka stats topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          },
+          "scanResultsTopic": {
+            "desc": "Kafka scan results topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          },
+          "iperfResultsTopic": {
+            "desc": "Kafka iperf results topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          },
+          "pingResultsTopic": {
+            "desc": "Kafka ping results topic name",
+            "action": "RESTART_STATS_AGENT",
+            "type": "STRING"
+          }
+        }
+      },
+      "odsParams": {
+        "enabled": {
+          "desc": "Enable data publishing to ODS",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN"
+        },
+        "remoteEndpoint": {
+          "desc": "ODS endpoint URL",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        },
+        "accessToken": {
+          "desc": "Access token for the ODS endpoint",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        },
+        "categoryId": {
+          "desc": "Category ID for submitting to ODS endpoint",
+          "action": "RESTART_STATS_AGENT",
+          "type": "INTEGER"
+        },
+        "entityPrefix": {
+          "desc": "Prefix for ODS entity name",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        },
+        "keyPrefix": {
+          "desc": "Prefix for ODS key name",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        }
+      },
+      "pelicanParams": {
+        "enabled": {
+          "desc": "Enable data publishing to Pelican",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN"
+        },
+        "remoteEndpoint": {
+          "desc": "Pelican endpoint URL",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        },
+        "accessToken": {
+          "desc": "Access token for the Pelican endpoint",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        }
+      },
+      "scribeParams": {
+        "enabled": {
+          "desc": "Enable data publishing to Scribe",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN"
+        },
+        "remoteEndpoint": {
+          "desc": "Scribe endpoint URL",
+          "action": "RESTART_STATS_AGENT",
+          "type": "STRING"
+        }
+      },
+      "nmsPublisherParams": {
+        "enabled": {
+          "desc": "Enable data publishing to the aggregator",
+          "action": "RESTART_STATS_AGENT",
+          "type": "BOOLEAN"
+        },
+        "zmqSndHwm": {
+          "desc": "The ZMQ high watermark for outbound messages to the aggregator",
+          "action": "RESTART_STATS_AGENT",
+          "type": "INTEGER",
+          "intVal": {
+            "allowedRanges": [[0, 2147483647]]
+          }
+        }
+      }
+    },
+    "collectors": {
+      "openrStatsEnabled": {
+        "desc": "Collect counters from Open/R via Thrift",
+        "action": "RESTART_STATS_AGENT",
+        "type": "BOOLEAN"
+      },
+      "systemStatsCollectionInterval": {
+        "desc": "The interval (in seconds) at which system stats (ex. VPP, Open/R, network/process/memory/CPU counters) are collected. Depending on the desired stats frequency, this should either be set to 'defaultStatsInterval' or 'highFrequencyStatsInterval' (and may have a high impact on CPU usage).",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      }
+    },
+    "publisherParams": {
+      "defaultStatsInterval": {
+        "desc": "The interval (in seconds) at which stats are published to configured endpoints",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      },
+      "highFrequencyStatsInterval": {
+        "desc": "The interval (in seconds) at which high-frequency stats are published to configured endpoints",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      },
+      "statsBlacklist": {
+        "desc": "The stats block list, comprised of a map of group names to regex strings to block",
+        "action": "RESTART_STATS_AGENT",
+        "type": "MAP",
+        "mapVal": {
+          "type": "STRING"
+        }
+      },
+      "highFrequencyStatsWhitelist": {
+        "desc": "The high-frequency stats whitelist, comprised of a map of group names to regex strings to allow",
+        "action": "RESTART_STATS_AGENT",
+        "type": "MAP",
+        "mapVal": {
+          "type": "STRING"
+        }
+      },
+      "statsBufferSize": {
+        "desc": "The maximum number of queued stats (when reached, older stats are dropped)",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      },
+      "eventLogsBufferSize": {
+        "desc": "The maximum number of queued events (when reached, older events are dropped)",
+        "action": "RESTART_STATS_AGENT",
+        "type": "INTEGER",
+        "intVal": {
+          "allowedRanges": [[1, 2147483647]]
+        }
+      },
+      "convertToRate": {
+        "desc": "If enabled, convert counter-type stats into rates, otherwise publish as raw values",
+        "action": "RESTART_STATS_AGENT",
+        "type": "BOOLEAN"
+      },
+      "publishValueWithRate":  {
+        "desc": "When this option and 'convertToRate' are both enabled, publish the raw values and rates for counter-type stats in two separate keys: '<keyName>' for the raw value and '<keyName>.rate' for the computed rate",
+        "action": "RESTART_STATS_AGENT",
+        "type": "BOOLEAN"
+      }
+    }
+  },
+  "sysParams": {
+    "managedConfig": {
+      "desc": "Determines whether the controller should manage the node's config",
+      "action": "NO_ACTION",
+      "type": "BOOLEAN"
+    },
+    "sshTrustedUserCAKeys": {
+      "desc": "The public keys for certificate authorities that are trusted to sign user certs for authentication",
+      "action": "RELOAD_SSHD_CA_KEYS",
+      "type": "MAP",
+      "mapVal": {
+        "type": "STRING"
+      }
+    },
+    "allowFactoryCA": {
+      "desc": "Determines whether to trust the default ssh cert authority installed on the node in addition to the ones listed in sshTrustedUserCAKeys",
+      "action": "RELOAD_SSHD_CA_KEYS",
+      "type": "BOOLEAN"
+    },
+    "dnsServers": {
+      "desc": "Additional DNS server IPv6 addresses to install. Map keys can be arbitrary strings and are ignored",
+      "action": "RELOAD_DNS_SERVERS",
+      "type": "MAP",
+      "mapVal": {
+        "type": "STRING"
+      }
+    },
+    "ntpServers": {
+      "desc" : "NTP server hostnames or IPv6 addresses to install. Map keys can be arbitrary strings and are ignored",
+      "action": "RELOAD_NTP_CONFIG",
+      "type": "MAP",
+      "mapVal": {
+        "type": "STRING"
+      }
+    },
+    "distributedIgnitionEnabled": {
+      "desc": "Determines whether the node should attempt to re-ignite links to neighbors as defined in its config",
+      "action": "NO_ACTION",
+      "type": "BOOLEAN"
+    }
+  },
+  "syslogParams": {
+    "enabled": {
+      "desc": "Enable sending syslogs to a remote server",
+      "action": "RELOAD_RSYSLOG_CONFIG",
+      "type": "BOOLEAN"
+    },
+    "remoteHost": {
+      "desc": "The remote host to submit syslogs to (name or IP)",
+      "action": "RELOAD_RSYSLOG_CONFIG",
+      "type": "STRING"
+    },
+    "remotePort": {
+      "desc": "The UDP port on the remote host to submit syslogs to",
+      "action": "RELOAD_RSYSLOG_CONFIG",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[1, 65535]]
+      }
+    },
+    "protocol": {
+      "desc": "The remote host to submit syslogs to (name or IP)",
+      "action": "RELOAD_RSYSLOG_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["udp", "tcp"]
+      }
+    },
+    "selector": {
+      "desc": "The log selector field (in sysklogd format)",
+      "action": "RELOAD_RSYSLOG_CONFIG",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "([^\\s;]+\\.[^\\s;]+;?)+"
+      }
+    }
+  },
+  "firewallConfig": {
+    "allowEstablished": {
+      "desc": "Allow already Established TCP connections",
+      "action": "UPDATE_FIREWALL",
+      "type": "BOOLEAN"
+    },
+    "allowICMPv6": {
+      "desc": "Allow all ICMPv6",
+      "action": "UPDATE_FIREWALL",
+      "type": "BOOLEAN"
+    },
+    "allowLinkLocal": {
+      "desc": "Allow any communications from fe80::/10 prefix",
+      "action": "UPDATE_FIREWALL",
+      "type": "BOOLEAN"
+    },
+    "allowLoopback": {
+      "desc": "Allow ANY communications to Loopback Interface: DEBUGGING ONLY",
+      "action": "UPDATE_FIREWALL",
+      "type": "BOOLEAN"
+    },
+    "defaultPolicy": {
+      "desc": "INPUT Table's default policy/action",
+      "action": "UPDATE_FIREWALL",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["ACCEPT", "DROP"]
+      }
+    },
+    "tcpPorts": {
+      "desc": "Comma Separated list of TCP ports Overriding default target",
+      "action": "UPDATE_FIREWALL",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9](,[0-9])*"
+      }
+    },
+    "udpPorts": {
+      "desc": "Comma Separated list of UDP ports Overriding default target",
+      "action": "UPDATE_FIREWALL",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "|[0-9](,[0-9])*"
+      }
+    }
+  },
+  "fluentdParams": {
+    "sources": {
+      "desc": "Map of log files for the fluentd agent to watch. Each map key will be used as the 'tag' for that log file.",
+      "action": "RESTART_FLUENTD_AGENT",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "enabled": {
+              "desc": "Enable watching this source",
+              "type": "BOOLEAN",
+              "required": true
+            },
+            "filename": {
+              "desc": "The log file path",
+              "type": "STRING",
+              "required": true
+            }
+          }
+        }
+      }
+    },
+    "endpoints": {
+      "desc": "Map of endpoints that fluentd will send logs to. The keys can be arbitrary strings and are ignored.",
+      "action": "RESTART_FLUENTD_AGENT",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "host": {
+              "desc": "Hostname or IP of the fluentd endpoint",
+              "type": "STRING",
+              "required": true
+            },
+            "port": {
+              "desc": "Port on which the fluentd endpoint listens",
+              "type": "INTEGER",
+              "required": true,
+              "intVal": {
+                "allowedRanges": [[1, 65535]]
+              }
+            }
+          }
+        }
+      }
+    },
+    "memBufLimit": {
+      "desc": "If non-zero, limit data ingestion for input plugins to the given amount of bytes via the 'Mem_Buf_Limit' setting. When estimating potential memory usage, note that this setting will apply to each log source independently, and output plugins may also consume additional memory (typically up to double the value here).",
+      "action": "RESTART_FLUENTD_AGENT",
+      "type": "INTEGER",
+      "intVal": {
+        "allowedRanges": [[0, 9007199254740991]]
+      }
+    }
+  },
+  "timingParams": {
+    "ESMC_ENABLED": {
+      "desc": "Whether to enable to the SyncE ESMC (Ethernet synchronization messaging channel) plugin in VPP to generate and handle ESMC protocol frames",
+      "type": "STRING",
+      "action": "REBOOT",
+      "strVal": {
+        "allowedValues": ["", "0", "1"]
+      }
+    },
+    "HTSF_MAX_LOOP_SIZE": {
+      "desc": "Largest possible loop size in the network. To avoid timing loops in HTSF sync mode, nodes must wait at least TIMING_LOOP_MAX_SIZE*12 seconds before switching to a new HTSF source.",
+      "type": "STRING",
+      "action": "RESTART_MINION",
+      "strVal": {
+        "intRanges": [[0, 2147483647]]
+      }
+    },
+    "HTSF_SRC_MAC": {
+      "desc": "[Test-only] When using HTSF as the PPS or PTP source, only use HTSF messages from a given radio MAC address (default: select automatically)",
+      "action": "RESTART_MINION",
+      "type": "STRING"
+    },
+    "PPS_TIMESTAMP_SOURCE": {
+      "desc": "PPS timestamp source for Wigig sectors in PPS sync mode",
+      "type": "STRING",
+      "action": "RESTART_MINION",
+      "strVal": {
+        "allowedValues": ["", "GPS", "PTP", "SW_HTSF"]
+      }
+    },
+    "PTP_DEVICE": {
+      "desc": "Set the PTP hardware clock device (ex. /dev/ptp0)",
+      "type": "STRING",
+      "action": "RESTART_MINION"
+    },
+    "PTP_TIMER_SOURCE": {
+      "desc": "PPS timestamp source for PTP timer synchronization",
+      "type": "STRING",
+      "action": "RESTART_MINION",
+      "strVal": {
+        "allowedValues": ["", "GPS", "SW_HTSF", "HW_HTSF"]
+      }
+    },
+    "PTP_VPP_INTERFACE": {
+      "desc": "When using VPP for PTP-TC timestamping, set the timestamping interface name",
+      "type": "STRING",
+      "action": "REBOOT",
+      "strVal": {
+        "intRanges": [[0, 2147483647]]
+      }
+    },
+    "PTP_VPP_OFFSET_NS": {
+      "desc": "When using VPP for PTP-TC timestamping, set the factory calibration constant (in nanoseconds) to compensate for internal timestamping bias",
+      "type": "STRING",
+      "action": "REBOOT",
+      "strVal": {
+        "intRanges": [[-2147483648, 2147483647]]
+      }
+    },
+    "PTP_VPP_NXP_PORT": {
+      "desc": "When using VPP for PTP-TC timestamping, provide a comma-separated list of the NXP NPU timestamping port number(s), i.e. DPMAC indexes, on which to enable the one-step correction field update in hardware (0 = disabled, use software timestamping)",
+      "type": "STRING",
+      "action": "REBOOT",
+      "strVal": {
+        "regexMatches": "|[0-9]+(,[0-9]+)*"
+      }
+    },
+    "PTP_VSC_CTRL_SOCKET": {
+      "desc": "When using a VSC 10G 'Malibu' PHY, set to enable PTP-TC timestamping and use a given control socket path for LTC clock synchronization (if 'PTP_TIMER_SOURCE' is set)",
+      "type": "STRING",
+      "action": "REBOOT"
+    },
+    "PTP_VSC_PORT": {
+      "desc": "When using a VSC 10G 'Malibu' PHY, select the port used for PTP-TC timestamping and ESMC input/output (default = 0)",
+      "type": "STRING",
+      "action": "REBOOT",
+      "strVal": {
+        "allowedValues": ["", "0", "1"]
+      }
+    }
+  },
+  "topologyInfo": {
+    "nodeName": {
+      "desc": "The name of this node",
+      "type": "STRING",
+      "action": "RESTART_STATS_AGENT",
+      "readOnly": true
+    },
+    "topologyName": {
+      "desc": "The name of the topology that this node belongs to",
+      "type": "STRING",
+      "action": "RESTART_STATS_AGENT",
+      "readOnly": true
+    },
+    "nodeType": {
+      "desc": "The type of this node (1: CN, 2: DN)",
+      "type": "INTEGER",
+      "action": "NO_ACTION",
+      "intVal": {
+        "allowedRanges": [[1, 2]]
+      },
+      "readOnly": true
+    },
+    "distributedIgnitionNumColors": {
+      "desc": "The number of colors used to bucket radios for distributed ignition",
+      "type": "INTEGER",
+      "action": "NO_ACTION",
+      "readOnly": true
+    },
+    "radioInfo": {
+      "desc": "Information about each of the node's radios",
+      "type": "MAP",
+      "action": "NO_ACTION",
+      "readOnly": true,
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "distributedIgnitionColor": {
+              "desc": "The color of this radio, used for bucketing in distributed ignition",
+              "type": "INTEGER",
+              "action": "NO_ACTION"
+            }
+          }
+        }
+      }
+    },
+    "site": {
+      "desc": "Information about the node's physical location",
+      "type": "OBJECT",
+      "action": "NO_ACTION",
+      "readOnly": true,
+      "objVal": {
+        "properties": {
+          "name": {
+            "desc": "The site name",
+            "type": "STRING",
+            "action": "NO_ACTION"
+          },
+          "location": {
+            "desc": "The site location",
+            "type": "OBJECT",
+            "action": "NO_ACTION",
+            "objVal": {
+              "properties": {
+                "latitude": {
+                  "desc": "The latitude of this site",
+                  "type": "FLOAT"
+                },
+                "longitude": {
+                  "desc": "The longitude of this site",
+                  "type": "FLOAT"
+                },
+                "altitude": {
+                  "desc": "The altitude of this site in meters",
+                  "type": "FLOAT"
+                },
+                "accuracy": {
+                  "desc": "The accuracy radius of this site's location in meters",
+                  "type": "FLOAT"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "neighborInfo": {
+      "desc": "Information about wireless neighbors that this node could ignite (as the initiator)",
+      "type": "MAP",
+      "action": "NO_ACTION",
+      "readOnly": true,
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "initiatorMac": {
+              "desc": "The initiator MAC address",
+              "type": "STRING",
+              "action": "NO_ACTION"
+            },
+            "controlSuperframe": {
+              "desc": "The control superframe for this link",
+              "type": "INTEGER",
+              "action": "NO_ACTION"
+            },
+            "nodeType": {
+              "desc": "The type of the neighbor node (1: CN, 2: DN)",
+              "type": "INTEGER",
+              "action": "NO_ACTION",
+              "intVal": {
+                "allowedRanges": [[1, 2]]
+              }
+            },
+            "golayIdx": {
+              "desc": "The neighbor's transmission and receive golay codes",
+              "type": "OBJECT",
+              "action": "NO_ACTION",
+              "objVal": {
+                "properties": {
+                  "txGolayIdx": {
+                    "desc": "Transmission golay index",
+                    "type": "INTEGER",
+                    "intVal": {
+                      "allowedRanges": [[1,3]]
+                    }
+                  },
+                  "rxGolayIdx": {
+                    "desc": "Receive golay index",
+                    "type": "INTEGER",
+                    "intVal": {
+                      "allowedRanges": [[1,3]]
+                    }
+                  }
+                }
+              }
+            },
+            "nodePolarity": {
+              "desc": "The polarity of the neighbor",
+              "type": "INTEGER",
+              "action": "NO_ACTION",
+              "intVal": {
+                "allowedRanges": [[1, 4]]
+              }
+            }
+          }
+        }
+      }
+    },
+    "zoneNodes": {
+      "desc": "Comma-separated list of nodes in Open/R name format that are in this node's zone",
+      "type": "STRING",
+      "action": "UPDATE_ZONE",
+      "readOnly": true
+    }
+  },
+  "tunnelConfig": {
+    "desc": "Tunnel configuration",
+    "action": "RELOAD_TUNNEL_CONFIG",
+    "type": "MAP",
+    "mapVal": {
+      "type": "OBJECT",
+      "objVal": {
+        "properties": {
+          "enabled": {
+            "desc": "Enable tunnel configuration",
+            "action": "RELOAD_TUNNEL_CONFIG",
+            "type": "BOOLEAN"
+          },
+          "localInterface": {
+            "desc": "Local interface name for tunnel",
+            "action": "RELOAD_TUNNEL_CONFIG",
+            "type": "STRING",
+            "strVal": {
+              "regexMatches": "|((nic)|(TenGigabitEthernet))[0-9]+"
+            }
+          },
+          "localIp": {
+            "desc": "Local IP address",
+            "action": "RELOAD_TUNNEL_CONFIG",
+            "type": "STRING",
+            "strVal": {
+              "regexMatches": "|[0-9a-fA-F:]+"
+            }
+          },
+          "dstNodeName": {
+            "desc": "Destination node name",
+            "action": "RELOAD_TUNNEL_CONFIG",
+            "type": "STRING"
+          },
+          "dstIp": {
+            "desc": "Destination IP address",
+            "action": "RELOAD_TUNNEL_CONFIG",
+            "type": "STRING",
+            "strVal": {
+              "regexMatches": "|[0-9a-fA-F:]+"
+            }
+          },
+          "tunnelType": {
+            "desc": "Tunnel type",
+            "action": "RELOAD_TUNNEL_CONFIG",
+            "type": "STRING",
+            "strVal": {
+              "allowedValues": ["GRE_L2", "VXLAN", "SRV6"]
+            }
+          },
+          "tunnelParams": {
+            "desc": "Extra parameters needed for some tunnel types",
+            "type": "OBJECT",
+            "objVal": {
+              "properties": {
+                "vlanId": {
+                  "desc": "VLAN ID for VXLAN/SRv6",
+                  "action": "RELOAD_TUNNEL_CONFIG",
+                  "type": "INTEGER",
+                  "intVal": {
+                    "allowedRanges": [[1, 2147483647]]
+                  }
+                },
+                "primaryTunnelName": {
+                  "desc": "Name of the primary tunnel (valid if this is a backup tunnel)",
+                  "action": "RELOAD_TUNNEL_CONFIG",
+                  "type": "STRING"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "cpeConfig": {
+    "desc": "The CPE interface configuration. Map keys are CPE interface names",
+    "action": "REBOOT",
+    "type": "MAP",
+    "mapVal": {
+      "type": "OBJECT",
+      "objVal": {
+        "properties": {
+          "prefix": {
+            "desc": "Prefix for CPE network segment. The IPv6 address ::1 will be assigned to Terragraph CPE interface and serve as the gateway address for CPE devices",
+            "action": "REBOOT",
+            "type": "STRING",
+            "strVal": {
+              "regexMatches": "|[0-9a-fA-F:]+/(1[6-9]|[2-5][0-9]|6[0-4])"
+            }
+          },
+          "policers": {
+            "desc": "Policer arguments. Keyed on TC",
+            "action": "RELOAD_VPP_CONFIG_AND_MONITOR",
+            "type": "MAP",
+            "mapVal": {
+              "type": "OBJECT",
+              "objVal": {
+                "properties": {
+                  "cir": {
+                    "desc": "Committed information rate (kbps)",
+                    "type": "INTEGER",
+                    "required": true,
+                    "intVal": {
+                      "allowedRanges": [[1, 4294967295]]
+                    }
+                  },
+                  "eir": {
+                    "desc": "Excess information rate (kbps)",
+                    "type": "INTEGER",
+                    "required": true,
+                    "intVal": {
+                      "allowedRanges": [[0, 4294967295]]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "wiredSecurityEnable": {
+            "desc": "Enable CPE interface security",
+            "action": "REBOOT",
+            "type": "BOOLEAN"
+          },
+          "dhcpRelay": {
+            "desc": "DHCPv6 Relay configuration for CPE interface.",
+            "type": "OBJECT",
+            "objVal": {
+              "properties": {
+                "enabled": {
+                  "desc": "Enable DHCPv6 relay for this CPE interface.",
+                  "action": "REBOOT",
+                  "type": "BOOLEAN"
+                },
+                "dhcpServerIp": {
+                  "desc": "DHCPv6 Server IP address",
+                  "action": "REBOOT",
+                  "type": "STRING",
+                  "strVal": {
+                    "regexMatches": "|[0-9a-fA-F:]+"
+                  }
+                },
+                "dhcpOptionRemoteId": {
+                  "desc": "Enable DHCPv6 Remote ID (Option 37).",
+                  "action": "REBOOT",
+                  "type": "BOOLEAN"
+                },
+                "enterpriseId": {
+                  "desc": "Optional Enterprise ID for DHCPv6 Option 37.",
+                  "action": "REBOOT",
+                  "type": "INTEGER",
+                  "intVal": {
+                    "allowedRanges": [[1, 2147483647]]
+                  }
+                },
+                "remoteIdMac": {
+                  "desc": "Optional Remote ID for DHCPv6 Option 37. Default is interface MAC address.",
+                  "action": "REBOOT",
+                  "type": "STRING"
+                },
+                "dhcpOptionSubscriberId": {
+                  "desc": "Enable DHCPv6 Subscriber ID (Option 38).",
+                  "action": "REBOOT",
+                  "type": "BOOLEAN"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "qosConfig": {
+    "dscpEntries": {
+      "desc": "DSCP-TC/color mapping",
+      "action": "RELOAD_VPP_CONFIG_AND_MONITOR",
+      "type": "MAP",
+      "mapVal": {
+        "type": "OBJECT",
+        "objVal": {
+          "properties": {
+            "tc": {
+              "desc": "VPP-DPDK HQoS Traffic class",
+              "type": "INTEGER",
+              "required": true,
+              "intVal": {
+                "allowedRanges": [[0, 3]]
+              }
+            },
+            "queue": {
+              "desc": "VPP-DPDK HQoS queue for traffic class",
+              "type": "INTEGER",
+              "required": true,
+              "intVal": {
+                "allowedValues": [0]
+              }
+            },
+            "color": {
+              "desc": "HQoS Color: 'R', 'Y', or 'G'",
+              "type": "STRING",
+              "required": true,
+              "strVal": {
+                "allowedValues": ["Y", "R", "G"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "eapolParams": {
+    "desc": "EAPoL (802.1X) parameters",
+    "type": "OBJECT",
+    "action": "REBOOT",
+    "objVal": {
+      "properties": {
+        "radius_server_ip": {
+          "desc": "IP address of auth server (i.e. radius) for hostapd",
+          "type": "STRING"
+        },
+        "radius_server_port": {
+          "desc": "Auth server port (i.e. radius server port) for hostapd",
+          "type": "INTEGER",
+          "intVal": {
+            "allowedRanges": [[1, 65535]]
+          }
+        },
+        "radius_user_identity": {
+          "desc": "Identity for wpa_supplicant (i.e. radius user)",
+          "type": "STRING"
+        },
+        "ca_cert_path": {
+          "desc": "Path for CA certificate file",
+          "type": "STRING"
+        },
+        "client_cert_path": {
+          "desc": "Path for node certificate (signed) file",
+          "type": "STRING"
+        },
+        "private_key_path": {
+          "desc": "Path for node private key file",
+          "type": "STRING"
+        },
+        "secrets": {
+          "desc": "EAPoL secrets (e.g. radius_user_password, private_key_password, radius_server_shared_secret)",
+          "type": "MAP",
+          "mapVal": {
+            "type": "STRING"
+          }
+        }
+      }
+    }
+  }
+}

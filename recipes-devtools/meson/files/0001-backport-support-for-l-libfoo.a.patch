@@ -1,0 +1,48 @@
+From dcadd3c664c03db297bc6b128bf5a1e6538fe855 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Sat, 11 Sep 2021 03:26:54 -0700
+Subject: [PATCH] backport: support for `-l:libfoo.a`
+
+From lilinzhe <slayercat.subscription@gmail.com>
+https://github.com/mesonbuild/meson/issues/9002
+---
+ mesonbuild/dependencies/base.py | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/mesonbuild/dependencies/base.py b/mesonbuild/dependencies/base.py
+index aca961b..e8c7be7 100644
+--- a/mesonbuild/dependencies/base.py
++++ b/mesonbuild/dependencies/base.py
+@@ -831,6 +831,29 @@ class PkgConfigDependency(ExternalDependency):
+             elif lib.startswith('-L'):
+                 # We already handled library paths above
+                 continue
++            elif lib.startswith('-l:'):
++                # see: https://stackoverflow.com/questions/48532868/gcc-library-option-with-a-colon-llibevent-a
++                # also : See the documentation of -lnamespec | --library=namespec in the linker manual
++                #                     https://sourceware.org/binutils/docs-2.18/ld/Options.html
++
++                # Don't resolve the same -l:libfoo.a argument again
++                if lib in libs_found:
++                    continue
++                libfilename = lib[3:]
++                foundname = None
++                for libdir in libpaths:
++                    target = os.path.join(libdir, libfilename)
++                    if os.path.exists(target):
++                        foundname = target
++                        break
++                if foundname is None:
++                    if lib in libs_notfound:
++                        continue
++                        mlog.warning('Library {!r} not found for dependency {!r}, may '
++                                    'not be successfully linked'.format(libfilename, self.name))
++                    libs_notfound.append(lib)
++                else:
++                    lib = foundname
+             elif lib.startswith('-l'):
+                 # Don't resolve the same -lfoo argument again
+                 if lib in libs_found:
+-- 
+2.30.2
+

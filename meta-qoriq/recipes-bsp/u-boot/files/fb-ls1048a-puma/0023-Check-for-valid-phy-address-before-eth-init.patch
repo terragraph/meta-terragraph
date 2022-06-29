@@ -1,0 +1,36 @@
+From 04af80af8e29972d22966d1144c4575a12875429 Mon Sep 17 00:00:00 2001
+From: Anand Singh <anandsingh@fb.com>
+Date: Sat, 29 Jun 2019 01:52:45 +0000
+Subject: [PATCH 23/23] Check for valid phy address before eth init
+
+---
+ drivers/net/fsl-mc/mc.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/fsl-mc/mc.c b/drivers/net/fsl-mc/mc.c
+index d7a2e8f1ad..ee72fdc130 100644
+--- a/drivers/net/fsl-mc/mc.c
++++ b/drivers/net/fsl-mc/mc.c
+@@ -916,10 +916,16 @@ unsigned long mc_get_dram_block_size(void)
+ int fsl_mc_ldpaa_init(bd_t *bis)
+ {
+ 	int i;
++	int phy_num;
+ 
+-	for (i = WRIOP1_DPMAC1; i < NUM_WRIOP_PORTS; i++)
+-		if (wriop_is_enabled_dpmac(i) == 1)
+-			ldpaa_eth_init(i, wriop_get_enet_if(i));
++	for (i = WRIOP1_DPMAC1; i < NUM_WRIOP_PORTS; i++) {
++		if (wriop_is_enabled_dpmac(i) == 1){
++			for (phy_num = 0; phy_num < WRIOP_MAX_PHY_NUM; phy_num++) {
++				if(wriop_get_phy_address(i, phy_num) != -1)
++					ldpaa_eth_init(i, wriop_get_enet_if(i));
++				}
++			}
++	}
+ 	return 0;
+ }
+ 
+-- 
+2.17.1
+

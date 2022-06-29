@@ -1,0 +1,25 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 874bd359..b4e5d079 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -77,12 +77,14 @@ if (BUILD_SHARED_LIBS)
+   set_property(TARGET fb303 PROPERTY VERSION ${PACKAGE_VERSION})
+ endif ()
+
+-target_include_directories(fb303 PUBLIC
+-  ${GFLAGS_INCLUDE_DIR}
+-  ${GLOG_INCLUDE_DIR}
+-  ${DOUBLE_CONVERSION_INCLUDE_DIR}
+-  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+-  $<INSTALL_INTERFACE:${INCLUDE_INSTALL_DIR}>
++target_include_directories(fb303
++  PRIVATE
++    ${GFLAGS_INCLUDE_DIR}
++    ${GLOG_INCLUDE_DIR}
++    ${DOUBLE_CONVERSION_INCLUDE_DIR}
++  PUBLIC
++    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
++    $<INSTALL_INTERFACE:${INCLUDE_INSTALL_DIR}>
+ )
+
+ target_link_libraries(fb303

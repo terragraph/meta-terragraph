@@ -1,0 +1,20 @@
+diff --git a/openr/py/openr/cli/breeze.py b/openr/py/openr/cli/breeze.py
+index 0e8a0b49a..493ba9cc8 100644
+--- a/openr/py/openr/cli/breeze.py
++++ b/openr/py/openr/cli/breeze.py
+@@ -19,6 +19,7 @@ from openr.cli.clis import (
+     tech_support,
+ )
+ from openr.cli.utils.options import OPTIONS, breeze_option, str2cert
++from openr.cli.clis import fib_vpp_cli_lib
+
+
+ # Plugin module is optional
+@@ -81,6 +82,7 @@ def get_breeze_cli():
+     cli.add_command(lm.LMCli().lm)
+     cli.add_command(monitor.MonitorCli().monitor)
+     cli.add_command(openr.OpenrCli().openr)
++    cli.add_command(fib_vpp_cli_lib.vpp)
+     cli.add_command(perf.PerfCli().perf)
+     cli.add_command(prefix_mgr.PrefixMgrCli().prefixmgr)
+     cli.add_command(spark.SparkCli().spark)

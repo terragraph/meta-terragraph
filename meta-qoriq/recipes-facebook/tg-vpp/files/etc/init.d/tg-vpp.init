@@ -1,0 +1,46 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides: tg-vpp
+# Required-Start:
+# Required-Stop:
+# Default-Start: S
+# Default-Stop:
+# Short-Description: Configure wired ports for use with VPP
+### END INIT INFO
+
+# Check if DPAA2 is present
+[ -d "/sys/bus/fsl-mc" ] || exit 0
+
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# Check if DPAA offload should be enabled (i.e. if using DPDK/VPP)
+if [ "${DPDK_ENABLED:-0}" -ne "1" ] || [ "${OPENR_USE_FIB_VPP:-0}" -ne "1" ]; then
+	exit 1
+fi
+
+tg_vpp_start() {
+	echo "TG-VPP: configuring network interfaces for VPP"
+	/usr/bin/tg-vpp-setup.sh
+	if [ $? -ne 0 ]
+	then
+		echo "TG-VPP: Failed"
+		exit 1
+	fi
+	echo "TG-VPP: done"
+}
+
+case "$1" in
+start)
+	tg_vpp_start
+	;;
+force-reload|restart)
+	;;
+stop)
+	;;
+*)
+	echo "Usage: /etc/init.d/tg-vpp {start|stop}"
+esac
+
+exit 0

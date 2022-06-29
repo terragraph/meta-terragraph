@@ -1,0 +1,53 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ] ; do
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+# check if Open/R is enabled
+if [ -z "$OPENR_ENABLED" ] || [ "$OPENR_ENABLED" -ne "1" ]; then
+  echo "open/r is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+# If we are using linux FIB, then NSS must not be enabled
+if [ "${OPENR_USE_FIB_NSS:-0}" -eq "1" ] || [ "${OPENR_USE_FIB_VPP:-0}" -eq "1" ]; then
+  echo "fib-linux cannot be enabled together with nss|vpp"
+  sleep ${DELAY}
+  continue
+fi
+
+if [ "$OOB_INTERFACE" ]; then
+  # For OOB nic0 to continue getting RA despite forwarding
+  sysctl net.ipv6.conf."$OOB_INTERFACE".accept_ra=2
+
+  # TODO: We really dont want to route via OOB but
+  # not sure if this works once all forwarding is enabled
+  # TBD ...
+  #sysctl -w net.ipv6.conf."$OOB_INTERFACE".forwarding=0
+fi
+
+# Run CPE operations (read config and enable CPE interfaces)
+/usr/sbin/cpe_operations
+
+# enable forwarding
+sysctl -w net.ipv6.conf.all.forwarding=1
+
+# Explicitly disable netlink-system-handler as Open/R has it enabled
+# Set platform-pub-url to non default value so that Open/R & platform_linux
+# don't bind on same URL. Ideally platform-pub-url shouldn't be binded if
+# netlink-system-handler is disabled.
+exec /usr/sbin/platform_linux \
+--platform_pub_url="ipc:///tmp/linux-platform-pub-url" \
+--v 1 \
+-logtostderr \
+2>&1
+
+done

@@ -1,0 +1,37 @@
+#!/bin/sh
+if [ -z "${NMS_ROOTFS}" ] || [ ! -d "${NMS_ROOTFS}" ]; then
+  echo "NMS_ROOTFS not set or not found"
+  exit 1
+fi
+if [ -z "${DATA_DIR}" ] || [ ! -d "${DATA_DIR}" ]; then
+  echo "DATA_DIR not set or not found"
+  exit 1
+fi
+if [ -z "${NMS_CONFIG_FILE}" ]; then
+  echo "NMS_CONFIG_FILE not set"
+  exit 1
+fi
+
+PATH=${PATH}:/bin
+
+# use the resolved symlink when checking the mount
+NMS_ROOTFS=$(realpath $NMS_ROOTFS)
+# bind mount DATA_DIR into /data in rootfs, if not already mounted
+install -D -m 0644 -d "${NMS_ROOTFS}/data"
+if [ -z "$(mount | grep ${NMS_ROOTFS}/data)" ]; then
+  mount -v --bind "${DATA_DIR}" "${NMS_ROOTFS}/data"
+fi
+
+# read aggregator config file
+if [ ! -f "${DATA_DIR}${NMS_CONFIG_FILE}" ]; then
+  echo "NMS_CONFIG_FILE not found, copying default file..."
+  cp -v "${NMS_ROOTFS}/etc/stats_config/aggregator_config_default.json" "${DATA_DIR}${NMS_CONFIG_FILE}"
+fi
+CONFIG_ARGS=$(chroot ${NMS_ROOTFS} /usr/sbin/config_print_flags "/data${NMS_CONFIG_FILE}")
+if [ $? -ne 0 ]; then
+  echo "Aggregator config file (${DATA_DIR}${NMS_CONFIG_FILE}) had errors: ${CONFIG_ARGS}"
+  exit 1
+fi
+
+chroot ${NMS_ROOTFS} /bin/mknod /dev/urandom c 1 9 2>/dev/null
+eval chroot ${NMS_ROOTFS} /usr/sbin/nms_aggregator -aggregator-config-file "/data${NMS_CONFIG_FILE}" ${CONFIG_ARGS}

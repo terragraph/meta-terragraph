@@ -1,0 +1,35 @@
+From bc868dae041466f13ca95dba5f50f15ed25bdd83 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Mon, 1 Nov 2021 17:16:55 -0700
+Subject: [PATCH] dpdk: don't set hardware intf flag for L3 DMAC filter
+
+We are disabling the MAC filter for dpaa2, and the Wigig
+interface doesn't do hardware MAC filtering. Don't set the flag
+in VPP indicating that devices support filtering.
+---
+ src/plugins/dpdk/device/init.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index aa5eb2933..6387e938f 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -740,11 +740,15 @@ dpdk_lib_init (dpdk_main_t * dm)
+ 	  hi->max_supported_packet_bytes = max_rx_frame;
+ 	  hi->numa_node = xd->cpu_socket;
+ 
++	  /* Terragraph: Turn off HW L3 DMAC filtering for ease of use with
++	   * bridged and tunneled interfaces */
++#if 0
+ 	  /* Indicate ability to support L3 DMAC filtering and
+ 	   * initialize interface to L3 non-promisc mode */
+ 	  hi->flags |= VNET_HW_INTERFACE_FLAG_SUPPORTS_MAC_FILTER;
+ 	  ethernet_set_flags (dm->vnet_main, xd->hw_if_index,
+ 			     ETHERNET_INTERFACE_FLAG_DEFAULT_L3);
++#endif
+ 	}
+ 
+       if (dm->conf->no_tx_checksum_offload == 0)
+-- 
+2.30.2
+

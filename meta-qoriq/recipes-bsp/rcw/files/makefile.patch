@@ -1,0 +1,14 @@
+diff --git a/Makefile b/Makefile
+index f697241..33793ba 100644
+--- a/Makefile
++++ b/Makefile
+@@ -9,6 +9,9 @@ BOARDS = b4420qds b4860qds \
+ 	 t1024qds t1023rdb t1024rdb t1040rdb t1042rdb t1042rdb_pi t1040qds \
+ 	 t2080rdb t2080qds t2081qds t4240qds t4240rdb t1040d4rdb t1042d4rdb
+ 
++# Facebook boards
++BOARDS += ls1012atg ls1048atg fb-ls1048a-puma fb-ls1048a-mbh
++
+ TCLSH := $(shell command -v tclsh 2> /dev/null)
+ 
+ VER = $(shell git describe --tags)

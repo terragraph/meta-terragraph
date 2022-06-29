@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/udp_ping_server
+exec svlogd /var/log/udp_ping_server

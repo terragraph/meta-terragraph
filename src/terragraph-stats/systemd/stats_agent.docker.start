@@ -1,0 +1,22 @@
+#!/bin/sh
+
+if [ -z "${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not set"
+  exit 1
+fi
+
+if [ ! -f "/data/${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not found"
+  exit 1
+fi
+
+SA_FLAGS="-use_local_stats_fetcher=false"
+
+# Read controller config
+SA_FLAGS="${SA_FLAGS} -node_config_file /data/${E2E_CONFIG_FILE}"
+
+SA_FLAGS="${SA_FLAGS} -mac_addr 0:0:0:0:0:0 -aggregator_host ${TG_AGGREGATOR_HOST}"
+
+# Other services within docker need to talk to stats_agent
+# Only accessible via the internal network so listening on all interfaces here is fine
+eval /usr/sbin/stats_agent -input_router_listen_ip '*' -v 2 ${SA_FLAGS} -logtostderr

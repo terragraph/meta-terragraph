@@ -1,0 +1,27 @@
+From 1d89eda6f6edc45d23a6335e27dfc0ff6e9b4d51 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Mon, 13 Sep 2021 17:10:45 -0700
+Subject: [PATCH] Plugins: fix add_vpp_plugin cmake macro
+
+---
+ src/cmake/plugin.cmake | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/cmake/plugin.cmake b/src/cmake/plugin.cmake
+index c165b5914..aca90ab7f 100644
+--- a/src/cmake/plugin.cmake
++++ b/src/cmake/plugin.cmake
+@@ -56,7 +56,9 @@ macro(add_vpp_plugin name)
+   if(NOT VPP_EXTERNAL_PROJECT)
+     list(APPEND deps vpp_version_h api_headers)
+   endif()
+-  add_dependencies(${plugin_name} ${deps})
++  if(deps)
++    add_dependencies(${plugin_name} ${deps})
++  endif()
+   set_target_properties(${plugin_name} PROPERTIES
+     PREFIX ""
+     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/vpp_plugins)
+-- 
+2.30.2
+

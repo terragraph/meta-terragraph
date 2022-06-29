@@ -1,0 +1,96 @@
+From 5504bb88493ea10a1b3145850c15d831ddbfc435 Mon Sep 17 00:00:00 2001
+From: muralid <muralid@devvm700.ftw0.facebook.com>
+Date: Thu, 18 Jun 2020 17:46:17 -0700
+Subject: [PATCH] Add support for zstd compression for squashfs
+
+All the changes to support zstd compression for squashfs.
+
+Test Plan:
+1.Generate squash file system with zstd compression:
+  mksquashfs /data/users/<USERNAME>/meta-terragraph/build-qca/tmp/work/qoriq-poky-linux/terragraph-image/1.0-r0/rootfs ~/image.squashfs-zstd -noappend -comp zstd
+2.Update config to enable zstd for squashfs
+  make menuconfig
+  In Library routines -->Compression support-> Enable Zstandard decompression support in SPL
+  In Library routines -->Compression support-->Enable Zstandard decompression support
+3.Compile u-boot
+4.Run u-boot
+5.Load a file in the file system
+  host bind 0 /home/<USERNAME>/image.sqaushfs-zstd
+  load host 0 0x1000000 /etc/tgversion
+6.Read the file
+  md.b 0x1000000 70
+---
+ fs/squashfs/Makefile         | 2 +-
+ fs/squashfs/decompressor.c   | 4 ++--
+ fs/squashfs/decompressor.h   | 2 --
+ fs/squashfs/squashfs.h       | 1 +
+ fs/squashfs/squashfs_fs_sb.h | 1 +
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/fs/squashfs/Makefile b/fs/squashfs/Makefile
+index 3ed89a602f..a55aa234ef 100644
+--- a/fs/squashfs/Makefile
++++ b/fs/squashfs/Makefile
+@@ -14,4 +14,4 @@ obj-y	+= super.o
+ obj-$(CONFIG_SQUASHFS_LZO) += lzo_wrapper.o
+ #obj-$(CONFIG_SQUASHFS_LZ4) += lz4_wrapper.o
+ obj-$(CONFIG_SQUASHFS_ZLIB) += zlib_wrapper.o
+-#obj-$(CONFIG_SQUASHFS_ZSTD) += zstd_wrapper.o
++obj-$(CONFIG_SQUASHFS_ZSTD) += zstd_wrapper.o
+diff --git a/fs/squashfs/decompressor.c b/fs/squashfs/decompressor.c
+index 315866939c..db0d3f609c 100644
+--- a/fs/squashfs/decompressor.c
++++ b/fs/squashfs/decompressor.c
+@@ -59,11 +59,11 @@ static const struct squashfs_decompressor squashfs_zlib_comp_ops = {
+ };
+ #endif
+ 
+-//#ifndef CONFIG_SQUASHFS_ZSTD
++#ifndef CONFIG_SQUASHFS_ZSTD
+ static const struct squashfs_decompressor squashfs_zstd_comp_ops = {
+ 	NULL, NULL, NULL, NULL, ZSTD_COMPRESSION, "zstd", 0
+ };
+-//#endif
++#endif
+ 
+ static const struct squashfs_decompressor squashfs_unknown_comp_ops = {
+ 	NULL, NULL, NULL, NULL, 0, "unknown", 0
+diff --git a/fs/squashfs/decompressor.h b/fs/squashfs/decompressor.h
+index 5e3b143f74..982189c841 100644
+--- a/fs/squashfs/decompressor.h
++++ b/fs/squashfs/decompressor.h
+@@ -56,10 +56,8 @@ extern const struct squashfs_decompressor squashfs_lzo_comp_ops;
+ extern const struct squashfs_decompressor squashfs_zlib_comp_ops;
+ #endif
+ 
+-#if 0
+ #ifdef CONFIG_SQUASHFS_ZSTD
+ extern const struct squashfs_decompressor squashfs_zstd_comp_ops;
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/fs/squashfs/squashfs.h b/fs/squashfs/squashfs.h
+index 83c800691c..0552431b6c 100644
+--- a/fs/squashfs/squashfs.h
++++ b/fs/squashfs/squashfs.h
+@@ -19,6 +19,7 @@
+ 
+ #include <linux/printk.h>
+ #include <fs.h>
++#include "squashfs_compat.h"
+ 
+ struct squashfs_page {
+ 	struct page real_page;
+diff --git a/fs/squashfs/squashfs_fs_sb.h b/fs/squashfs/squashfs_fs_sb.h
+index ecfbc97742..ba6f79edba 100644
+--- a/fs/squashfs/squashfs_fs_sb.h
++++ b/fs/squashfs/squashfs_fs_sb.h
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "squashfs_fs.h"
++#include <linux/compat.h>
+ 
+ struct squashfs_cache {
+ 	char			*name;

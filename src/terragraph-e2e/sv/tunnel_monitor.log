@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/tunnel_monitor
+exec svlogd /var/log/tunnel_monitor

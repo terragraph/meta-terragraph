@@ -1,0 +1,799 @@
+From 8434e0805df53b834866b6d4bc5c33b3cee6857f Mon Sep 17 00:00:00 2001
+From: Sreedev Sreedev <ssreedev@fb.com>
+Date: Tue, 26 Jan 2021 09:40:07 -0800
+Subject: [PATCH] Add support for VSC8254 dual port 10G phy
+
+Added support for Clause 45 reads, read increment,
+atomic writes (16 and 32 bit mdio transactions) for
+VSC8254 dual port 10G phy.
+---
+ drivers/net/ethernet/freescale/xgmac_mdio.c   |  97 ++++++++++-
+ drivers/net/phy/mdio_bus.c                    |  59 +++++++
+ drivers/net/phy/phy.c                         | 159 ++++++++++++------
+ drivers/net/phy/phy_device.c                  |  49 ++++--
+ drivers/of/of_mdio.c                          |  34 +++-
+ .../staging/fsl-dpaa2/ethernet/dpaa2-eth.c    | 143 +++++++++++++++-
+ drivers/staging/fsl-dpaa2/mac/mac.c           |   2 +-
+ include/linux/mdio.h                          |   3 +
+ include/linux/phy.h                           |   1 +
+ include/uapi/linux/mii.h                      |  13 ++
+ 10 files changed, 483 insertions(+), 77 deletions(-)
+
+diff --git a/drivers/net/ethernet/freescale/xgmac_mdio.c b/drivers/net/ethernet/freescale/xgmac_mdio.c
+index e03b30c60dcf..f64f2f6e0471 100644
+--- a/drivers/net/ethernet/freescale/xgmac_mdio.c
++++ b/drivers/net/ethernet/freescale/xgmac_mdio.c
+@@ -16,6 +16,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/module.h>
+ #include <linux/phy.h>
++#include <linux/delay.h>
+ #include <linux/mdio.h>
+ #include <linux/of_address.h>
+ #include <linux/of_platform.h>
+@@ -134,6 +135,12 @@ static int xgmac_mdio_write(struct mii_bus *bus, int phy_id, int regnum, u16 val
+ 	int ret;
+ 	bool endian = priv->is_little_endian;
+ 
++	/* VSC8254 phy only responds to Clause45 writes */
++	if ( bus->mdio_map[phy_id] && (bus->mdio_map[phy_id])->is_c45 )
++	{
++		regnum |= MII_ADDR_C45;
++	}
++
+ 	mdio_stat = xgmac_read32(&regs->mdio_stat, endian);
+ 	if (regnum & MII_ADDR_C45) {
+ 		/* Clause 45 (ie 10G) */
+@@ -174,6 +181,85 @@ static int xgmac_mdio_write(struct mii_bus *bus, int phy_id, int regnum, u16 val
+ 	return 0;
+ }
+ 
++/*
++ * Clause45 increment read
++ */
++static int xgmac_mdio_read32(struct mii_bus *bus, int phy_id, int regnum, u32 *value)
++{
++	struct mdio_fsl_priv *priv = (struct mdio_fsl_priv *)bus->priv;
++	struct tgec_mdio_controller __iomem *regs = priv->mdio_base;
++	uint16_t dev_addr;
++	uint32_t mdio_stat;
++	uint32_t mdio_ctl;
++	uint16_t value_high, value_low;
++	int ret;
++	bool endian = priv->is_little_endian;
++
++	mdio_stat = xgmac_read32(&regs->mdio_stat, endian);
++	dev_addr = (regnum >> 16) & 0x1f;
++	mdio_stat |= MDIO_STAT_ENC;
++
++	xgmac_write32(mdio_stat, &regs->mdio_stat, endian);
++
++	ret = xgmac_wait_until_free(&bus->dev, regs, endian);
++	if (ret)
++		return ret;
++
++	/* Set the Port and Device Addrs */
++	mdio_ctl = MDIO_CTL_PORT_ADDR(phy_id) | MDIO_CTL_DEV_ADDR(dev_addr);
++	xgmac_write32(mdio_ctl, &regs->mdio_ctl, endian);
++
++	/* Set the register address */
++	xgmac_write32(regnum & 0xffff, &regs->mdio_addr, endian);
++
++	ret = xgmac_wait_until_free(&bus->dev, regs, endian);
++	if (ret)
++		return ret;
++
++	/* Initiate the read for bits 0-15 */
++	xgmac_write32(mdio_ctl | MDIO_CTL_POST_INC, &regs->mdio_ctl, endian);
++
++	ret = xgmac_wait_until_done(&bus->dev, regs, endian);
++	if (ret)
++		return ret;
++
++	/* Return all Fs if nothing was there */
++	if (xgmac_read32(&regs->mdio_stat, endian) & MDIO_STAT_RD_ER) {
++		dev_err(&bus->dev,
++				"%s():%d Error while reading PHY%d reg at %d.%hhu \n",
++				__func__,__LINE__,phy_id, dev_addr, regnum);
++		return 0xffff;
++	}
++
++	value_low = xgmac_read32(&regs->mdio_data, endian) & 0xffff;
++
++	/* Set the Port and Device Addrs */
++	mdio_ctl = MDIO_CTL_PORT_ADDR(phy_id) | MDIO_CTL_DEV_ADDR(dev_addr);
++	xgmac_write32(mdio_ctl, &regs->mdio_ctl, endian);
++
++	/* Initiate the read for bits 16-31 */
++	xgmac_write32(mdio_ctl | MDIO_CTL_READ, &regs->mdio_ctl, endian);
++
++	ret = xgmac_wait_until_done(&bus->dev, regs, endian);
++	if (ret)
++		return ret;
++
++	/* Return all Fs if nothing was there */
++	if (xgmac_read32(&regs->mdio_stat, endian) & MDIO_STAT_RD_ER) {
++		*value = value_low;
++		dev_err(&bus->dev,
++				"Error while reading bits 16-31 PHY%d reg at %d.%hhu  value_low:0x%x\n",
++				phy_id, dev_addr, regnum, *value);
++		return 0;
++	}
++
++	value_high = xgmac_read32(&regs->mdio_data, endian) & 0xffff;
++	*value = (value_high << 16) | value_low;
++	dev_dbg(&bus->dev, "read %04x\n", *value);
++
++	return 0;
++}
++
+ /*
+  * Reads from register regnum in the PHY for device dev, returning the value.
+  * Clears miimcom first.  All PHY configuration has to be done through the
+@@ -190,6 +276,12 @@ static int xgmac_mdio_read(struct mii_bus *bus, int phy_id, int regnum)
+ 	int ret;
+ 	bool endian = priv->is_little_endian;
+ 
++	/* VSC8254 phy only responds to Clause45 reads */
++	if ( bus->mdio_map[phy_id] && (bus->mdio_map[phy_id])->is_c45 )
++	{
++		regnum |= MII_ADDR_C45;
++	}
++
+ 	mdio_stat = xgmac_read32(&regs->mdio_stat, endian);
+ 	if (regnum & MII_ADDR_C45) {
+ 		dev_addr = (regnum >> 16) & 0x1f;
+@@ -228,8 +320,8 @@ static int xgmac_mdio_read(struct mii_bus *bus, int phy_id, int regnum)
+ 	/* Return all Fs if nothing was there */
+ 	if (xgmac_read32(&regs->mdio_stat, endian) & MDIO_STAT_RD_ER) {
+ 		dev_err(&bus->dev,
+-			"Error while reading PHY%d reg at %d.%hhu\n",
+-			phy_id, dev_addr, regnum);
++				"Error while reading phy:0x%x(%d) reg at dev_addr:0x%x regnum:%hhu\n",
++				phy_id, phy_id, dev_addr, regnum);
+ 		return 0xffff;
+ 	}
+ 
+@@ -259,6 +351,7 @@ static int xgmac_mdio_probe(struct platform_device *pdev)
+ 
+ 	bus->name = "Freescale XGMAC MDIO Bus";
+ 	bus->read = xgmac_mdio_read;
++	bus->read32 = xgmac_mdio_read32;
+ 	bus->write = xgmac_mdio_write;
+ 	bus->parent = &pdev->dev;
+ 	snprintf(bus->id, MII_BUS_ID_SIZE, "%llx", (unsigned long long)res.start);
+diff --git a/drivers/net/phy/mdio_bus.c b/drivers/net/phy/mdio_bus.c
+index c545fb1f82bd..c4e65422bd09 100644
+--- a/drivers/net/phy/mdio_bus.c
++++ b/drivers/net/phy/mdio_bus.c
+@@ -547,6 +547,37 @@ int mdiobus_read(struct mii_bus *bus, int addr, u32 regnum)
+ }
+ EXPORT_SYMBOL(mdiobus_read);
+ 
++/**
++ * mdiobus_read32 - Convenience function for issuing an increment read on a given MII mgmt register
++ * @bus: the mii_bus struct
++ * @addr: the phy address
++ * @regnum: register number to read
++ *
++ * NOTE: MUST NOT be called from interrupt context,
++ * because the bus read/write functions may wait for an interrupt
++ * to conclude the operation.
++ */
++int mdiobus_read32(struct mii_bus *bus, int addr, u32 regnum, u32 *value)
++{
++	int retval;
++
++	BUG_ON(in_interrupt());
++
++	mutex_lock(&bus->mdio_lock);
++  if (bus->read32) {
++    retval = bus->read32(bus, addr, regnum, value);
++  }
++  else {
++    retval = -EIO;
++  }
++	mutex_unlock(&bus->mdio_lock);
++
++	trace_mdio_access(bus, 1, addr, regnum, retval, retval);
++
++	return retval;
++}
++EXPORT_SYMBOL(mdiobus_read32);
++
+ /**
+  * mdiobus_write_nested - Nested version of the mdiobus_write function
+  * @bus: the mii_bus struct
+@@ -604,6 +635,34 @@ int mdiobus_write(struct mii_bus *bus, int addr, u32 regnum, u16 val)
+ }
+ EXPORT_SYMBOL(mdiobus_write);
+ 
++/**
++ * mdiobus_write32 - Convenience function for writing 32 bit value to a given MII mgmt register
++ * @bus: the mii_bus struct
++ * @addr: the phy address
++ * @regnum: register number to write
++ * @val: value to write to @regnum
++ *
++ * NOTE: MUST NOT be called from interrupt context,
++ * because the bus read/write functions may wait for an interrupt
++ * to conclude the operation.
++ */
++int mdiobus_write32(struct mii_bus *bus, int addr, u32 regnum, u32 val)
++{
++	int err;
++
++	BUG_ON(in_interrupt());
++
++	mutex_lock(&bus->mdio_lock);
++	err = bus->write(bus, addr, regnum | 1, (val >> 16) & 0xffff);
++	err = bus->write(bus, addr, regnum, val & 0xffff);
++	mutex_unlock(&bus->mdio_lock);
++
++	trace_mdio_access(bus, 0, addr, regnum, val, err);
++
++	return err;
++}
++EXPORT_SYMBOL(mdiobus_write32);
++
+ /**
+  * mdio_bus_match - determine if given MDIO driver supports the given
+  *		    MDIO device
+diff --git a/drivers/net/phy/phy.c b/drivers/net/phy/phy.c
+index 47d2ef2fb9b3..9da451253f6d 100644
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -395,74 +395,123 @@ EXPORT_SYMBOL(phy_ethtool_ksettings_get);
+ int phy_mii_ioctl(struct phy_device *phydev, struct ifreq *ifr, int cmd)
+ {
+ 	struct mii_ioctl_data *mii_data = if_mii(ifr);
++	struct mii_ioctl_data_C45 _mii_data_c45;
++	struct mii_ioctl_data_C45 *mii_data_c45 = (struct mii_ioctl_data_C45 *) (&_mii_data_c45);
+ 	u16 val = mii_data->val_in;
++
++	u32 regnum = mii_data->reg_num & 0xffff;
+ 	bool change_autoneg = false;
+ 
+-	switch (cmd) {
+-	case SIOCGMIIPHY:
+-		mii_data->phy_id = phydev->mdio.addr;
+-		/* fall through */
+-
+-	case SIOCGMIIREG:
+-		mii_data->val_out = mdiobus_read(phydev->mdio.bus,
+-						 mii_data->phy_id,
+-						 mii_data->reg_num);
+-		return 0;
++	if (SIOCDEVPRIVATE != cmd) {
++		// Support phytool Clause 45 operation
++		if (0x83E0 & mii_data->phy_id) {
++			regnum |= ((mii_data->phy_id & 0x1F) << 16) | MII_ADDR_C45;
++			mii_data->phy_id >>=5;
++		}
++	}
+ 
+-	case SIOCSMIIREG:
+-		if (mii_data->phy_id == phydev->mdio.addr) {
+-			switch (mii_data->reg_num) {
+-			case MII_BMCR:
+-				if ((val & (BMCR_RESET | BMCR_ANENABLE)) == 0) {
+-					if (phydev->autoneg == AUTONEG_ENABLE)
+-						change_autoneg = true;
+-					phydev->autoneg = AUTONEG_DISABLE;
+-					if (val & BMCR_FULLDPLX)
+-						phydev->duplex = DUPLEX_FULL;
+-					else
+-						phydev->duplex = DUPLEX_HALF;
+-					if (val & BMCR_SPEED1000)
+-						phydev->speed = SPEED_1000;
+-					else if (val & BMCR_SPEED100)
+-						phydev->speed = SPEED_100;
+-					else phydev->speed = SPEED_10;
+-				}
+-				else {
+-					if (phydev->autoneg == AUTONEG_DISABLE)
++	switch (cmd) {
++		case SIOCGMIIPHY:
++			mii_data->phy_id = phydev->mdio.addr;
++			/* fall through */
++
++		case SIOCGMIIREG:
++			mii_data->val_out = mdiobus_read(phydev->mdio.bus,
++					mii_data->phy_id,
++					regnum);
++			return 0;
++
++		case SIOCSMIIREG:
++			if (mii_data->phy_id == phydev->mdio.addr) {
++				switch (mii_data->reg_num) {
++					case MII_BMCR:
++						if ((val & (BMCR_RESET | BMCR_ANENABLE)) == 0) {
++							if (phydev->autoneg == AUTONEG_ENABLE)
++								change_autoneg = true;
++							phydev->autoneg = AUTONEG_DISABLE;
++							if (val & BMCR_FULLDPLX)
++								phydev->duplex = DUPLEX_FULL;
++							else
++								phydev->duplex = DUPLEX_HALF;
++							if (val & BMCR_SPEED1000)
++								phydev->speed = SPEED_1000;
++							else if (val & BMCR_SPEED100)
++								phydev->speed = SPEED_100;
++							else phydev->speed = SPEED_10;
++						}
++						else {
++							if (phydev->autoneg == AUTONEG_DISABLE)
++								change_autoneg = true;
++							phydev->autoneg = AUTONEG_ENABLE;
++						}
++						break;
++					case MII_ADVERTISE:
++						phydev->advertising = mii_adv_to_ethtool_adv_t(val);
+ 						change_autoneg = true;
+-					phydev->autoneg = AUTONEG_ENABLE;
++						break;
++					default:
++						/* do nothing */
++						break;
+ 				}
+-				break;
+-			case MII_ADVERTISE:
+-				phydev->advertising = mii_adv_to_ethtool_adv_t(val);
+-				change_autoneg = true;
+-				break;
+-			default:
+-				/* do nothing */
+-				break;
+ 			}
+-		}
+ 
+-		mdiobus_write(phydev->mdio.bus, mii_data->phy_id,
+-			      mii_data->reg_num, val);
++			mdiobus_write(phydev->mdio.bus, mii_data->phy_id,
++					regnum, val);
+ 
+-		if (mii_data->phy_id == phydev->mdio.addr &&
+-		    mii_data->reg_num == MII_BMCR &&
+-		    val & BMCR_RESET)
+-			return phy_init_hw(phydev);
++			if (mii_data->phy_id == phydev->mdio.addr &&
++					mii_data->reg_num == MII_BMCR &&
++					val & BMCR_RESET)
++				return phy_init_hw(phydev);
+ 
+-		if (change_autoneg)
+-			return phy_start_aneg(phydev);
++			if (change_autoneg)
++				return phy_start_aneg(phydev);
++			return 0;
+ 
+-		return 0;
++		case SIOCDEVPRIVATE:
++			if (copy_from_user((void *) mii_data_c45, (void __user *) ifr->ifr_data,
++						sizeof(struct mii_ioctl_data_C45))) {
++				return -EIO;
++			}
++			regnum = ((mii_data_c45->dev_addr << 16) | (mii_data_c45->reg_num & 0xffff)) | MII_ADDR_C45;
++
++			switch (mii_data_c45->operation) {
++				case MII_C45_READ_16BIT:
++					mii_data_c45->val_out = mdiobus_read(phydev->mdio.bus,
++							mii_data_c45->phy_id,
++							regnum);
++					break;
++				case MII_C45_READ_32BIT:
++					if (mdiobus_read32(phydev->mdio.bus, mii_data_c45->phy_id,
++								regnum, &(mii_data_c45->val_out)))
++						return -EIO;
++					break;
++				case MII_C45_WRITE_16BIT:
++					if (mdiobus_write(phydev->mdio.bus, mii_data_c45->phy_id,
++								regnum, (u16) mii_data_c45->val_in))
++						return -EIO;
++					break;
++				case MII_C45_WRITE_32BIT:
++					if (mdiobus_write32(phydev->mdio.bus, mii_data_c45->phy_id,
++								regnum, mii_data_c45->val_in))
++						return -EIO;
++					break;
++				default:
++					return -EOPNOTSUPP;
++			}
++
++			if (copy_to_user((void *) ifr->ifr_data, (void *) mii_data_c45, sizeof(struct mii_ioctl_data_C45))) {
++				return -EIO;
++			}
+ 
+-	case SIOCSHWTSTAMP:
+-		if (phydev->drv && phydev->drv->hwtstamp)
+-			return phydev->drv->hwtstamp(phydev, ifr);
+-		/* fall through */
++			return 0;
+ 
+-	default:
+-		return -EOPNOTSUPP;
++		case SIOCSHWTSTAMP:
++			if (phydev->drv && phydev->drv->hwtstamp)
++				return phydev->drv->hwtstamp(phydev, ifr);
++			/* fall through */
++
++		default:
++			return -EOPNOTSUPP;
+ 	}
+ }
+ EXPORT_SYMBOL(phy_mii_ioctl);
+diff --git a/drivers/net/phy/phy_device.c b/drivers/net/phy/phy_device.c
+index ed7e3c70b511..b9daa24b9283 100644
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -527,22 +527,46 @@ static int get_phy_id(struct mii_bus *bus, int addr, u32 *phy_id,
+ {
+ 	int phy_reg;
+ 
+-	if (is_c45)
++	if (is_c45) {
++		//Reset special handling for VSC8254 phy
++		addr &= ~MII_ADDR_C45;
+ 		return get_phy_c45_ids(bus, addr, phy_id, c45_ids);
++	}
+ 
+-	/* Grab the bits from PHYIR1, and put them in the upper half */
+-	phy_reg = mdiobus_read(bus, addr, MII_PHYSID1);
+-	if (phy_reg < 0)
+-		return -EIO;
++	/* Special handling for VSC8254 phy as it does not respond to clause 22 transactions*/
++	if (addr & MII_ADDR_C45) {
++		addr &= ~MII_ADDR_C45;
++		/* Grab the bits from PHYIR1, and put them in the upper half and
++		 * signal a Clause 45 transaction*/
++		phy_reg = mdiobus_read(bus, addr, MII_PHYSID1 | MII_ADDR_C45);
++		if (phy_reg < 0)
++			return -EIO;
+ 
+-	*phy_id = (phy_reg & 0xffff) << 16;
++		*phy_id = (phy_reg & 0xffff) << 16;
+ 
+-	/* Grab the bits from PHYIR2, and put them in the lower half */
+-	phy_reg = mdiobus_read(bus, addr, MII_PHYSID2);
+-	if (phy_reg < 0)
+-		return -EIO;
++		/* Grab the bits from PHYIR2, and put them in the lower half and
++		 * signal a Clause 45 transaction*/
++		phy_reg = mdiobus_read(bus, addr, MII_PHYSID2 | MII_ADDR_C45);
++		if (phy_reg < 0)
++			return -EIO;
+ 
+-	*phy_id |= (phy_reg & 0xffff);
++		*phy_id |= (phy_reg & 0xffff);
++	}
++	else {
++		/* Grab the bits from PHYIR1, and put them in the upper half */
++		phy_reg = mdiobus_read(bus, addr, MII_PHYSID1);
++		if (phy_reg < 0)
++			return -EIO;
++
++		*phy_id = (phy_reg & 0xffff) << 16;
++
++		/* Grab the bits from PHYIR2, and put them in the lower half */
++		phy_reg = mdiobus_read(bus, addr, MII_PHYSID2);
++		if (phy_reg < 0)
++			return -EIO;
++
++		*phy_id |= (phy_reg & 0xffff);
++	}
+ 
+ 	return 0;
+ }
+@@ -564,6 +588,9 @@ struct phy_device *get_phy_device(struct mii_bus *bus, int addr, bool is_c45)
+ 	int r;
+ 
+ 	r = get_phy_id(bus, addr, &phy_id, is_c45, &c45_ids);
++	/* Restore addr after special handling for VSC8254 phy*/
++	addr &= ~MII_ADDR_C45;
++
+ 	if (r)
+ 		return ERR_PTR(r);
+ 
+diff --git a/drivers/of/of_mdio.c b/drivers/of/of_mdio.c
+index 8c1819230ed2..51f210c34032 100644
+--- a/drivers/of/of_mdio.c
++++ b/drivers/of/of_mdio.c
+@@ -48,17 +48,39 @@ static int of_mdiobus_register_phy(struct mii_bus *mdio,
+ 				    struct device_node *child, u32 addr)
+ {
+ 	struct phy_device *phy;
+-	bool is_c45;
++	bool is_c45 = 0;
++	bool is_vsc8254 = 0;
+ 	int rc;
+ 	u32 phy_id;
++	const char *is_xfi = NULL;
+ 
+ 	is_c45 = of_device_is_compatible(child,
+-					 "ethernet-phy-ieee802.3-c45");
++			"ethernet-phy-ieee802.3-c45");
+ 
+-	if (!is_c45 && !of_get_phy_id(child, &phy_id))
++	if (0 == of_property_read_string(child, "phy-type", &is_xfi)) {
++		if ((is_xfi != NULL) && (strstr(is_xfi,"vsc8254_xfi_phy"))) {
++			is_vsc8254 = 1;
++		}
++	}
++
++	if (!is_c45 && !of_get_phy_id(child, &phy_id)) {
+ 		phy = phy_device_create(mdio, addr, phy_id, 0, NULL);
+-	else
+-		phy = get_phy_device(mdio, addr, is_c45);
++	}
++	else {
++		/* Setting is_c45 in phydev is not working for VSC8254 dual port phy. */
++		if (is_vsc8254) {
++			/* Setting bit 30 in addr to force C45 transaction in phy device create
++			 * stage within get_phy_device */
++			addr |= MII_ADDR_C45;
++			phy = get_phy_device(mdio, addr, is_c45);
++			/* Reset addr back to original value */
++			addr &= ~MII_ADDR_C45;
++		}
++		else {
++			phy = get_phy_device(mdio, addr, is_c45);
++		}
++		phy->mdio.is_c45 = is_vsc8254;
++	}
+ 	if (IS_ERR(phy))
+ 		return PTR_ERR(phy);
+ 
+@@ -92,7 +114,7 @@ static int of_mdiobus_register_phy(struct mii_bus *mdio,
+ 	}
+ 
+ 	dev_dbg(&mdio->dev, "registered phy %s at address %i\n",
+-		child->name, addr);
++			child->name, addr);
+ 	return 0;
+ }
+ 
+diff --git a/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c b/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c
+index f5854868a460..371175f25929 100755
+--- a/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c
++++ b/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c
+@@ -1284,7 +1284,6 @@ static int link_state_update(struct dpaa2_eth_priv *priv)
+ {
+ 	struct dpni_link_state state = {0};
+ 	int err;
+-
+ 	err = dpni_get_link_state(priv->mc_io, 0, priv->mc_token, &state);
+ 	if (unlikely(err)) {
+ 		netdev_err(priv->net_dev,
+@@ -1638,11 +1637,151 @@ static int dpaa2_eth_ts_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+ 			-EFAULT : 0;
+ }
+ 
++/*
++ * Maps interface name to phy name as encoded in dtb
++ * input: if_name - name of i/f eg: nic0
++ * output: phy_name - name of phy, must be preallocated.
++ */
++static int get_phy_name(char *if_name, char* phy_name)
++{
++	struct device_node *dn;
++	struct property *pp;
++	int ix;
++	typedef enum board_type {BOARD_PUMA, BOARD_PUMA2, BOARD_MBH};
++	enum board_type cur_board;
++
++	if (4 != strlen(if_name))
++		return -1;
++
++	dn = of_find_node_by_path("/");
++	for_each_property_of_node(dn, pp) {
++		if (pp->name) {
++			int ix;
++			if (0 == strcmp(pp->name,"model")) {
++				char *board = pp->value;
++				if (strstr(board,"(PUMA)")) {
++					cur_board = BOARD_PUMA;
++				}
++				else if (strstr(board,"(PUMA Proto2)")) {
++					cur_board = BOARD_PUMA2;
++				}
++				else if (strstr(board,"(MBH)")) {
++					cur_board = BOARD_MBH;
++				}
++			}
++		}
++	}
++
++	ix = if_name[3] - '0';
++	switch (cur_board) {
++		case BOARD_PUMA:
++			switch (ix) {
++				case 0:
++					strcpy(phy_name,"emdio1_phy@1");
++					break;
++				default:
++					return -1;
++			}
++			break;
++		case BOARD_PUMA2:
++			switch (ix) {
++				case 0:
++					strcpy(phy_name,"emdio1_phy@1");
++					break;
++				case 2:
++					strcpy(phy_name,"emdio2_phy@1");
++					break;
++				case 3:
++					strcpy(phy_name,"emdio2_phy@2");
++					break;
++				case 4:
++					strcpy(phy_name,"emdio2_phy@3");
++					break;
++				case 5:
++					strcpy(phy_name,"emdio2_phy@4");
++					break;
++				default:
++					return -1;
++			}
++			break;
++		case BOARD_MBH:
++			switch (ix) {
++				case 0:
++					strcpy(phy_name,"emdio1_phy@1");
++					break;
++				case 1:
++					strcpy(phy_name,"emdio2_phy@1");
++					break;
++				case 2:
++					strcpy(phy_name,"emdio2_phy@2");
++					break;
++				default:
++					return -1;
++			}
++			break;
++		default:
++			return -1;
++	}
++	return 0;
++}
++
++#include <linux/mii.h>
++#include "linux/phy.h"
++#include "linux/of.h"
++#include "linux/of_mdio.h"
++static int dpaa2_eth_mii_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
++{
++	struct dpaa2_eth_priv *priv = netdev_priv(dev);
++	struct mii_ioctl_data mii_data;
++	struct device_node *dn;
++	struct device_node *cn;
++	struct device_node *phy_node = NULL;
++	struct property *pp;
++	struct phy_device *phy_dev = NULL;
++	char phy_name[50];
++	int ret = -EINVAL;
++
++	if (!netif_running(dev))
++		return -EINVAL;
++
++	//TODO: Find proper method for i/f to phy mapping; using a lookup table for now.
++	if (get_phy_name(dev->name, phy_name))
++	{
++		return ret;
++	}
++
++	for_each_node_by_name(dn, "mdio") {
++		for_each_child_of_node(dn, cn) {
++			if (strstr(cn->full_name,phy_name))
++				phy_node = cn;
++		}
++	}
++
++	phy_dev = of_phy_find_device(phy_node);
++	if (phy_dev) {
++		ret = phy_mii_ioctl(phy_dev, rq, cmd);
++	}
++	else {
++		ret = -EINVAL;
++	}
++
++	return ret;
++}
++
+ static int dpaa2_eth_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+ {
+ 	if (cmd == SIOCSHWTSTAMP)
+ 		return dpaa2_eth_ts_ioctl(dev, rq, cmd);
+-
++	switch (cmd) {
++		case SIOCGMIIPHY:
++		case SIOCGMIIREG:
++		case SIOCSMIIREG:
++		case SIOCDEVPRIVATE:
++			return dpaa2_eth_mii_ioctl(dev, rq, cmd);
++			break;
++		default:
++			break;
++	}
+ 	return -EINVAL;
+ }
+ 
+diff --git a/drivers/staging/fsl-dpaa2/mac/mac.c b/drivers/staging/fsl-dpaa2/mac/mac.c
+index 3d32b5da05c2..28e0ae574a27 100644
+--- a/drivers/staging/fsl-dpaa2/mac/mac.c
++++ b/drivers/staging/fsl-dpaa2/mac/mac.c
+@@ -399,7 +399,7 @@ int dpaa2_mac_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+ 	int ret = -EINVAL;
+ 
+ 
+-	if (cmd == SIOCGMIIREG || cmd == SIOCSMIIREG) {
++	if (cmd == SIOCGMIIREG || cmd == SIOCSMIIREG || cmd == SIOCDEVPRIVATE) {
+ 		if (!dev->phydev)
+ 			ret = -EINVAL;
+ 		else {
+diff --git a/include/linux/mdio.h b/include/linux/mdio.h
+index ca08ab16ecdc..53cfdc4a9747 100644
+--- a/include/linux/mdio.h
++++ b/include/linux/mdio.h
+@@ -39,6 +39,7 @@ struct mdio_device {
+ 	/* Bus address of the MDIO device (0-31) */
+ 	int addr;
+ 	int flags;
++	bool is_c45;
+ };
+ #define to_mdio_device(d) container_of(d, struct mdio_device, dev)
+ 
+@@ -258,8 +259,10 @@ static inline u16 ethtool_adv_to_mmd_eee_adv_t(u32 adv)
+ }
+ 
+ int mdiobus_read(struct mii_bus *bus, int addr, u32 regnum);
++int mdiobus_read32(struct mii_bus *bus, int addr, u32 regnum, u32 *value);
+ int mdiobus_read_nested(struct mii_bus *bus, int addr, u32 regnum);
+ int mdiobus_write(struct mii_bus *bus, int addr, u32 regnum, u16 val);
++int mdiobus_write32(struct mii_bus *bus, int addr, u32 regnum, u32 val);
+ int mdiobus_write_nested(struct mii_bus *bus, int addr, u32 regnum, u16 val);
+ 
+ int mdiobus_register_device(struct mdio_device *mdiodev);
+diff --git a/include/linux/phy.h b/include/linux/phy.h
+index 912d8b2ae14d..8261803a7352 100644
+--- a/include/linux/phy.h
++++ b/include/linux/phy.h
+@@ -201,6 +201,7 @@ struct mii_bus {
+ 	char id[MII_BUS_ID_SIZE];
+ 	void *priv;
+ 	int (*read)(struct mii_bus *bus, int addr, int regnum);
++	int (*read32)(struct mii_bus *bus, int addr, int regnum, u32 *value);
+ 	int (*write)(struct mii_bus *bus, int addr, int regnum, u16 val);
+ 	int (*reset)(struct mii_bus *bus);
+ 
+diff --git a/include/uapi/linux/mii.h b/include/uapi/linux/mii.h
+index b5c2fdcf23fd..8e77a261d485 100644
+--- a/include/uapi/linux/mii.h
++++ b/include/uapi/linux/mii.h
+@@ -152,6 +152,10 @@
+ #define MII_MMD_CTRL_INCR_RDWT	0x8000	/* post increment on reads & writes */
+ #define MII_MMD_CTRL_INCR_ON_WT	0xC000	/* post increment on writes only */
+ 
++#define MII_C45_READ_16BIT    0x00
++#define MII_C45_READ_32BIT    0x01
++#define MII_C45_WRITE_16BIT   0x10
++#define MII_C45_WRITE_32BIT   0x11
+ /* This structure is used in all SIOCxMIIxxx ioctl calls */
+ struct mii_ioctl_data {
+ 	__u16		phy_id;
+@@ -160,4 +164,13 @@ struct mii_ioctl_data {
+ 	__u16		val_out;
+ };
+ 
++struct mii_ioctl_data_C45 {
++	__u16		phy_id;
++	__u16		reg_num;
++	__u32		val_in;
++	__u32		val_out;
++	__u16   dev_addr;
++  __u16   operation; //Read/Write 16bit/32bit
++};
++
+ #endif /* _UAPI__LINUX_MII_H__ */
+-- 
+2.24.1
+

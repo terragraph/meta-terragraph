@@ -1,0 +1,46 @@
+From 5e3875bee7d74dcc72aace861c01c040ede1483b Mon Sep 17 00:00:00 2001
+From: Javier Cardona <jcardona@fb.com>
+Date: Fri, 13 Nov 2020 04:28:39 -0800
+Subject: [PATCH] Adjust packet offsets for tracing in dpdk-input
+
+Prior to this fix, the dpdk trace would report the ethernet header from
+Wigig captures incorrectly:
+
+03:12:30:556686: dpdk-input
+  Wigig0/1/0/0 rx queue 0
+  (...)
+0xa2a8: a2:8f:04:ce:14:fe -> 00:00:04:ce:14:fe
+
+Not anymore:
+
+04:17:30:5634783: dpdk-input
+  Wigig0/1/0/0 rx queue 0
+  (...)
+IP6: 04:ce:14:fe:a2:8f -> 04:ce:14:fe:a4:8a
+---
+ src/plugins/dpdk/device/node.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/dpdk/device/node.c b/src/plugins/dpdk/device/node.c
+index 23eca9ffd..9ebba442c 100644
+--- a/src/plugins/dpdk/device/node.c
++++ b/src/plugins/dpdk/device/node.c
+@@ -432,8 +432,13 @@ dpdk_device_input (vlib_main_t * vm, dpdk_main_t * dm, dpdk_device_t * xd,
+ 	      clib_memcpy_fast (&t0->mb, mb[0], sizeof t0->mb);
+ 	      clib_memcpy_fast (&t0->buffer, b0,
+ 				sizeof b0[0] - sizeof b0->pre_data);
+-	      clib_memcpy_fast (t0->buffer.pre_data, b0->data,
+-				sizeof t0->buffer.pre_data);
++	      if (xd->pmd == VNET_DPDK_PMD_WIL6210)
++		/* On this device, ethernet header starts at data + 2 */
++		clib_memcpy_fast (t0->buffer.pre_data, b0->data + 2,
++			          sizeof t0->buffer.pre_data);
++	      else
++		clib_memcpy_fast (t0->buffer.pre_data, b0->data,
++				  sizeof t0->buffer.pre_data);
+ 	      clib_memcpy_fast (&t0->data, mb[0]->buf_addr + mb[0]->data_off,
+ 				sizeof t0->data);
+ 	      n_trace--;
+-- 
+2.30.2
+

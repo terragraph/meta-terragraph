@@ -1,0 +1,114 @@
+From 7d495b25dae05c576dd36b74fd24a24804f8fd4d Mon Sep 17 00:00:00 2001
+From: Lior David <liord@codeaurora.org>
+Date: Thu, 16 Jul 2020 10:58:35 +0300
+Subject: [PATCH] vfio-pci: add option to skip reset
+
+The current code resets the device/bus on
+enable/disable PCI. It can cause problems
+for some devices such as Talyn chip.
+Add option to skip reset sequence. Also skip state
+save/restore when this is selected.
+
+Signed-off-by: Lior David <liord@codeaurora.org>
+---
+ drivers/vfio/pci/vfio_pci.c | 55 +++++++++++++++++++++++--------------
+ 1 file changed, 35 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/vfio/pci/vfio_pci.c b/drivers/vfio/pci/vfio_pci.c
+index 48a0d55f9735..63da98432603 100644
+--- a/drivers/vfio/pci/vfio_pci.c
++++ b/drivers/vfio/pci/vfio_pci.c
+@@ -56,6 +56,11 @@ module_param(disable_idle_d3, bool, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(disable_idle_d3,
+ 		 "Disable using the PCI D3 low power state for idle, unused devices");
+ 
++static bool disable_reset;
++module_param(disable_reset, bool, S_IRUGO | S_IWUSR);
++MODULE_PARM_DESC(disable_reset,
++		 "Disable device reset and state save/restore");
++
+ static DEFINE_MUTEX(driver_lock);
+ 
+ static inline bool vfio_vga_disabled(void)
+@@ -228,18 +233,22 @@ static int vfio_pci_enable(struct vfio_pci_device *vdev)
+ 		return ret;
+ 
+ 	/* If reset fails because of the device lock, fail this path entirely */
+-	ret = pci_try_reset_function(pdev);
+-	if (ret == -EAGAIN) {
+-		pci_disable_device(pdev);
+-		return ret;
++	if (!disable_reset) {
++		ret = pci_try_reset_function(pdev);
++		if (ret == -EAGAIN) {
++			pci_disable_device(pdev);
++			return ret;
++		}
++
++		vdev->reset_works = !ret;
++
++		pci_save_state(pdev);
++		vdev->pci_saved_state = pci_store_saved_state(pdev);
++		if (!vdev->pci_saved_state)
++			pr_debug("%s: Couldn't store %s saved state\n",
++				 __func__, dev_name(&pdev->dev));
+ 	}
+ 
+-	vdev->reset_works = !ret;
+-	pci_save_state(pdev);
+-	vdev->pci_saved_state = pci_store_saved_state(pdev);
+-	if (!vdev->pci_saved_state)
+-		pr_debug("%s: Couldn't store %s saved state\n",
+-			 __func__, dev_name(&pdev->dev));
+ 
+ 	if (likely(!nointxmask)) {
+ 		if (vfio_pci_nointx(pdev)) {
+@@ -426,14 +435,17 @@ static void vfio_pci_disable(struct vfio_pci_device *vdev)
+ 	 * nothing, but saving and restoring current state without reset
+ 	 * is just busy work.
+ 	 */
+-	if (pci_load_and_free_saved_state(pdev, &vdev->pci_saved_state)) {
+-		pr_info("%s: Couldn't reload %s saved state\n",
+-			__func__, dev_name(&pdev->dev));
++	if (!disable_reset) {
++		if (pci_load_and_free_saved_state(pdev,
++		    &vdev->pci_saved_state)) {
++			pr_info("%s: Couldn't reload %s saved state\n",
++				__func__, dev_name(&pdev->dev));
+ 
+-		if (!vdev->reset_works)
+-			goto out;
++			if (!vdev->reset_works)
++				goto out;
+ 
+-		pci_save_state(pdev);
++			pci_save_state(pdev);
++		}
+ 	}
+ 
+ 	/*
+@@ -446,14 +458,17 @@ static void vfio_pci_disable(struct vfio_pci_device *vdev)
+ 	 * Try to reset the device.  The success of this is dependent on
+ 	 * being able to lock the device, which is not always possible.
+ 	 */
+-	if (vdev->reset_works && !pci_try_reset_function(pdev))
+-		vdev->needs_reset = false;
++	if (!disable_reset) {
++		if (vdev->reset_works && !pci_try_reset_function(pdev))
++			vdev->needs_reset = false;
+ 
+-	pci_restore_state(pdev);
++		pci_restore_state(pdev);
++	}
+ out:
+ 	pci_disable_device(pdev);
+ 
+-	vfio_pci_try_bus_reset(vdev);
++	if (!disable_reset)
++		vfio_pci_try_bus_reset(vdev);
+ 
+ 	if (!disable_idle_d3)
+ 		pci_set_power_state(pdev, PCI_D3hot);
+-- 
+2.27.0
+

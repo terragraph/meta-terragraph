@@ -1,0 +1,37 @@
+#!/bin/sh
+if [ -z "${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not set"
+  exit 1
+fi
+
+SA_FLAGS="-use_local_stats_fetcher=false"
+
+# Read controller config
+# TODO replace this hack
+SA_FLAGS="${SA_FLAGS} -node_config_file /data${E2E_CONFIG_FILE}"
+
+if [ ! -f $AGENT_ROOTFS/etc/resolv.conf ]; then
+  echo "Create resolv.conf"
+  echo "nameserver 8.8.8.8" > ${AGENT_ROOTFS}/etc/resolv.conf
+fi
+
+if [ -z "${AGENT_MAC}" ]; then
+  SA_FLAGS="${SA_FLAGS} -mac_addr 0:0:0:0:0:0"
+else
+  SA_FLAGS="${SA_FLAGS} -mac_addr ${AGENT_MAC}"
+fi
+
+if [ -z "${AGGR_HOST}" ]; then
+  SA_FLAGS="${SA_FLAGS} -aggregator_host localhost"
+else
+  SA_FLAGS="${SA_FLAGS} -aggregator_host ${AGGR_HOST}"
+fi
+
+if [ -n "${AGENT_ROOTFS}" ] && [ -d "${AGENT_ROOTFS}" ]; then
+  chroot ${AGENT_ROOTFS} /bin/mknod /dev/urandom c 1 9 2>/dev/null
+  # stats_agent is going to default to only listening to ::1
+  # Lets maintain listening in all interfaces for the x86 e2e image like docker
+  chroot ${AGENT_ROOTFS} /usr/sbin/stats_agent -input_router_listen_ip '*' -v 2 ${SA_FLAGS} -logtostderr
+else
+  echo "AGENT_ROOTFS not set, please configure in /etc/sysconfig/tg_services"
+fi

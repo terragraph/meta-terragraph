@@ -1,0 +1,39 @@
+#! /bin/sh
+set -e
+
+RESOLVCONF_DIR=/var/run/etc/resolv.conf.d
+# source function library
+. /etc/init.d/functions
+
+# /etc/init.d/resolvconf: generate DNS resolution config files for resolvconf
+
+test -x /sbin/resolvconf || exit 0
+
+mkdir -p "$RESOLVCONF_DIR"
+
+update_resolvconf() {
+  # Generate resolvconf head file from node config
+  /usr/sbin/update_resolvconf
+
+  # update DNS resolution using new config
+  /sbin/resolvconf -u
+}
+
+case "$1" in
+  start)
+  echo "Generating resolvconf files"
+  update_resolvconf
+  echo "done."
+  ;;
+  stop)
+  ;;
+  reload|restart)
+  echo "Regenerating resolvconf files"
+  update_resolvconf
+  ;;
+  *)
+  echo "Usage: /etc/init.d/resolvconf {start|stop|reload|restart}"
+  exit 1
+esac
+
+exit 0

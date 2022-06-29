@@ -1,0 +1,16 @@
+# initscript    If this script is intalled as /etc/initscript,
+#               it is executed by init(8) for every program it
+#               wants to spawn like this:
+#
+#               /bin/sh /etc/initscript <id> <level> <action> <process>
+#
+#               It can be used to set the default umask and ulimit
+#               of all processes. By default this script is installed
+#               as /etc/initscript.sample, so to enable it you must
+#               rename this script first to /etc/initscript.
+#
+#
+
+# Enable core dumps
+ulimit -c unlimited
+eval exec "$4"

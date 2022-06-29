@@ -1,0 +1,32 @@
+#!/bin/sh
+
+if [ -z "${E2E_TOPOLOGY_FILE}" ]; then
+  echo "E2E_TOPOLOGY_FILE not set"
+  exit 1
+fi
+
+if [ -z "${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not set"
+  exit 1
+fi
+
+PATH=${PATH}:/bin
+
+# read controller config file
+if [ ! -f "/data/${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not found, copying default file..."
+  cp -v "/etc/e2e_config/controller_config_default.json" "/data/${E2E_CONFIG_FILE}"
+fi
+CONFIG_ARGS=$(/usr/sbin/config_print_flags "/data/${E2E_CONFIG_FILE}")
+if [ $? -ne 0 ]; then
+  echo "Controller config file (/data/${E2E_CONFIG_FILE}) had errors: ${CONFIG_ARGS}"
+  exit 1
+fi
+
+# create empty topology file if needed
+if [ ! -f "/data/${E2E_TOPOLOGY_FILE}" ]; then
+  echo "E2E_TOPOLOGY_FILE not found, creating empty file..."
+  touch "/data/${E2E_TOPOLOGY_FILE}"
+fi
+
+eval /usr/sbin/e2e_controller -topology-file "/data/${E2E_TOPOLOGY_FILE}" -controller-config-file "/data/${E2E_CONFIG_FILE}" -bt_seeder_port "${TG_BT_SEEDER_PORT}" -bt_announce_ip "${TG_BT_ANNOUNCE_IP}" -bt_tracker_override "${TG_BT_TRACKER_OVERRIDE}" -local_bt_tracker_override "${TG_LOCAL_BT_TRACKER_OVERRIDE}" ${CONFIG_ARGS}

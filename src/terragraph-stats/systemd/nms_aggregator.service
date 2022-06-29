@@ -1,0 +1,34 @@
+[Unit]
+Description=Terragraph NMS Aggregator
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/sysconfig/tg_services
+EnvironmentFile=-/etc/default/tg_services
+Restart=always
+ExecStart=/bin/sh -c '\
+  if [ -z "$${NMS_ROOTFS}" ] || [ ! -d "$${NMS_ROOTFS}" ]; then \
+    echo "NMS_ROOTFS not set or not found"; \
+    exit 1; \
+  fi; \
+  ulimit -n 10240; \
+  $${NMS_ROOTFS}/etc/tg_systemd_config/nms_aggregator.start \
+'
+ExecStopPost=/bin/sh -c '\
+  if [ "$$(pgrep -c nms_aggregator)" -eq "1" ]; then \
+    PID=$$(pgrep nms_aggregator); \
+    NMS_ROOTFS=$$(readlink /proc/$${PID}/cwd); \
+  else \
+    echo Unable to determine rootfs of running nms_aggregator; \
+  fi; \
+  echo Using rootfs for stop operation: $${NMS_ROOTFS}; \
+  if [ -z "$${NMS_ROOTFS}" ] || [ ! -d "$${NMS_ROOTFS}" ]; then \
+    echo "NMS_ROOTFS not set or not found"; \
+    exit 1; \
+  fi; \
+  $${NMS_ROOTFS}/etc/tg_systemd_config/nms_aggregator.stop $${NMS_ROOTFS}\
+'
+
+[Install]
+WantedBy=default.target

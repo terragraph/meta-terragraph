@@ -1,0 +1,54 @@
+#!/bin/sh
+if [ -z "${E2E_ROOTFS}" ] || [ ! -d "${E2E_ROOTFS}" ]; then
+  echo "E2E_ROOTFS not set or not found"
+  exit 1
+fi
+if [ -z "${DATA_DIR}" ] || [ ! -d "${DATA_DIR}" ]; then
+  echo "DATA_DIR not set or not found"
+  exit 1
+fi
+if [ -z "${E2E_TOPOLOGY_FILE}" ]; then
+  echo "E2E_TOPOLOGY_FILE not set"
+  exit 1
+fi
+if [ -z "${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not set"
+  exit 1
+fi
+
+PATH=${PATH}:/bin
+
+cp -v /etc/resolv.conf "${E2E_ROOTFS}/etc/resolv.conf"
+
+# use the resolved symlink for the rootfs
+E2E_ROOTFS=$(realpath $E2E_ROOTFS)
+# bind mount DATA_DIR into /data in rootfs, if not already mounted
+install -D -m 0644 -d "${E2E_ROOTFS}/data"
+if [ -z "$(mount | grep ${E2E_ROOTFS}/data)" ]; then
+  mount -v --bind "${DATA_DIR}" "${E2E_ROOTFS}/data"
+fi
+
+# read controller config file
+if [ ! -f "${DATA_DIR}${E2E_CONFIG_FILE}" ]; then
+  echo "E2E_CONFIG_FILE not found, copying default file..."
+  cp -v "${E2E_ROOTFS}/etc/e2e_config/controller_config_default.json" "${DATA_DIR}${E2E_CONFIG_FILE}"
+fi
+CONFIG_ARGS=$(chroot ${E2E_ROOTFS} /usr/sbin/config_print_flags "/data${E2E_CONFIG_FILE}")
+if [ $? -ne 0 ]; then
+  echo "Controller config file (${DATA_DIR}${E2E_CONFIG_FILE}) had errors: ${CONFIG_ARGS}"
+  exit 1
+fi
+
+# create empty topology file if needed
+if [ ! -f "${DATA_DIR}${E2E_TOPOLOGY_FILE}" ]; then
+  echo "E2E_TOPOLOGY_FILE not found, creating empty file..."
+  touch "${DATA_DIR}${E2E_TOPOLOGY_FILE}"
+fi
+
+# mount /dev/shm
+mount --bind /dev/shm ${E2E_ROOTFS}/dev/shm
+# mount /proc
+chroot ${E2E_ROOTFS} mount -t proc /proc
+
+chroot ${E2E_ROOTFS} mknod /dev/urandom c 1 9 2>/dev/null
+eval chroot ${E2E_ROOTFS} /usr/sbin/e2e_controller -topology-file "/data${E2E_TOPOLOGY_FILE}" -controller-config-file "/data${E2E_CONFIG_FILE}" ${CONFIG_ARGS}

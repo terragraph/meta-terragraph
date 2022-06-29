@@ -1,0 +1,19 @@
+#!/bin/sh
+
+#
+# Ugly: special processing for libpthread-*.so to only strip debug
+# symbols but keep the rest - libthread_db needs to locate certain
+# symbols (nptl_version) to verify it talks to the compatible
+# implementation.
+#
+for arg in ${@} none
+do
+  case ${arg} in
+    */libpthread-*.so)
+        exec ${TG_REAL_STRIP} -g ${arg}
+        ;;
+   esac
+done
+
+# Default
+exec ${TG_REAL_STRIP}  ${@}

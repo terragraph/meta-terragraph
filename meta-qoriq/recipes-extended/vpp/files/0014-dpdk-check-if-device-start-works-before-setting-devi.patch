@@ -1,0 +1,95 @@
+From 391a808f018cd5a15bc7c138e9f6eef19b5edb29 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 12 Mar 2020 04:37:56 -0700
+Subject: [PATCH] dpdk: check if device start works before setting device up
+
+Also remove bad flag saving while setting sw interface flags
+---
+ src/plugins/dpdk/device/common.c | 7 ++++---
+ src/plugins/dpdk/device/device.c | 5 ++++-
+ src/plugins/dpdk/device/dpdk.h   | 2 +-
+ src/vnet/interface.c             | 3 ---
+ 4 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/src/plugins/dpdk/device/common.c b/src/plugins/dpdk/device/common.c
+index 0c43bfe02..9d2c3dbc6 100644
+--- a/src/plugins/dpdk/device/common.c
++++ b/src/plugins/dpdk/device/common.c
+@@ -162,20 +162,20 @@ error:
+   sw->flags |= VNET_SW_INTERFACE_FLAG_ERROR;
+ }
+ 
+-void
++int
+ dpdk_device_start (dpdk_device_t * xd)
+ {
+   int rv;
+ 
+   if (xd->flags & DPDK_DEVICE_FLAG_PMD_INIT_FAIL)
+-    return;
++    return 1;
+ 
+   rv = rte_eth_dev_start (xd->port_id);
+ 
+   if (rv)
+     {
+       dpdk_device_error (xd, "rte_eth_dev_start", rv);
+-      return;
++      return 1;
+     }
+ 
+   if (xd->default_mac_address)
+@@ -194,6 +194,7 @@ dpdk_device_start (dpdk_device_t * xd)
+ 
+   dpdk_log_info ("Interface %U started",
+ 		 format_dpdk_device_name, xd->port_id);
++  return 0;
+ }
+ 
+ void
+diff --git a/src/plugins/dpdk/device/device.c b/src/plugins/dpdk/device/device.c
+index 4d26abde2..a64f4e3ee 100644
+--- a/src/plugins/dpdk/device/device.c
++++ b/src/plugins/dpdk/device/device.c
+@@ -477,7 +477,10 @@ dpdk_interface_admin_up_down (vnet_main_t * vnm, u32 hw_if_index, u32 flags)
+   if (is_up)
+     {
+       if ((xd->flags & DPDK_DEVICE_FLAG_ADMIN_UP) == 0)
+-	dpdk_device_start (xd);
++        {
++          if (dpdk_device_start (xd))
++            return clib_error_return (0, "Device failed to start");
++        }
+       xd->flags |= DPDK_DEVICE_FLAG_ADMIN_UP;
+       f64 now = vlib_time_now (dm->vlib_main);
+       dpdk_update_counters (xd, now);
+diff --git a/src/plugins/dpdk/device/dpdk.h b/src/plugins/dpdk/device/dpdk.h
+index 7cc5710af..b699af6ad 100644
+--- a/src/plugins/dpdk/device/dpdk.h
++++ b/src/plugins/dpdk/device/dpdk.h
+@@ -385,7 +385,7 @@ typedef struct
+ } dpdk_rx_trace_t;
+ 
+ void dpdk_device_setup (dpdk_device_t * xd);
+-void dpdk_device_start (dpdk_device_t * xd);
++int dpdk_device_start (dpdk_device_t * xd);
+ void dpdk_device_stop (dpdk_device_t * xd);
+ int dpdk_port_state_callback (dpdk_portid_t port_id,
+ 			      enum rte_eth_event_type type,
+diff --git a/src/vnet/interface.c b/src/vnet/interface.c
+index 81264d38f..323d771e0 100644
+--- a/src/vnet/interface.c
++++ b/src/vnet/interface.c
+@@ -459,9 +459,6 @@ vnet_sw_interface_set_flags_helper (vnet_main_t * vnm, u32 sw_if_index,
+ 	      goto done;
+ 	    }
+ 
+-	  /* save the si admin up flag */
+-	  old_flags = si->flags;
+-
+ 	  /* update si admin up flag in advance if we are going admin down */
+ 	  if (!(flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP))
+ 	    si->flags &= ~VNET_SW_INTERFACE_FLAG_ADMIN_UP;
+-- 
+2.30.2
+

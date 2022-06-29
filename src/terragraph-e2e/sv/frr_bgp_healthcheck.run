@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=5
+
+while [ : ]; do
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  # wait for bgpd to be running
+  while ! pidof bgpd > /dev/null; do
+    echo "Waiting for bgpd daemon to start"
+    sleep ${DELAY}
+  done
+
+  # wait for a global loopback address in the lo if
+  while [ -z "$(ip -6 addr show lo | awk '/inet6.+global/')" ]; do
+    echo "Watiting for global loopback address in POP's lo interface"
+    sleep ${DELAY}
+  done
+
+  exec /usr/sbin/frr_bgp_healthcheck
+done

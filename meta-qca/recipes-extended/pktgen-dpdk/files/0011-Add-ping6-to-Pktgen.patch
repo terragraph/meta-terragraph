@@ -1,0 +1,514 @@
+From 5d7032a1aa12b3100f223700f6da2056082e86bf Mon Sep 17 00:00:00 2001
+From: matthewedwards <matthewedwards@fb.com>
+Date: Mon, 5 Oct 2020 10:03:26 -0700
+Subject: [PATCH] Add ping6 to Pktgen
+
+---
+ app/cli-functions.c  |   8 ---
+ app/lpktgenlib.c     |   8 +--
+ app/pktgen-cmds.c    |  10 ++--
+ app/pktgen-cmds.h    |   2 -
+ app/pktgen-ipv6.c    | 119 +++++++++++++++++++++++--------------------
+ app/pktgen-ipv6.h    |   6 ++-
+ app/pktgen.c         |  46 +++++++++++++++--
+ app/pktgen.h         |   3 +-
+ lib/common/pg_inet.h |  52 +++++++++++++++++++
+ 9 files changed, 170 insertions(+), 84 deletions(-)
+
+diff --git a/app/cli-functions.c b/app/cli-functions.c
+index f039b1c..a14fdb2 100644
+--- a/app/cli-functions.c
++++ b/app/cli-functions.c
+@@ -1546,9 +1546,7 @@ static struct cli_map misc_map[] = {
+ 	{ 130, "port %d" },
+ 	{ 135, "ports per page %d" },
+ 	{ 140, "ping4 %P" },
+-#ifdef INCLUDE_PING6
+ 	{ 141, "ping6 %P" },
+-#endif
+ 	{ -1, NULL }
+ };
+ 
+@@ -1570,9 +1568,7 @@ static const char *misc_help[] = {
+ 	"port <number>                      - Sets the sequence packets to display for a given port",
+ 	"restart <portlist>                 - Restart or stop a ethernet port and restart",
+ 	"ping4 <portlist>                   - Send a IPv4 ICMP echo request on the given portlist",
+-#ifdef INCLUDE_PING6
+ 	"ping6 <portlist>                   - Send a IPv6 ICMP echo request on the given portlist",
+-#endif
+ 	CLI_HELP_PAUSE,
+ 	NULL
+ };
+@@ -1644,13 +1640,11 @@ misc_cmd(int argc, char **argv)
+ 			foreach_port(portlist, pktgen_ping4(info));
+ 			pktgen_force_update();
+ 			break;
+-#ifdef INCLUDE_PING6
+ 		case 141:
+ 			portlist_parse(argv[1], &portlist);
+ 			foreach_port(portlist, pktgen_ping6(info));
+ 			pktgen_update_display();
+ 			break;
+-#endif
+ 		default:
+ 			return cli_cmd_error("Misc invalid command", "Misc", argc, argv);
+ 	}
+@@ -2023,9 +2017,7 @@ static struct cli_tree default_tree[] = {
+ 	c_cmd("restart", 	misc_cmd,	"restart port"),
+ 	c_cmd("port", 		misc_cmd, 	"Switch between ports"),
+ 	c_cmd("ping4", 		misc_cmd, 	"Send a ping packet for IPv4"),
+-#ifdef INCLUDE_PING6
+ 	c_cmd("ping6", 		misc_cmd,	"Send a ping packet for IPv6"),
+-#endif
+ 
+ 	c_cmd("sequence",	seq_cmd,	"sequence command"),
+ 	c_alias("seq",		"sequence",	"sequence command"),
+diff --git a/app/lpktgenlib.c b/app/lpktgenlib.c
+index 5e121e2..6a31580 100644
+--- a/app/lpktgenlib.c
++++ b/app/lpktgenlib.c
+@@ -707,7 +707,6 @@ pktgen_send_ping4(lua_State *L)
+ 	return 0;
+ }
+ 
+-#ifdef INCLUDE_PING6
+ /**
+  *
+  * pktgen_send_ping6 - Send IPv6 ICMP echo requests.
+@@ -738,8 +737,6 @@ pktgen_send_ping6(lua_State *L)
+ 	return 0;
+ }
+ 
+-#endif
+-
+ /**
+  *
+  * pktgen_pcap - Enable or disable PCAP support sending.
+@@ -3608,9 +3605,7 @@ static const char *lua_help_info[] = {
+ 	"send_arp       - Send a ARP request or GRATUITOUS_ARP\n",
+ 	"pcap           - Load a PCAP file\n",
+ 	"ping4          - Send a Ping IPv4 packet (ICMP echo)\n",
+-#ifdef INCLUDE_PING6
+ 	"ping6          - Send a Ping IPv6 packet (ICMP echo)\n",
+-#endif
+ 	"start          - Start a set of ports sending packets\n",
+ 	"stop           - Stop a set of ports sending packets\n",
+ 	"screen         - Turn off and on the screen updates\n",
+@@ -3789,9 +3784,7 @@ static const luaL_Reg pktgenlib[] = {
+ 	{"set_type",      pktgen_set_type},		/* Set the type value */
+ 
+ 	{"ping4",         pktgen_send_ping4},	/* Send a Ping IPv4 packet (ICMP echo) */
+-#ifdef INCLUDE_PING6
+ 	{"ping6",         pktgen_send_ping6},	/* Send a Ping IPv6 packet (ICMP echo) */
+-#endif
+ 
+ 	{"pcap",          pktgen_pcap},			/* Load a PCAP file */
+ 	{"icmp_echo",     pktgen_icmp},			/* Enable/disable ICMP echo support */
+@@ -3913,6 +3906,7 @@ luaopen_pktgen(lua_State *L)
+ 	setf_integer(L, "singlePktIdx", SINGLE_PKT);
+ 	setf_integer(L, "rangePktIdx", RANGE_PKT);
+ 	setf_integer(L, "pingPktIdx", PING_PKT);
++	setf_integer(L, "ping6PktIdx", PING6_PKT);
+ 	setf_integer(L, "ratePktIdx", RATE_PKT);
+ 
+ 	setf_integer(L, "numSeqPkts", NUM_SEQ_PKTS);
+diff --git a/app/pktgen-cmds.c b/app/pktgen-cmds.c
+index 0c79473..ed806b2 100644
+--- a/app/pktgen-cmds.c
++++ b/app/pktgen-cmds.c
+@@ -2699,7 +2699,6 @@ debug_pdump(port_info_t *info)
+     rte_pktmbuf_free(m);
+ }
+ 
+-#ifdef INCLUDE_PING6
+ /**
+  *
+  * pktgen_ping6 - Send a IPv6 ICMP echo request packet.
+@@ -2715,15 +2714,14 @@ debug_pdump(port_info_t *info)
+ void
+ pktgen_ping6(port_info_t *info)
+ {
+-    memcpy(&info->pkt[PING_PKT], &info->pkt[SINGLE_PKT], sizeof(pkt_seq_t));
+-    info->pkt[PING_PKT].ipProto = PG_IPPROTO_ICMP;
+-    pktgen_packet_ctor(info, PING_PKT, ICMP6_ECHO);
++    memcpy(&info->seq_pkt[PING6_PKT],
++           &info->seq_pkt[SINGLE_PKT], sizeof(pkt_seq_t));
++    info->seq_pkt[PING6_PKT].ipProto = PG_IPPROTO_IPV6_ICMP;
++    pktgen_packet_ctor(info, PING6_PKT, ICMP6_ECHO_REQUEST);
+     pktgen_set_port_flags(info, SEND_PING6_REQUEST);
+     pktgen_set_tx_update(info);
+ }
+ 
+-#endif
+-
+ /**
+  *
+  * pktgen_reset - Reset all ports to the default state
+diff --git a/app/pktgen-cmds.h b/app/pktgen-cmds.h
+index b3ff1fa..2e1633f 100644
+--- a/app/pktgen-cmds.h
++++ b/app/pktgen-cmds.h
+@@ -52,9 +52,7 @@ void pktgen_stop_latency_sampler(port_info_t *info);
+ int pktgen_save(char *path);
+ void pktgen_cls(void);
+ void pktgen_ping4(port_info_t *info);
+-#ifdef INCLUDE_PING6
+ void pktgen_ping6(port_info_t *info);
+-#endif
+ void pktgen_clear_stats(port_info_t *info);
+ void pktgen_reset(port_info_t *info);
+ void pktgen_port_restart(port_info_t *info);
+diff --git a/app/pktgen-ipv6.c b/app/pktgen-ipv6.c
+index 8aa2fc3..696b796 100644
+--- a/app/pktgen-ipv6.c
++++ b/app/pktgen-ipv6.c
+@@ -6,11 +6,15 @@
+ 
+ /* Created 2010 by Keith Wiles @ intel.com */
+ 
++#include <arpa/inet.h>
++
+ #include <cli_scrn.h>
+ #include <lua_config.h>
++#include <rte_atomic.h>
+ 
+ #include "pktgen.h"
+ 
++#include "pktgen-log.h"
+ #include "pktgen-ipv6.h"
+ 
+ /**
+@@ -47,6 +51,44 @@ pktgen_ipv6_ctor(pkt_seq_t *pkt, void *hdr)
+ 	rte_memcpy(&ip->src_addr, pkt->ip_src_addr.addr.ipv6.s6_addr,
+ 			sizeof(struct in6_addr));
+ }
++/**
++ *
++ * pktgen_send_ping6 - Create and send a Ping or IPv6 ICMP echo packet.
++ *
++ * DESCRIPTION
++ * Create an IPv6 ICMP echo request packet and send the packet to a given port.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++
++void
++pktgen_send_ping6(uint32_t pid, uint8_t seq_idx){
++	port_info_t	     *info = &pktgen.info[pid];
++	pkt_seq_t		 *ppkt = &info->seq_pkt[PING6_PKT];
++	pkt_seq_t		 *spkt = &info->seq_pkt[seq_idx];
++	struct rte_mbuf  *m;
++	uint8_t qid = 0;
++
++	m   = rte_pktmbuf_alloc(info->q[qid].special_mp);
++	if (unlikely(m == NULL) ) {
++		pktgen_log_warning("No packet buffers found");
++		return;
++	}
++	*ppkt = *spkt;
++	ppkt->ipProto = PG_IPPROTO_IPV6_ICMP;
++	pktgen_packet_ctor(info, PING6_PKT, ICMP6_ECHO_REQUEST);
++	rte_memcpy((uint8_t *)m->buf_addr + m->data_off,
++		   (uint8_t *)&ppkt->hdr, ppkt->pktSize);
++
++	m->pkt_len  = ppkt->pktSize;
++	m->data_len = ppkt->pktSize;
++
++	pktgen_send_mbuf(m, pid, qid);
++
++	pktgen_set_q_flags(info, qid, DO_TX_FLUSH);
++}
+ 
+ /**
+  *
+@@ -64,71 +106,42 @@ void
+ pktgen_process_ping6(struct rte_mbuf *m __rte_unused,
+ 		     uint32_t pid __rte_unused, uint32_t vlan __rte_unused)
+ {
+-#if 0	/* Broken needs to be updated to do IPv6 packets */
+-	port_info_t     *info = &pktgen.info[pid];
++	port_info_t *info = &pktgen.info[pid];
+ 	struct pg_ether_hdr *eth = rte_pktmbuf_mtod(m, struct pg_ether_hdr *);
+-	struct pg_ipv6_hdr       *ip = (struct pg_ipv6_hdr *)&eth[1];
++	struct pg_ipv6_hdr *ip = (struct pg_ipv6_hdr *)&eth[1];
+ 
+ 	/* Adjust for a vlan header if present */
+ 	if (vlan)
+ 		ip = (struct pg_ipv6_hdr *)((char *)ip + sizeof(struct pg_vlan_hdr));
+ 
+ 	/* Look for a ICMP echo requests, but only if enabled. */
+-	if ( (rte_atomic32_read(&info->port_flags) & ICMP_ECHO_ENABLE_FLAG) &&
+-	     (ip->next_header == PG_IPPROTO_ICMPV6) ) {
+-#if !defined(RTE_ARCH_X86_64)
+-		struct pg_icmp_hdr *icmp =
+-			(struct pg_icmp_hdr *)((uint32_t)ip + sizeof(struct pg_ipv4_hdr));
+-#else
+-		struct pg_icmp_hdr *icmp =
+-			(struct pg_icmp_hdr *)((uint64_t)ip + sizeof(struct pg_ipv4_hdr));
+-#endif
+-		/* We do not handle IP options, which will effect the IP header size. */
+-		if (rte_ipv6_cksum(icmp,
+-			  (m->pkt.data_len - sizeof(struct pg_ether_hdr) -
+-			   sizeof(struct pg_ipv4_hdr))) ) {
+-			rte_printf_status("ICMP checksum failed\n");
+-			goto leave :
++	if ( ICMP_ECHO_ENABLE_FLAG) {
++		/* Discard packet if there are extension headers */
++		if(ip->proto != PG_IPPROTO_IPV6_ICMP){
++			goto leave;
+ 		}
+ 
+-		if (icmp->type == ICMP4_ECHO) {
+-			/* Toss all broadcast addresses and requests not for this port */
+-			if ( (ip->dst == INADDR_BROADCAST) ||
+-			     (ip->dst != info->ip_src_addr) ) {
+-				char buff[24];
+-				rte_printf_status("IP address %s != ",
+-						  inet_ntop4(buff, sizeof(buff),
+-							     ip->dst,
+-							     INADDR_BROADCAST));
+-				rte_printf_status("%s\n",
+-						  inet_ntop4(buff, sizeof(buff),
+-							     htonl(info->
+-								   ip_src_addr),
+-							     INADDR_BROADCAST));
+-				goto leave;
+-			}
+-
+-			info->echo_pkts++;
+-
+-			icmp->type  = ICMP4_ECHO_REPLY;
++		struct pg_icmp_hdr *icmp =
++			(struct pg_icmp_hdr *)((uintptr_t)ip + sizeof(struct pg_ipv6_hdr));
++
++		if (icmp->icmp_type == ICMP6_ECHO_REQUEST) {
++
++			info->stats.echo_pkts++;
++
++			icmp->icmp_type  = ICMP6_ECHO_REPLY;
++
++			/* check icmp checksum */
+ 
+ 			/* Recompute the ICMP checksum */
+-			icmp->cksum = 0;
+-			icmp->cksum =
++			icmp->icmp_cksum = 0;
++			icmp->icmp_cksum =
+ 				rte_raw_cksum(icmp,
+-				      (m->pkt.data_len -
+-				       sizeof(struct pg_ether_hdr) -
+-				       sizeof(struct pg_ipv4_hdr)));
++					  (m->data_len -
++					   sizeof(struct pg_ether_hdr) -
++					   sizeof(struct pg_ipv6_hdr)));
+ 
+ 			/* Swap the IP addresses. */
+-			inetAddrSwap(&ip->src, &ip->dst);
+-
+-			/* Bump the ident value */
+-			ip->ident   = htons(ntohs(ip->ident) + m->pkt.data_len);
+-
+-			/* Recompute the IP checksum */
+-			ip->cksum   = 0;
+-			ip->cksum   = rte_raw_cksum(ip, sizeof(struct pg_ipv4_hdr));
++			inetAddrSwap6(&ip->src_addr, &ip->dst_addr);
+ 
+ 			/* Swap the MAC addresses */
+ 			ethAddrSwap(&eth->d_addr, &eth->s_addr);
+@@ -141,7 +154,5 @@ pktgen_process_ping6(struct rte_mbuf *m __rte_unused,
+ 			return;
+ 		}
+ 	}
+-leave:
+-#else
+-#endif
++leave:;
+ }
+diff --git a/app/pktgen-ipv6.h b/app/pktgen-ipv6.h
+index f177335..887a527 100644
+--- a/app/pktgen-ipv6.h
++++ b/app/pktgen-ipv6.h
+@@ -9,6 +9,7 @@
+ #define _PKTGEN_IPV6_H_
+ 
+ #include "pktgen.h"
++#include "pktgen-seq.h"
+ 
+ #ifdef __cplusplus
+ extern "C" {
+@@ -28,8 +29,9 @@ extern "C" {
+ 
+ void pktgen_ipv6_ctor(pkt_seq_t *pkt, void *hdr);
+ 
+-void pktgen_process_ping6(struct rte_mbuf *m, uint32_t pid,
+-				 uint32_t vlan);
++void pktgen_send_ping6(uint32_t pid, uint8_t seq_idx);
++
++void pktgen_process_ping6(struct rte_mbuf *m, uint32_t pid, uint32_t vlan);
+ 
+ #ifdef __cplusplus
+ }
+diff --git a/app/pktgen.c b/app/pktgen.c
+index 957edaf..f8f5957 100644
+--- a/app/pktgen.c
++++ b/app/pktgen.c
+@@ -668,6 +668,48 @@ pktgen_packet_ctor(port_info_t *info, int32_t seq_idx, int32_t type)
+ 			/* Construct the UDP header */
+ 			pktgen_udp_hdr_ctor(pkt, l3_hdr, PG_ETHER_TYPE_IPv6);
+ 
++			/* IPv6 Header constructor */
++			pktgen_ipv6_ctor(pkt, l3_hdr);
++		}
++		else if (pkt->ipProto == PG_IPPROTO_IPV6_ICMP) {
++			struct pg_ipv6_hdr *ipv6 = (struct pg_ipv6_hdr *)l3_hdr;
++			struct pg_icmp_hdr *icmp = (struct pg_icmp_hdr *)&ipv6[1];
++			uint16_t tlen;
++
++			memset(ipv6->dst_addr, 0, sizeof(struct in6_addr));
++			memset(ipv6->src_addr, 0, sizeof(struct in6_addr));
++			rte_memcpy(&ipv6->dst_addr, &pkt->ip_dst_addr.addr.ipv6.s6_addr, sizeof(struct in6_addr));
++			rte_memcpy(&ipv6->src_addr, &pkt->ip_src_addr.addr.ipv6.s6_addr, sizeof(struct in6_addr));
++
++			tlen = pkt->pktSize - (pkt->ether_hdr_size + sizeof(struct pg_ipv6_hdr));
++			ipv6->payload_len = htons(tlen);
++			ipv6->proto = pkt->ipProto;
++
++			icmp->icmp_code = 0;
++			if ( (type == -1) || (type == ICMP6_TIMESTAMP)) {
++				union icmp_data *data = (union icmp_data *)&icmp[1];
++
++				icmp->icmp_type = ICMP6_TIMESTAMP;
++				data->timestamp.ident = 0x1234;
++				data->timestamp.seq = 0x5678;
++				data->timestamp.originate = 0x80004321;
++				data->timestamp.receive = 0;
++				data->timestamp.transmit = 0;
++			} else if (type == ICMP6_ECHO_REQUEST) {
++				union icmp_data *data = (union icmp_data *)&icmp[1];
++
++				icmp->icmp_type = ICMP6_ECHO_REQUEST;
++				data->echo.ident = 0x1234;
++				data->echo.seq = 0x5678;
++				data->echo.data = 0;
++			}
++			icmp->icmp_cksum     = 0;
++			/* ICMP6_TIMESTAMP_SIZE */
++			tlen            = pkt->pktSize - (pkt->ether_hdr_size + sizeof(struct pg_ipv6_hdr));
++			icmp->icmp_cksum = rte_raw_cksum(icmp, tlen);
++			if (icmp->icmp_cksum == 0)
++				icmp->icmp_cksum = 0xFFFF;
++
+ 			/* IPv6 Header constructor */
+ 			pktgen_ipv6_ctor(pkt, l3_hdr);
+ 		}
+@@ -909,10 +951,8 @@ pktgen_send_special(port_info_t *info, uint32_t flags)
+ 
+ 		if (flags & SEND_PING4_REQUEST)
+ 			pktgen_send_ping4(info->pid, s);
+-#ifdef INCLUDE_PING6
+ 		if (flags & SEND_PING6_REQUEST)
+ 			pktgen_send_ping6(info->pid, s);
+-#endif
+ 	}
+ 
+ 	/* Send the requests from the Single packet setup. */
+@@ -923,10 +963,8 @@ pktgen_send_special(port_info_t *info, uint32_t flags)
+ 
+ 	if (flags & SEND_PING4_REQUEST)
+ 		pktgen_send_ping4(info->pid, SINGLE_PKT);
+-#ifdef INCLUDE_PING6
+ 	if (flags & SEND_PING6_REQUEST)
+ 		pktgen_send_ping6(info->pid, SINGLE_PKT);
+-#endif
+ 
+ 	pktgen_clr_port_flags(info, SEND_ARP_PING_REQUESTS);
+ }
+diff --git a/app/pktgen.h b/app/pktgen.h
+index 8c5d240..a941b04 100644
+--- a/app/pktgen.h
++++ b/app/pktgen.h
+@@ -235,7 +235,8 @@ enum {
+ 	RANGE_PKT               = (PING_PKT + 1),			/* 18 */
+ 	DUMP_PKT                = (RANGE_PKT + 1),			/* 19 */
+ 	RATE_PKT				= (DUMP_PKT + 1),			/* 20 */
+-	NUM_TOTAL_PKTS          = (RATE_PKT + 1),
++	PING6_PKT				= (RATE_PKT + 1),			/* 21 */
++	NUM_TOTAL_PKTS          = (PING6_PKT + 1),
+ 
+ 	INTER_FRAME_GAP         = 12,	/**< in bytes */
+ 	START_FRAME_DELIMITER	= 1,
+diff --git a/lib/common/pg_inet.h b/lib/common/pg_inet.h
+index 58da736..a570a52 100644
+--- a/lib/common/pg_inet.h
++++ b/lib/common/pg_inet.h
+@@ -266,6 +266,37 @@ union icmp_data {
+ #define ICMP4_MASK_REQUEST          17
+ #define ICMP4_MASK_REPLY            18
+ 
++/* ICMPv6 Message Types */
++#define ICMP6_RESERVED                                      0
++#define ICMP6_DESTINATION_UNREACHABLE                       1
++#define ICMP6_PACKET_TOO_BIG                                2
++#define ICMP6_TIME_EXCEEDED                                 3
++#define ICMP6_PARAMETER_PROBLEM                             4
++#define ICMP6_TIMESTAMP                                     13
++#define ICMP6_ECHO_REQUEST                                  128
++#define ICMP6_ECHO_REPLY                                    129
++#define ICMP6_MULTICAST_LISTENER_QUERY                      130
++#define ICMP6_MULTICAST_LISTENER_REPORT                     131
++#define ICMP6_MULTICAST_LISTENER_DONE                       132
++#define ICMP6_ROUTER_SOLICITATION                           133
++#define ICMP6_ROUTER_ADVERTISEMENT                          134
++#define ICMP6_NEIGHBOR_SOLICITATION                         135
++#define ICMP6_NEIGHBOR_ADVERTISEMENT                        136
++#define ICMP6_REDIRECT_MESSAGE                              137
++#define ICMP6_ROUTER_RENUMBERING                            138
++#define ICMP6_ICMP_NODE_INFORMATION_QUERY                   139
++#define ICMP6_ICMP_NODE_INFORMATION_RESPONSE                140
++#define ICMP6_INVERSE_NEIGHBOR_DISCOVERY_REQUEST            141
++#define ICMP6_INVERSE_NEIGHBOR_DISCOVERY_REPLY              142
++#define ICMP6_HOME_AGENT_ADDRESS_DISCOVERY_REQUEST          144
++#define ICMP6_HOME_AGENT_ADDRESS_DISCOVERY_REPLY            145
++#define ICMP6_MOBILE_PREFIX_SOLICITATION                    146
++#define ICMP6_MOBILE_PREFIX_ADVERTISEMENT                   147
++#define ICMP6_DUPLICATE_ADDRESS_REQUEST_CODE_SUFFIX         157
++#define ICMP6_DUPLICATE_ADDRESS_CONFIRMATION_CODE SUFFIX    158
++#define ICMP6_EXTENDED_ECHO_REQUEST                         160
++#define ICMP6_EXTENDED_ECHO_REPLY                           161
++
+ /* MPLS header
+  *                        MPLS Header Format
+  *
+@@ -518,6 +549,27 @@ inetAddrSwap(void *t, void *f) {
+ 	v  = *d; *d = *s; *s = v;
+ }
+ 
++/* inetAddrSwap6( void * t, void * f ) - Swap two IPv6 addresses */
++static __inline__ void
++inetAddrSwap6(void *t, void *f) {
++	uint8_t buf[PG_IN6ADDRSZ];
++	memmove(buf, t, PG_IN6ADDRSZ);
++	memmove(t, f, PG_IN6ADDRSZ);
++	memmove(f, buf, PG_IN6ADDRSZ);
++}
++
++/* inetCompare( void * t, void * f ) - Check two IPv6 addresses for equality */
++static __inline__ uint8_t
++inetCompare6(const void *t, const void *f) {
++	const uint8_t *d = (const uint8_t *)t;
++	const uint8_t *s = (const uint8_t *)f;
++	for(uint8_t b = 0; b < PG_IN6ADDRSZ; b++) {
++		if (d[b] != s[b])
++			return 0;
++	}
++	return 1;
++}
++
+ /* inet6AddrIsUnspecified( void * a )  - Unspecified Address */
+ static __inline__ int
+ inet6AddrIsUnspecified(void *a)
+-- 
+2.30.2
+

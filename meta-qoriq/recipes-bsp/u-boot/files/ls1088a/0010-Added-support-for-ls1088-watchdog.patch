@@ -1,0 +1,160 @@
+From dd470017e33ee6eef45e1bc18db46b559678c7c2 Mon Sep 17 00:00:00 2001
+From: Anand Singh <anandsingh@fb.com>
+Date: Fri, 17 May 2019 13:10:50 -0700
+Subject: [PATCH 10/21] Added support for ls1088 watchdog
+
+---
+ common/board_f.c                         |  1 +
+ configs/ls1088ardb_sdcard_qspi_defconfig |  1 +
+ drivers/watchdog/Kconfig                 |  7 +++
+ drivers/watchdog/Makefile                |  1 +
+ drivers/watchdog/sp805_watchdog.c        | 71 ++++++++++++++++++++++++
+ include/watchdog.h                       |  6 +-
+ 6 files changed, 86 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/watchdog/sp805_watchdog.c
+
+diff --git a/common/board_f.c b/common/board_f.c
+index 88d770071c..059325744a 100644
+--- a/common/board_f.c
++++ b/common/board_f.c
+@@ -91,6 +91,7 @@ static int init_func_watchdog_init(void)
+ 	(defined(CONFIG_M68K) || defined(CONFIG_MICROBLAZE) || \
+ 	defined(CONFIG_SH) || defined(CONFIG_AT91SAM9_WATCHDOG) || \
+ 	defined(CONFIG_DESIGNWARE_WATCHDOG) || \
++	defined(CONFIG_WDT_SP805) || \
+ 	defined(CONFIG_IMX_WATCHDOG))
+ 	hw_watchdog_init();
+ 	puts("       Watchdog enabled\n");
+diff --git a/configs/ls1088ardb_sdcard_qspi_defconfig b/configs/ls1088ardb_sdcard_qspi_defconfig
+index 80e74d52be..94aa7cbe9f 100644
+--- a/configs/ls1088ardb_sdcard_qspi_defconfig
++++ b/configs/ls1088ardb_sdcard_qspi_defconfig
+@@ -72,4 +72,5 @@ CONFIG_SCSI=y
+ CONFIG_AHCI=y
+ CONFIG_TERRAGRAPH=y
+ CONFIG_CMD_GPIO=y
++CONFIG_WDT_SP805=y
+ CONFIG_CMD_GPT=y
+diff --git a/drivers/watchdog/Kconfig b/drivers/watchdog/Kconfig
+index b06c5447f6..9e58bfc48d 100644
+--- a/drivers/watchdog/Kconfig
++++ b/drivers/watchdog/Kconfig
+@@ -117,4 +117,11 @@ config WATCHDOG_RESET_DISABLE
+ 	   Disable reset watchdog, which can let WATCHDOG_RESET invalid, so
+ 	   that the watchdog will not be fed in u-boot.
+ 
++config WDT_SP805
++	bool "ARM SP805 Watchdog"
++	select HW_WATCHDOG
++	help
++	  Select this to enable watchdog timer for LSCH3 SoCs.
++	  It performs full SoC reset.
++
+ endmenu
+diff --git a/drivers/watchdog/Makefile b/drivers/watchdog/Makefile
+index 19c631bb58..a6d6bd1e5d 100644
+--- a/drivers/watchdog/Makefile
++++ b/drivers/watchdog/Makefile
+@@ -25,3 +25,4 @@ obj-$(CONFIG_BCM2835_WDT)       += bcm2835_wdt.o
+ obj-$(CONFIG_WDT_ORION) += orion_wdt.o
+ obj-$(CONFIG_WDT_CDNS) += cdns_wdt.o
+ obj-$(CONFIG_MPC8xx_WATCHDOG) += mpc8xx_wdt.o
++obj-$(CONFIG_WDT_SP805) += sp805_watchdog.o
+diff --git a/drivers/watchdog/sp805_watchdog.c b/drivers/watchdog/sp805_watchdog.c
+new file mode 100644
+index 0000000000..1665881583
+--- /dev/null
++++ b/drivers/watchdog/sp805_watchdog.c
+@@ -0,0 +1,71 @@
++/*
++ * watchdog.c - driver for ARM SP805 watchdog module
++ *
++ * Licensed under the GPL-2 or later.
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <watchdog.h>
++#include <linux/math64.h>
++
++
++#define WDTBASE    0xC000000
++
++#define MODULE_NAME             "sp805-wdt"
++
++/* watchdog register offsets and masks */
++#define WDTLOAD                 0x000
++        #define LOAD_MIN        0x00000001
++        #define LOAD_MAX        0xFFFFFFFF
++#define WDTVALUE                0x004
++#define WDTCONTROL              0x008
++        /* control register masks */
++        #define INT_ENABLE      (1 << 0) // enable counter
++        #define RESET_ENABLE    (1 << 1)
++#define WDTINTCLR               0x00C
++#define WDTLOCK                 0xC00
++        #define UNLOCK          0x1ACCE551
++        #define LOCK            0x00000001
++
++
++
++#ifdef CONFIG_WDT_SP805
++
++#ifndef CONFIG_WATCHDOG_TIMEOUT_MSECS
++#define CONFIG_WATCHDOG_TIMEOUT_MSECS 128000
++#endif
++
++#define	TIMEVAL (((CONFIG_WATCHDOG_TIMEOUT_MSECS) / 1000 ) * (COUNTER_FREQUENCY) )
++
++void hw_watchdog_reset(void)
++{
++	u32 load = (u32) TIMEVAL;
++
++	if (load > LOAD_MAX) load = LOAD_MAX;
++	if (load < LOAD_MIN) load = LOAD_MIN;
++	writel(UNLOCK,  WDTBASE + WDTLOCK);
++	writel(load,    WDTBASE + WDTLOAD);
++	writel(LOCK,    WDTBASE + WDTLOCK);
++
++	// flush
++	readl(WDTBASE + WDTLOCK);
++}
++
++void hw_watchdog_init(void)
++{
++
++	/*
++	 * watchdog counts down at counter frequency
++	 */
++	writel(UNLOCK,                      WDTBASE + WDTLOCK);
++	writel(RESET_ENABLE | INT_ENABLE,   WDTBASE + WDTCONTROL);
++	writel(LOCK,                        WDTBASE + WDTLOCK);
++
++	// flush
++	readl(WDTBASE + WDTLOCK);
++
++	hw_watchdog_reset();
++}
++#endif
++
+diff --git a/include/watchdog.h b/include/watchdog.h
+index 14073cfdd2..262372a260 100644
+--- a/include/watchdog.h
++++ b/include/watchdog.h
+@@ -34,8 +34,12 @@ int init_func_watchdog_reset(void);
+ 
+ /*
+  * Hardware watchdog
++ *
++ * Watchdog functions in SPL gets defined only if CONFIG_SPL_WATCHDOG_SUPPORT
++ * is set.
+  */
+-#ifdef CONFIG_HW_WATCHDOG
++#if (defined(CONFIG_HW_WATCHDOG) && (!defined(CONFIG_SPL_BUILD) || \
++					defined(CONFIG_SPL_WATCHDOG_SUPPORT)))
+ 	#if defined(__ASSEMBLY__)
+ 		#define WATCHDOG_RESET bl hw_watchdog_reset
+ 	#else
+-- 
+2.17.1
+

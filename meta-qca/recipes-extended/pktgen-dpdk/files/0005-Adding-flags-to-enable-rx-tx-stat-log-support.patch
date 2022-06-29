@@ -1,0 +1,378 @@
+From af20c5f439d1150f580eb5238fcee86312b7de8e Mon Sep 17 00:00:00 2001
+From: kelvinfann <kelvinfann@devvm3083.ftw3.facebook.com>
+Date: Fri, 11 Oct 2019 10:52:01 -0700
+Subject: [PATCH] Adding flags to enable rx/tx stat log support
+
+---
+ app/meson.build       |   4 +-
+ app/pktgen-main.c     |   9 ++-
+ app/pktgen-stat-log.c | 178 ++++++++++++++++++++++++++++++++++++++++++
+ app/pktgen-stat-log.h |  21 +++++
+ app/pktgen.c          |  16 +++-
+ app/pktgen.h          |   4 +
+ 6 files changed, 225 insertions(+), 7 deletions(-)
+ create mode 100644 app/pktgen-stat-log.c
+ create mode 100644 app/pktgen-stat-log.h
+
+diff --git a/app/meson.build b/app/meson.build
+index 52defa2..4bf8388 100644
+--- a/app/meson.build
++++ b/app/meson.build
+@@ -4,8 +4,8 @@ sources = files(
+ 	'pktgen-seq.c', 'pktgen-dump.c', 'pktgen-capture.c', 'pktgen-stats.c',
+ 	'pktgen-port-cfg.c', 'pktgen-ipv6.c', 'pktgen-ipv4.c', 'pktgen-arp.c',
+ 	'pktgen-gre.c', 'pktgen-ether.c', 'pktgen-tcp.c', 'pktgen-udp.c', 'pktgen-vlan.c',
+-	'pktgen-random.c', 'pktgen-display.c', 'pktgen-log.c', 'pktgen-gtpu.c',
+-	'pktgen-latency.c', 'pktgen-rate.c'
++	'pktgen-random.c', 'pktgen-display.c', 'pktgen-log.c', 'pktgen-stat-log.c',
++	'pktgen-gtpu.c', 'pktgen-latency.c', 'pktgen-rate.c'
+ )
+ 
+ if get_option('enable_gui')
+diff --git a/app/pktgen-main.c b/app/pktgen-main.c
+index 6edabf6..b8dcf02 100644
+--- a/app/pktgen-main.c
++++ b/app/pktgen-main.c
+@@ -27,6 +27,7 @@
+ #include "pktgen-cpu.h"
+ #include "pktgen-display.h"
+ #include "pktgen-log.h"
++#include "pktgen-stat-log.h"
+ #include "cli-functions.h"
+ 
+ /* Offset to the mbuf dynamic field holding pktgen data. */
+@@ -106,6 +107,7 @@ pktgen_usage(const char *prgname)
+ 		"  -f filename  Command file (.pkt) to execute\n"
+ #endif
+ 		"  -l filename  Write log to filename\n"
++		"  -L <stat>,... Writes stats to the log file\n"
+ 		"  -P           Enable PROMISCUOUS mode on all ports\n"
+ 		"  -g address   Optional IP address and port number default is (localhost:0x5606)\n"
+ 		"               If -g is used that enable socket support as a server application\n"
+@@ -199,7 +201,7 @@ pktgen_parse_args(int argc, char **argv)
+ 	pktgen.mbuf_buf_size = RTE_MBUF_DEFAULT_BUF_SIZE;
+ 
+ 	pktgen.verbose = 0;
+-	while ((opt = getopt_long(argc, argvopt, "p:m:f:l:s:g:hPNGTvjtr",
++	while ((opt = getopt_long(argc, argvopt, "p:m:f:l:L:s:g:hPNGTvjtr",
+ 				  lgopts, &option_index)) != EOF)
+ 		switch (opt) {
+ 		case 't':
+@@ -234,6 +236,10 @@ pktgen_parse_args(int argc, char **argv)
+ 			pktgen_log_set_file(optarg);
+ 			break;
+ 
++		case 'L':	/* Log stats */
++			pktgen_set_log_stat_data(optarg);
++			break;
++
+ 		case 'm':	/* Matrix for port mapping. */
+ 			if (pg_parse_matrix(pktgen.l2p, optarg) == -1) {
+ 				pktgen_log_error("invalid matrix string (%s)", optarg);
+@@ -456,6 +462,7 @@ main(int argc, char **argv)
+ 	/* Initialize the screen and logging */
+ 	pktgen_init_log();
+ 	pktgen_cpu_init();
++	pktgen_init_stat_log_builder();
+ 
+ 	/* initialize EAL */
+ 	ret = rte_eal_init(argc, argv);
+diff --git a/app/pktgen-stat-log.c b/app/pktgen-stat-log.c
+new file mode 100644
+index 0000000..f975a45
+--- /dev/null
++++ b/app/pktgen-stat-log.c
+@@ -0,0 +1,178 @@
++/*-
++ * Copyright (c) <2010-2019>, Intel Corporation. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++/* Created 2010 by Keith Wiles @ intel.com */
++
++#include <stdio.h>
++
++#include <lua_config.h>
++
++#include "pktgen.h"
++#include "pktgen-stat-log.h"
++
++/* stat_log_builder_t helps create logs for stats */
++typedef struct stat_log_builder_s {
++	const char* header;
++	char* curr_pos;
++	char buff[128];
++} stat_log_builder_t;
++
++/* Forward declarations of log builder functions */
++static void append_stat_log_builder(stat_log_builder_t* p, const char *fmt, ...);
++static void flush_info_stat_log_builder(stat_log_builder_t* p);
++
++void
++append_stat_log_builder(stat_log_builder_t* p, const char *fmt, ...)
++{
++	int to_add_length;
++	va_list args;
++	va_start(args, fmt);
++	to_add_length = vsnprintf(
++		p->curr_pos,
++		sizeof(p->buff) - (p->curr_pos-p->buff),
++		fmt,
++		args);
++	va_end(args);
++	if (p->curr_pos >= p->buff + sizeof(p->buff) - to_add_length) {
++		to_add_length = sizeof(p->buff) - (p->curr_pos-p->buff) - 1;
++	}
++
++	p->curr_pos += to_add_length;
++	*p->curr_pos = '\0';
++	if (p->curr_pos != p->buff && p->buff + sizeof(p->buff) <= p->curr_pos)
++		flush_info_stat_log_builder(p);
++}
++
++void
++flush_info_stat_log_builder(stat_log_builder_t* p)
++{
++	if (p->curr_pos == p->buff)
++		return; // nothing to flush
++
++	p->buff[sizeof(p->buff)-1] = '\0';
++	pktgen_log_info(
++		"%s %s",
++		p->header,
++		p->buff);
++
++	p->curr_pos = p->buff;
++	*p->curr_pos = '\0';
++}
++
++/* The Log Builders for the stats */
++stat_log_builder_t rx_tput_log_builder, tx_tput_log_builder;
++uint32_t log_static_enabled = 0;
++typedef void log_builder_sp_added_pid_function(uint32_t sp_added_pid);
++
++/**************************************************************************//**
++ *
++ * pktgen_init_stat_log_builder - Initializes the log builders
++ *
++ * DESCRIPTION
++ * initializes the log builders; this function is required to be run before
++ * pktgen_log_static_data.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++void
++pktgen_init_stat_log_builder(void)
++{
++	memset(&rx_tput_log_builder, 0, sizeof(rx_tput_log_builder));
++	rx_tput_log_builder.header = "[rx_tput]";
++	rx_tput_log_builder.curr_pos = rx_tput_log_builder.buff;
++
++	memset(&tx_tput_log_builder, 0, sizeof(tx_tput_log_builder));
++	tx_tput_log_builder.header = "[tx_tput]";
++	tx_tput_log_builder.curr_pos = tx_tput_log_builder.buff;
++}
++
++void
++pktgen_set_log_stat_data(char *optargs)
++{
++	char *p, *pc;
++	p = optargs;
++	p--;
++
++	while (p != NULL) {
++		p++;
++		pc = strchr(p, ',');
++		if (pc != NULL) {
++			// set the , to be the end of the string
++			*pc = '\0';
++		}
++
++		if (strcmp(p, "rx_tput")) {
++			log_static_enabled |= RX_TPUT_STAT_FLAG;
++		} else if (strcmp(p, "tx_tput")) {
++			log_static_enabled |= TX_TPUT_STAT_FLAG;
++		}
++
++		p = pc;
++	}
++}
++
++static void
++_log_rx_tput_builder(uint32_t sp_added_pid)
++{
++	port_info_t *pinfo;
++	pinfo = &pktgen.info[sp_added_pid];
++	append_stat_log_builder(
++		&rx_tput_log_builder,
++		"%u:%" PRIu64 ",",
++		sp_added_pid,
++		iBitsTotal(pinfo->rate_stats) / Million);
++}
++
++static void
++_log_tx_tput_builder(uint32_t sp_added_pid)
++{
++	port_info_t *pinfo;
++	pinfo = &pktgen.info[sp_added_pid];
++	append_stat_log_builder(
++		&tx_tput_log_builder,
++		"%u:%" PRIu64 ",",
++		sp_added_pid,
++		oBitsTotal(pinfo->rate_stats) / Million);
++}
++
++static void
++_pktgen_log_stat(stat_log_builder_t *log_builder, log_builder_sp_added_pid_function log_func)
++{
++	uint32_t pid;
++	unsigned sp;
++  sp = pktgen.starting_port;
++	for (pid = 0; pid < pktgen.nb_ports; pid++) {
++		if (get_map(pktgen.l2p, pid + sp, RTE_MAX_LCORE) == 0)
++			continue;
++
++		log_func(pid + sp);
++	}
++
++	flush_info_stat_log_builder(log_builder);
++}
++
++/**************************************************************************//**
++ *
++ * pktgen_log_stat_data - Logs statistics for all ports
++ *
++ * DESCRIPTION
++ * Depending on the cli flags, will log certain inputs.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++void
++pktgen_log_stat_data(void)
++{
++	if (log_static_enabled & RX_TPUT_STAT_FLAG)
++		_pktgen_log_stat(&rx_tput_log_builder, _log_rx_tput_builder);
++
++	if (log_static_enabled & TX_TPUT_STAT_FLAG)
++		_pktgen_log_stat(&tx_tput_log_builder, _log_tx_tput_builder);
++}
+diff --git a/app/pktgen-stat-log.h b/app/pktgen-stat-log.h
+new file mode 100644
+index 0000000..a2f090e
+--- /dev/null
++++ b/app/pktgen-stat-log.h
+@@ -0,0 +1,21 @@
++#ifndef _PKTGEN_STAT_LOG_H_
++#define _PKTGEN_STAT_LOG_H_
++
++#ifdef __cplusplus
++extern "C" {
++#endif /* __cplusplus */
++
++enum {						/* Pktgen stat flags bits */
++	RX_TPUT_STAT_FLAG       = (1 << 0),	/**< logs the rx_tput */
++	TX_TPUT_STAT_FLAG       = (1 << 1),	/**< logs the rx_tput*/
++};
++
++void pktgen_init_stat_log_builder(void);
++void pktgen_set_log_stat_data(char *optargs);
++void pktgen_log_stat_data(void);
++
++#ifdef __cplusplus
++}
++#endif /* __cplusplus */
++
++#endif  /* _PKTGEN_STAT_LOG_H_ */
+diff --git a/app/pktgen.c b/app/pktgen.c
+index 66cc344..0fa9f44 100644
+--- a/app/pktgen.c
++++ b/app/pktgen.c
+@@ -30,6 +30,7 @@
+ #include "pktgen-display.h"
+ #include "pktgen-random.h"
+ #include "pktgen-log.h"
++#include "pktgen-stat-log.h"
+ #include "pktgen-gtpu.h"
+ #include "pktgen-cfg.h"
+ #include "pktgen-rate.h"
+@@ -389,7 +390,7 @@ pktgen_recv_tstamp(port_info_t *info, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 
+ 			if (tstamp->magic == TSTAMP_MAGIC) {
+ 				lat = (rte_rdtsc_precise() - tstamp->timestamp);
+-				
++
+                 if (flags & (SEND_LATENCY_PKTS | SEND_RATE_PACKETS))
+                 {
+ 					info->avg_latency += lat;
+@@ -423,7 +424,7 @@ pktgen_recv_tstamp(port_info_t *info, struct rte_mbuf **pkts, uint16_t nb_pkts)
+                             stats->next = now + next_possion_time_ns * (double) rte_get_tsc_hz();		// Time based
+                             //pktgen_log_warning("core %d, queue %d next poisson time %lf, ms: %lu", lid, qid, next_possion_time_ns, stats->next*1000/rte_get_tsc_hz());
+                         }
+-                        else 
++                        else
+                         {	// LATSAMPLER_SIMPLE or LATSAMPLER_UNSPEC
+                             stats->next = now + rte_get_tsc_hz()/info->latsamp_rate;		// Time based
+                             // stats->next = stats->pkt_counter + info->latsamp_rate;		// Packet count based
+@@ -433,7 +434,7 @@ pktgen_recv_tstamp(port_info_t *info, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 
+ 			} else
+ 				info->magic_errors++;
+-            
++
+             info->latency_nb_pkts++;
+         }
+ 	}
+@@ -1619,15 +1620,17 @@ pktgen_page_display(struct rte_timer *tim __rte_unused, void *arg __rte_unused)
+ static void *
+ _timer_thread(void *arg)
+ {
+-	uint64_t process, page, process_timo, page_timo;
++	uint64_t process, page, stat_logger, process_timo, page_timo, stat_logger_timo;
+ 
+ 	this_scrn = arg;
+ 
+ 	process_timo = pktgen.hz;
+ 	page_timo = UPDATE_DISPLAY_TICK_RATE;
++	stat_logger_timo = UPDATE_STAT_LOG_TICK_RATE;
+ 
+ 	page = rte_get_tsc_cycles();
+ 	process = page + process_timo;
++	stat_logger = page + stat_logger_timo;
+ 	page += page_timo;
+ 
+ 	pktgen.timer_running = 1;
+@@ -1647,6 +1650,11 @@ _timer_thread(void *arg)
+ 			pktgen_page_display(NULL, NULL);
+ 		}
+ 
++		if (curr >= stat_logger) {
++			pktgen_log_stat_data();
++			stat_logger = curr + stat_logger_timo;
++		}
++
+ 		rte_pause();
+ 	}
+ 	return NULL;
+diff --git a/app/pktgen.h b/app/pktgen.h
+index c3bc07a..92d97c8 100644
+--- a/app/pktgen.h
++++ b/app/pktgen.h
+@@ -370,6 +370,10 @@ enum {						/* Pktgen flags bits */
+ #define UPDATE_DISPLAY_TICK_INTERVAL    8
+ #define UPDATE_DISPLAY_TICK_RATE	\
+ 	((pktgen.hz * UPDATE_DISPLAY_RATE) / UPDATE_DISPLAY_TICK_INTERVAL)
++#define UPDATE_STAT_LOG_RATE            1
++#define UPDATE_STAT_LOG_TICK_INTERVAL   1
++#define UPDATE_STAT_LOG_TICK_RATE	\
++	((pktgen.hz * UPDATE_STAT_LOG_RATE) / UPDATE_STAT_LOG_TICK_INTERVAL)
+ 
+ #define PAGE_MASK_BITS  (CONFIG_PAGE_FLAG | SEQUENCE_PAGE_FLAG | \
+ 			 RANGE_PAGE_FLAG | \
+-- 
+2.30.2
+

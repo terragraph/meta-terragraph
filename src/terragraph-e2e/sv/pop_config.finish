@@ -1,0 +1,3 @@
+#!/bin/sh
+
+sv stop pop_config

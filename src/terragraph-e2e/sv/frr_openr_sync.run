@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=5
+
+while [ : ]; do
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  # wait for vpp to be running (if enabled)
+  if [ "${DPDK_ENABLED:-0}" -eq "1" ]; then
+    while ! pidof vpp > /dev/null; do
+      echo "Waiting for vpp"
+      sleep ${DELAY}
+    done
+  fi
+
+  exec /usr/sbin/frr_openr_sync
+done

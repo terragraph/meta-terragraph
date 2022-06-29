@@ -1,0 +1,711 @@
+From 2a2736031337291764a19e36841a8af34ed8e4b4 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Fri, 26 Jun 2020 14:55:51 -0700
+Subject: [PATCH] Add DVPP local packet inject node
+
+---
+ src/vnet/CMakeLists.txt            |   1 +
+ src/vnet/devices/dvpp/cli.c        |  72 +++++++++++-
+ src/vnet/devices/dvpp/dvpp.c       |  80 ++++++++-----
+ src/vnet/devices/dvpp/dvpp.h       |  45 +++++---
+ src/vnet/devices/dvpp/dvpp_local.c | 174 +++++++++++++++++++++++++++++
+ src/vnet/devices/dvpp/dvpp_sched.c |   2 +-
+ src/vnet/devices/dvpp/dvpp_sched.h |   5 +-
+ src/vnet/devices/dvpp/interface.h  |   6 +-
+ 8 files changed, 337 insertions(+), 48 deletions(-)
+ create mode 100644 src/vnet/devices/dvpp/dvpp_local.c
+
+diff --git a/src/vnet/CMakeLists.txt b/src/vnet/CMakeLists.txt
+index 8bcb53b24..8dba1c734 100644
+--- a/src/vnet/CMakeLists.txt
++++ b/src/vnet/CMakeLists.txt
+@@ -1110,6 +1110,7 @@ list(APPEND VNET_SOURCES
+   devices/dvpp/pagemap.c
+   devices/dvpp/dvpp_sched.c
+   devices/dvpp/cli.c
++  devices/dvpp/dvpp_local.c
+ )
+ 
+ list(APPEND VNET_HEADERS
+diff --git a/src/vnet/devices/dvpp/cli.c b/src/vnet/devices/dvpp/cli.c
+index ddaf2bb07..cf57f1ec0 100644
+--- a/src/vnet/devices/dvpp/cli.c
++++ b/src/vnet/devices/dvpp/cli.c
+@@ -12,7 +12,6 @@ static clib_error_t *show_rings_command_fn (vlib_main_t *vm,
+                                             unformat_input_t *input,
+                                             vlib_cli_command_t *cmd)
+ {
+-  dvpp_main_t *dvpp = &dvpp_main;
+   int i, j;
+   char buffer[1024];
+   int l;
+@@ -84,7 +83,7 @@ static clib_error_t *show_stats_command_fn (vlib_main_t *vm,
+           u64 num_dequeue_call = dvpp->pipe_stats[i][j].num_dequeue_call;
+           u64 num_dequeue_pkts = dvpp->pipe_stats[i][j].num_dequeue_pkts;
+           u64 num_bad_dequeue = dvpp->pipe_stats[i][j].num_bad_dequeue;
+-          if (1 || num_pkt_read || num_pkt_written || num_pkt_queued ||
++          if (verbose || num_pkt_read || num_pkt_written || num_pkt_queued ||
+               num_pkt_dropped || num_dequeue_call || num_dequeue_pkts ||
+               num_bad_dequeue)
+             {
+@@ -152,7 +151,6 @@ static clib_error_t *set_log_command_fn (vlib_main_t *vm,
+   clib_error_t *error = NULL;
+   dvpp_main_t *dvpp = &dvpp_main;
+   int verbose = 0;
+-  int i, j;
+ 
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+     {
+@@ -189,6 +187,74 @@ VLIB_CLI_COMMAND (set_log_command, static) = {
+ };
+ /* *INDENT-ON* */
+ 
++static clib_error_t *packet_inject_fn (vlib_main_t *vm,
++                                       unformat_input_t *input,
++                                       vlib_cli_command_t *cmd)
++{
++  clib_error_t *error = NULL;
++  u32 sw_idx = ~0;
++  u32 enable = ~0;
++  vnet_main_t *vnm = vnet_get_main ();
++  unformat_input_t _line_input, *line_input = &_line_input;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_sw_interface, vnm,
++                    &sw_idx))
++        ;
++      else if (unformat (line_input, "enable"))
++        {
++          enable = 1;
++        }
++      else if (unformat (line_input, "disable"))
++        {
++          enable = 0;
++        }
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (sw_idx == ~0)
++    {
++      vlib_cli_output (vm, "Error: dvpp inject <interface> enable/disable\n");
++      return 0;
++    }
++
++  if (enable == ~0)
++    {
++      u32 port = dvpp_main.sw2device[sw_idx].port_id;
++      u32 pipe = dvpp_main.sw2device[sw_idx].pipe_id;
++      u32 inject = dvpp_main.sw2device[sw_idx].inject;
++
++      vlib_cli_output (vm, "%U port %u pipe %u sw_idx %u: inject %s\n",
++                       format_vnet_hw_if_index_name, vnm, sw_idx, port, pipe,
++                       sw_idx, inject ? "enabled" : "disabled");
++    }
++  else
++    {
++      dvpp_main.sw2device[sw_idx].inject = enable;
++    }
++
++done:
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (packet_inject_command, static) = {
++    .path = "dvpp inject",
++    .short_help = "configure packet inject",
++    .function = packet_inject_fn,
++};
++/* *INDENT-ON* */
++
+ clib_error_t *dvpp_cli_init (vlib_main_t *vm)
+ {
+   return 0;
+diff --git a/src/vnet/devices/dvpp/dvpp.c b/src/vnet/devices/dvpp/dvpp.c
+index 096ce07b2..03e8548d3 100644
+--- a/src/vnet/devices/dvpp/dvpp.c
++++ b/src/vnet/devices/dvpp/dvpp.c
+@@ -26,6 +26,8 @@ struct dvpp_port_list port_list = {};
+ 
+ #define DVPP_BURST_SIZE 128
+ 
++u32 default_worker_map[DVPP_NUM_PORT] = {2, 2, 3, 3};
++
+ int dvpp_create_port (vlib_main_t *vm, struct dvpp_port *port, u32 port_id);
+ 
+ static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
+@@ -68,7 +70,6 @@ int dvpp_create_if (vlib_main_t *vm, u8 *hw_addr_set, u32 port, u32 pipe)
+   clib_error_t *error;
+   vnet_main_t *vnm = vnet_get_main ();
+   u32 hw_if_index;
+-  // uword if_index;
+ 
+   error = ethernet_register_interface (
+       vnm, dvpp_device_class.index, port * DVPP_NUM_PIPE_PER_PORT + pipe,
+@@ -88,17 +89,22 @@ int dvpp_create_if (vlib_main_t *vm, u8 *hw_addr_set, u32 port, u32 pipe)
+   vnet_hw_interface_set_input_node (vnm, hw_if_index, dvpp_input_node.index);
+ 
+   vnet_hw_interface_assign_rx_thread (vnm, hw_if_index, 0 /* queue */,
+-                                      2 /* worker */);
++                                      default_worker_map[port] /* worker */);
+ 
+   vnet_hw_interface_set_flags (vnm, hw_if_index,
+                                VNET_HW_INTERFACE_FLAG_FULL_DUPLEX);
+ 
+-  /* not sure this is necessary */
++  /* TODO: not sure this is necessary */
+   vnet_hw_interface_set_rx_mode (vnm, hw_if_index, 0,
+                                  VNET_HW_INTERFACE_RX_MODE_POLLING);
+ 
+   dvpp_main.sw_if_index[port][pipe] = sw->sw_if_index;
+   dvpp_main.hw_if_index[port][pipe] = hw_if_index;
++  dvpp_main.sw2device[sw->sw_if_index].port_id = port;
++  dvpp_main.sw2device[sw->sw_if_index].pipe_id = pipe;
++  dvpp_main.sw2device[sw->sw_if_index].inject = 1;
++
++  dvpp_enable_kernel_inject(sw->sw_if_index, 1);
+   return 0;
+ }
+ 
+@@ -266,8 +272,9 @@ static int dvpp_create_control_thread (vlib_main_t *vm)
+                                 &cpuset);
+   if (ret != 0)
+     {
+-      vlib_log_err ("%s: Unable to set poller thread affinity: %s\n",
+-                    __FUNCTION__, strerror (errno));
++      vlib_log_err (dvpp_main.control_thread, "%s: Unable to set poller "
++                      "thread affinity: %s\n",
++                      __FUNCTION__, strerror (errno));
+       goto fail;
+     }
+ fail:
+@@ -450,7 +457,10 @@ VLIB_NODE_FN (dvpp_input_node)
+   u32 next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
+   u32 n_left_to_next, n_trace;
+   u32 *to_next = 0;
++#ifdef USE_PERF
+   u64 t1, t2, t3, t4, t5, t6, t10, t11, t12, t13;
++#endif
++  u32 thread = vlib_get_thread_index ();
+ 
+   if (dvpp_main.started == 0)
+     return 0;
+@@ -462,34 +472,43 @@ VLIB_NODE_FN (dvpp_input_node)
+ 
+   for (i = 0; i < DVPP_NUM_PORT; i++)
+     {
+-      port = (i + dvpp_main.port_rr) & (DVPP_NUM_PORT - 1);
++      port = (i + dvpp_main.thread_rr[thread].rr) & (DVPP_NUM_PORT - 1);
++
++      if (port_list.ports[port].enable == 0)
++        continue;
++
++      if (thread != default_worker_map[port])
++        continue;
+ 
+       sync.code = DVPP_VECTOR_SYNC_RECEIVE;
+       sync.port = port;
+-      sync.thread = vlib_get_thread_index ();
++      sync.thread = thread;
+       sync.size =
+           n_left_to_next > DVPP_BURST_SIZE ? DVPP_BURST_SIZE : n_left_to_next;
+       sync.pipe = 0; // Unused for Rx
+       sync.flow = 0; // Unused for Rx
+-
++#ifdef USE_PERF
+       t1 = clib_cpu_time_now ();
++#endif
+       cache = (volatile u32 *)&dvpp_main.maps->cache_level[sync.thread];
+       /* check cache level */
+       if (alloc == 0 && (*cache < DVPP_THRESHOLD_LOW))
+         {
+-
+           u32 num_alloc = vlib_buffer_alloc (
+               vm, dvpp_main.maps->maps[port].alloc_vector[sync.thread], 128);
+-
+           sync.alloc_size = num_alloc;
+         }
+       else
+         {
+           sync.alloc_size = 0;
+         }
++#ifdef USE_PERF
+       t2 = clib_cpu_time_now ();
++#endif
+       ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++#ifdef USE_PERF
+       t3 = clib_cpu_time_now ();
++#endif
+       if (ret > 0)
+         {
+           u32 *buffers_out = to_next;
+@@ -517,19 +536,19 @@ VLIB_NODE_FN (dvpp_input_node)
+                 }
+               b->current_length = rxb->seg.len;
+               b->current_data = rxb->seg.offset - sizeof (vlib_buffer_t);
+-
+               if (dvpp_main.input_verbose && ((log_count++ & 0xffff) == 0))
+                 {
+                   u8 *s = 0;
+                   vnet_main_t *vnm = vnet_get_main ();
+-                  u32 sw_idx =
+-                      dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read;
++                  u32 sw_idx = dvpp_main.sw_if_index[port][rxb->pipe_id];
++                  vnet_sw_interface_t *si = vnet_get_sw_interface (vnm, sw_idx);
++
+                   s = format (0, "%u%c", format_vnet_sw_interface_name, vnm,
+-                              sw_idx, 0);
++                              si, 0);
+                   char *a = (char *)b->data + b->current_data;
+                   vlib_log_notice (
+                       dvpp_main.logger,
+-                      "%s: %s rx %lu buffer_idx %d b %p data %p len %u "
++                      "%s: port %u %s num_rx %lu buffer_idx %d b %p data %p len %u "
+                       "left %u next_index %u rxoffset %u current_data %d "
+                       "pipe %u "
+                       " desc %lx %lx "
+@@ -537,7 +556,7 @@ VLIB_NODE_FN (dvpp_input_node)
+                       "%02x:%02x:%02x:%02x:%02x:%02x "
+                       " %02x:%02x:%02x:%02x:%02x:%02x %02x%02x %02x %02x "
+                       "%02x %02x %02x %02x\n",
+-                      __FUNCTION__, s,
++                      __FUNCTION__, port, s,
+                       dvpp_main.pipe_stats[port][rxb->pipe_id].num_pkt_read,
+                       buffer_idx, b, b->data, b->current_length,
+                       n_left_to_next, next_index, rxb->seg.offset,
+@@ -599,9 +618,9 @@ VLIB_NODE_FN (dvpp_input_node)
+             }
+           vlib_set_trace_count (vm, node, n_trace);
+         }
+-
++#ifdef USE_PERF
+       t4 = clib_cpu_time_now ();
+-
++#endif
+       cache = (volatile u32 *)&dvpp_main.maps->release_count[sync.thread];
+       if (*cache > 0)
+         {
+@@ -609,8 +628,9 @@ VLIB_NODE_FN (dvpp_input_node)
+               vm, dvpp_main.maps->maps[port].release_vector[sync.thread],
+               *cache);
+         }
++#ifdef USE_PERF
+       t5 = clib_cpu_time_now ();
+-
++#endif
+       // handle transmit
+       for (i = 0; i < DVPP_NUM_PIPE_PER_PORT; i++)
+         {
+@@ -623,12 +643,14 @@ VLIB_NODE_FN (dvpp_input_node)
+             continue;
+           if (n_pkts > DVPP_BURST_SIZE)
+             n_pkts = DVPP_BURST_SIZE;
+-
++#ifdef USE_PERF
+           t10 = clib_cpu_time_now ();
+-
++#endif
+           n = vnet_sched_port_dequeue (vm, port, i, 0, vector, n_pkts);
++#ifdef USE_PERF
+           t11 = clib_cpu_time_now ();
+           dvpp_main.time[5] += t11 - t10;
++#endif
+           dvpp_main.pipe_stats[port][i].num_dequeue_call++;
+           if (n >= 0)
+             {
+@@ -649,21 +671,26 @@ VLIB_NODE_FN (dvpp_input_node)
+               sync.port = port;
+               sync.pipe = i;
+               sync.flow = 0; // unused
+-              sync.thread = vlib_get_thread_index ();
++              sync.thread = thread;
+               sync.size = n_pkts;
+-
++#ifdef USE_PERF
+               t12 = clib_cpu_time_now ();
++#endif
+               ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++#ifdef USE_PERF
+               t13 = clib_cpu_time_now ();
++#endif
+               if (ret < 0)
+                 {
+                   vlib_log_warn (dvpp_main.logger, "%s: Fail to transmit %d packets, ret %d\n",
+                                  __FUNCTION__, n_pkts, ret);
+                 }
++#ifdef USE_PERF
+               dvpp_main.time[6] += t13 - t12;
++#endif
+             }
+         }
+-
++#ifdef USE_PERF
+       t6 = clib_cpu_time_now ();
+ 
+       dvpp_main.time[0] += t2 - t1;
+@@ -671,8 +698,8 @@ VLIB_NODE_FN (dvpp_input_node)
+       dvpp_main.time[2] += t4 - t3;
+       dvpp_main.time[3] += t5 - t4;
+       dvpp_main.time[4] += t6 - t5;
+-
+-      dvpp_main.port_rr = (port + 1) & (DVPP_NUM_PORT - 1);
++#endif
++      dvpp_main.thread_rr[thread].rr = (port + 1) & (DVPP_NUM_PORT - 1);
+ 
+       if (n_left_to_next == 0)
+         break;
+@@ -727,7 +754,6 @@ VLIB_REGISTER_NODE (dvpp_input_node) = {
+     .name = "dvpp-input",
+     .sibling_of = "device-input",
+ 
+-    /* Will be enabled if/when hardware is detected. */
+     .state = VLIB_NODE_STATE_DISABLED,
+     .format_buffer = format_ethernet_header_with_length,
+     .format_trace = format_dvpp_rx_trace,
+diff --git a/src/vnet/devices/dvpp/dvpp.h b/src/vnet/devices/dvpp/dvpp.h
+index 24d11f9d4..fb92cb8bc 100644
+--- a/src/vnet/devices/dvpp/dvpp.h
++++ b/src/vnet/devices/dvpp/dvpp.h
+@@ -2,20 +2,36 @@
+ #define included_dvpp_h
+ 
+ #include "interface.h"
++#include <vppinfra/cache.h>
++#define MAX_NUM_INTERFACE 256
++
++typedef struct {
++  union {
++    struct {
++      u32 num_pkt_read;
++      u32 rr;
++    };
++    char line[64];
++  };
++} dvpp_port_rr_t __attribute((aligned(64)));
+ 
+ typedef struct {
+     u32 num_pkt_read;
+-} dvpp_port_stat_t;
++    u32 num_pkt_written;
++    u32 num_pkt_dropped;
++    u32 num_pkt_queued;
++    u32 num_dequeue_call;
++    u32 num_dequeue_pkts;
++    u32 num_bad_dequeue;
++    u32 res;
++} dvpp_pipe_stat_t ;
+ 
+ typedef struct {
+-    u64 num_pkt_read;
+-    u64 num_pkt_written;
+-    u64 num_pkt_dropped;
+-    u64 num_pkt_queued;
+-    u64 num_dequeue_call;
+-    u64 num_dequeue_pkts;
+-    u64 num_bad_dequeue;
+-} dvpp_pipe_stat_t;
++  u8 port_id;
++  u8 pipe_id;
++  u8 inject;
++  u32 device_id;
++} dvpp_device_t;
+ 
+ typedef struct {
+   int dvpp_fd;
+@@ -28,18 +44,21 @@ typedef struct {
+   u32 input_verbose;
+   u32 sw_if_index[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
+   u32 hw_if_index[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
++  dvpp_device_t sw2device[MAX_NUM_INTERFACE]; /* TODO : makes this a vector */
+   struct dvpp_port_maps *maps;
+-  u32 port_rr; //round robin through ports
+-  dvpp_port_stat_t port_stats[DVPP_NUM_PORT];
++  CLIB_CACHE_LINE_ALIGN_MARK(cacheline0);
++  dvpp_port_rr_t thread_rr[DVPP_NUM_PORT];
++  CLIB_CACHE_LINE_ALIGN_MARK(cacheline1);
+   dvpp_pipe_stat_t pipe_stats[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
+   u64 time[8];
+   pthread_t control_thread;
+-} dvpp_main_t;
++} dvpp_main_t __attribute((aligned(64)));
+ 
+ extern dvpp_main_t dvpp_main;
+ 
+ extern vnet_device_class_t dvpp_device_class;
+ extern vlib_node_registration_t dvpp_input_node;
++extern vlib_node_registration_t dvpp_output_node;
+ 
+ extern int sched_getcpu(void);
+ extern int dvpp_get_memfd();
+@@ -49,7 +68,7 @@ extern clib_error_t * dvpp_buffer_init (vlib_main_t * vm, int fd);
+ 
+ 
+ extern uint64_t dvpp_mem_virt2phy(const void *virtaddr);
+-
++extern void dvpp_enable_kernel_inject(u32 sw_idx, u32 enable);
+ typedef struct
+ {
+   u32 sw_if_index;
+diff --git a/src/vnet/devices/dvpp/dvpp_local.c b/src/vnet/devices/dvpp/dvpp_local.c
+new file mode 100644
+index 000000000..d92291043
+--- /dev/null
++++ b/src/vnet/devices/dvpp/dvpp_local.c
+@@ -0,0 +1,174 @@
++#include <sys/ioctl.h>
++#include <vppinfra/cpu.h>
++#include <vnet/dpo/receive_dpo.h>
++
++#include "dvpp_sched.h"
++#include "dvpp.h"
++
++typedef struct
++{
++  u32 inject;
++  u32 rx_if;
++  u32 tx_if;
++
++  u32 rd_sw_if_index;
++} dvpp_kernel_inject_trace_t;
++
++u8 *format_dvpp_kernel_inject (u8 *s, va_list *va)
++{
++  CLIB_UNUSED (vlib_main_t * vm) = va_arg (*va, vlib_main_t *);
++  CLIB_UNUSED (vlib_node_t * node) = va_arg (*va, vlib_node_t *);
++  dvpp_kernel_inject_trace_t *t = va_arg (*va, dvpp_kernel_inject_trace_t *);
++
++  s = format (s, "inject %d rd_sw_if_index %u rx_if %d tx_if %d", t->inject,
++              t->rd_sw_if_index, t->rx_if, t->tx_if);
++  return s;
++}
++
++/*
++ * This node handles packets sent to local IP addresses, within the
++ * ip6-local arc.
++ *
++ * It looks through the packets and decides which one needs to be injected
++ * into Linux kernel.
++ * The remaining packets are handled by the local VPP stack.
++ */
++static uword dvpp_kernel_inject (vlib_main_t *vm, vlib_node_runtime_t *node,
++                                 vlib_frame_t *frame)
++{
++  u32 n_left_from, *from, *to_next;
++  u32 n_tx = 0;
++  n_left_from = frame->n_vectors;
++  from = vlib_frame_vector_args (frame);
++  u32 next_index = node->cached_next_index;
++
++  struct dvpp_vector_sync sync;
++
++  if (dvpp_main.started == 0)
++    {
++      return 0;
++    }
++  sync.thread = vlib_get_thread_index ();
++
++  /* Use port 0 for vector sync
++   * TODO: use a bcast/mgmt port?
++   */
++  dvpp_desc_t *vector = dvpp_main.maps->maps[0].tx_vector[sync.thread];
++
++  while (n_left_from > 0)
++    {
++      u32 inject;
++      u32 n_left_to_next;
++      vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
++
++      while (n_left_from > 0 && n_left_to_next > 0)
++        {
++          u32 rd_sw_if_index;
++          u32 bi;
++          vlib_buffer_t *b;
++          receive_dpo_t *dpo;
++          u32 rw_idx;
++
++          bi = from[0];
++          b = vlib_get_buffer (vm, bi);
++          rw_idx = vnet_buffer (b)->sw_if_index[VLIB_RX];
++          dpo = receive_dpo_get (vnet_buffer (b)->ip.adj_index[VLIB_TX]);
++
++          rd_sw_if_index = dpo->rd_sw_if_index;
++
++          /* Borrow logic from slowpath implementation in tgcfg plugin */
++          inject = (rd_sw_if_index == ~0 || dvpp_main.sw2device[rw_idx].inject);
++
++          if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
++            {
++              if (b->flags & VLIB_BUFFER_IS_TRACED)
++                {
++                  dvpp_kernel_inject_trace_t *t =
++                      vlib_add_trace (vm, node, b, sizeof (*t));
++                  t->rd_sw_if_index = rd_sw_if_index;
++                  t->tx_if = vnet_buffer (b)->sw_if_index[VLIB_TX];
++                  t->rx_if = rw_idx;
++                  t->inject = inject;
++                }
++            }
++
++          if (inject)
++            {
++              /* inject into kernel */
++              vector[n_tx].seg.index = bi;
++              vector[n_tx].seg.len = b->current_length;
++              vector[n_tx].seg.offset = sizeof(vlib_buffer_t) + b->current_data;
++              vector[n_tx].seg.eop = 1;
++
++              vector[n_tx].port_id =
++                  dvpp_main.sw2device[rw_idx].port_id;
++              vector[n_tx].pipe_id =
++                  dvpp_main.sw2device[rw_idx].pipe_id;
++
++              n_tx++;
++            }
++          else
++            {
++              /* push to next node */
++              to_next[0] = bi;
++              to_next += 1;
++              n_left_to_next -= 1;
++            }
++          n_left_from--;
++          from++;
++        }
++
++      vlib_put_next_frame (vm, node, next_index, n_left_to_next);
++    }
++
++  if (n_tx)
++    {
++      int ret, i;
++      sync.size = n_tx;
++      sync.code = DVPP_VECTOR_SYNC_INJECT;
++      sync.port = 0; // Unused for Inject
++      sync.pipe = 0; // Unused for Inject
++      sync.flow = 0; // Unused for Inject
++      ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_VECTOR_SYNC, &sync);
++      if (ret < 0)
++        {
++          vlib_log_err (dvpp_main.logger,
++                        "%s: cannot inject %d packets, "
++                        "%s\n",
++                        __FUNCTION__, n_tx, strerror (errno));
++        }
++      /* Release the buffers that were injected into kernel */
++      for (i = 0; i < n_tx; i++)
++        {
++          vlib_buffer_free_one (vm, vector[i].seg.index);
++        }
++    }
++
++  return frame->n_vectors;
++}
++
++void dvpp_enable_kernel_inject (u32 sw_idx, u32 enable)
++{
++  vnet_feature_enable_disable ("ip6-local", "dvpp-kernel-inject", sw_idx,
++                               enable, 0, 0);
++}
++
++/* *INDENT-OFF* */
++VLIB_REGISTER_NODE (dvpp_kernel_inject_node) = {
++    .function = dvpp_kernel_inject,
++    .name = "dvpp-kernel-inject",
++    .vector_size = sizeof (u32),
++    .format_trace = format_dvpp_kernel_inject,
++    .type = VLIB_NODE_TYPE_INTERNAL,
++    .n_errors = 0,
++    .error_strings = NULL,
++    .n_next_nodes = 0,
++};
++
++VNET_FEATURE_INIT (dvpp_kernel_inject, static) = {
++    .arc_name = "ip6-local",
++    .node_name = "dvpp-kernel-inject",
++    .runs_before = VNET_FEATURES ("ip6-local-end-of-arc"),
++};
++
++/* *INDENT-ON* */
+diff --git a/src/vnet/devices/dvpp/dvpp_sched.c b/src/vnet/devices/dvpp/dvpp_sched.c
+index 34ce74813..8f40db425 100644
+--- a/src/vnet/devices/dvpp/dvpp_sched.c
++++ b/src/vnet/devices/dvpp/dvpp_sched.c
+@@ -66,7 +66,7 @@ int vnet_sched_port_enqueue_locked (vlib_main_t *vm, u32 port_id, u32 pipe_id,
+       /* build descriptor */
+       desc.seg.index = *indexes;
+       desc.seg.len = b->current_length;
+-      desc.seg.offset = 256 + b->current_data;
++      desc.seg.offset = sizeof(vlib_buffer_t) + b->current_data;
+       desc.seg.eop = 1;
+       /* copy */
+       ring->ring[ring->enq & (VNET_SCHED_QUEUE_SIZE - 1)] = desc;
+diff --git a/src/vnet/devices/dvpp/dvpp_sched.h b/src/vnet/devices/dvpp/dvpp_sched.h
+index 6a92f1dca..ddd5e85e4 100644
+--- a/src/vnet/devices/dvpp/dvpp_sched.h
++++ b/src/vnet/devices/dvpp/dvpp_sched.h
+@@ -20,6 +20,7 @@
+ #define included_dvpp_sched_h
+ 
+ #include "interface.h"
++#include <vppinfra/cache.h>
+ 
+ #define VNET_SCHED_PIPES_PER_PORT 16
+ #define VNET_SCHED_FLOWS_PER_PIPE 16
+@@ -59,15 +60,17 @@ typedef struct
+ 
+ typedef struct
+ {
++  CLIB_CACHE_LINE_ALIGN_MARK(cacheline0);
+   u8 state;
+   clib_spinlock_t lock; // TODO: check if locking per pipe is faster
++  CLIB_CACHE_LINE_ALIGN_MARK(cacheline1);
+   vnet_sched_pipe_t pipes[VNET_SCHED_PIPES_PER_PORT];
+ } vnet_sched_port_t;
+ 
+ typedef struct
+ {
+   vnet_sched_port_t ports[VNET_SCHED_NUM_PORTS];
+-} vnet_sched_main_t;
++} vnet_sched_main_t  __attribute((aligned(64)));
+ 
+ extern vnet_sched_port_t *vnet_sched_port_config (vlib_main_t *vm);
+ extern int vnet_sched_port_enqueue_buf_locked (vlib_main_t *vm, u32 port_id,
+diff --git a/src/vnet/devices/dvpp/interface.h b/src/vnet/devices/dvpp/interface.h
+index 27c546f91..66c76c057 100644
+--- a/src/vnet/devices/dvpp/interface.h
++++ b/src/vnet/devices/dvpp/interface.h
+@@ -50,9 +50,10 @@ typedef struct
+   {
+     struct
+     {
++      u8 port_id;
+       u8 pipe_id;
+       u8 flow_id;
+-      u16 tmp1;
++      u8 tmp1;
+       u32 next;
+     } __attribute__ ((packed));
+     u64 data;
+@@ -87,8 +88,7 @@ static inline void dvpp_desc_clear (dvpp_desc_t *desc)
+ #define DVPP_VECTOR_SYNC_FREE 1
+ #define DVPP_VECTOR_SYNC_TRANSMIT 2
+ #define DVPP_VECTOR_SYNC_RECEIVE 3
+-#define DVPP_VECTOR_SYNC_TRANSMIT_LEGACY 4
+-
++#define DVPP_VECTOR_SYNC_INJECT 4
+ struct dvpp_vector_sync
+ {
+   u16 size;
+-- 
+2.24.1
+

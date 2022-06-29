@@ -1,0 +1,33 @@
+From 776a274378cae61e121011424f8f38699a38dbb2 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Mon, 1 Nov 2021 17:07:35 -0700
+Subject: [PATCH] dpaa2: use mac_filter_entries=1 when mac filter is disabled
+
+When the DPNI_OPT_NO_MAC_FILTER option is set, the DPNI attribute
+mac_filter_entries is 0. This causes crashes since the primary
+MAC address still needs to be stored, and the memory size
+allocated for this depends ont he value of mac_filter_entries.
+Patch the driver to set the value to 1 when this option is
+enabled and DPNI reports 0.
+---
+ drivers/net/dpaa2/mc/dpni.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/dpaa2/mc/dpni.c b/drivers/net/dpaa2/mc/dpni.c
+index e8c4a97ea6..73befa3213 100644
+--- a/drivers/net/dpaa2/mc/dpni.c
++++ b/drivers/net/dpaa2/mc/dpni.c
+@@ -599,6 +599,10 @@ int dpni_get_attributes(struct fsl_mc_io *mc_io,
+ 	attr->wriop_version = le16_to_cpu(rsp_params->wriop_version);
+ 	attr->num_cgs = rsp_params->num_cgs;
+ 
++	if (attr->mac_filter_entries == 0 &&
++	    (attr->options & DPNI_OPT_NO_MAC_FILTER))
++		attr->mac_filter_entries = 1;
++
+ 	return 0;
+ }
+ 
+-- 
+2.30.2
+

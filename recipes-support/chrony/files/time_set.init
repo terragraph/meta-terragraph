@@ -1,0 +1,17 @@
+#!/bin/sh
+
+case "$1" in
+  start)
+    # Check for oob namespace
+    if ip netns list | grep -wq oob; then
+      # Set time after uptime is 90 seconds (networking should be up)
+      ip netns exec oob /usr/sbin/time_set -u 90 &> /tmp/time_set.log &
+    fi
+    ;;
+  *)
+    echo "Usage: time_set { start }" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

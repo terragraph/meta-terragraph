@@ -1,0 +1,61 @@
+{
+  "envParams": {
+    "DPDK_ENABLED": "1",
+    "GPSD_BAUD_RATE": "115200",
+    "GPSD_DEVICE": "/dev/ttyS1",
+    "GPSD_ENABLED": "1",
+    "GPSD_GPS_MODULE": "Telit_SL869_T",
+    "GPSD_NMEA_TIME_OFFSET": "0.08",
+    "GPSD_PPS_DEVICE": "/dev/pps1",
+    "LED_AGENT_ENABLED": "1",
+    "LOGTAIL_ENABLED": "0",
+    "OPENR_IFACE_REGEX_INCLUDE": "terra.*",
+    "OPENR_USE_FIB_VPP": "1",
+    "SLIP_BAUD_RATE": "115200",
+    "SLIP_ENABLED": "1",
+    "SLIP_SERIAL_PORT": "/dev/ttyS2",
+    "VPP_COREDUMP_ENABLED": "1"
+  },
+  "fluentdParams": {
+    "sources": {
+      "fib_vpp": {
+        "enabled": true,
+        "filename": "/var/log/fib_vpp/current"
+      },
+      "vpp": {
+        "enabled": true,
+        "filename": "/var/log/vpp/current"
+      },
+      "vpp_vnet": {
+        "enabled": true,
+        "filename": "/var/log/vpp/vnet.log"
+      }
+    }
+  },
+  "logTailParams": {
+    "sources": {
+      "terragraph_fib_vpp_logs": {
+        "enabled": true,
+        "filename": "/var/log/fib_vpp/current"
+      },
+      "terragraph_vpp_logs": {
+        "enabled": true,
+        "filename": "/var/log/vpp/current"
+      },
+      "terragraph_vpp_vnet_logs": {
+        "enabled": true,
+        "filename": "/var/log/vpp/vnet.log"
+      }
+    }
+  },
+  "sysParams": {
+    "allowFactoryCA": true,
+    "sshTrustedUserCAKeys": {
+      "partners-CA": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPPqTjK93+hI8tpXOOf5ZT30lJyDfwOGjK7leut9kLCT CA for Terragraph Partners"
+    }
+  },
+  "timingParams": {
+    "PTP_DEVICE": "/dev/ptp0",
+    "PTP_TIMER_SOURCE": "GPS"
+  }
+}

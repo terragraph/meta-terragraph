@@ -1,0 +1,294 @@
+From 667098a7c586dba2b57abbe647d8e769f24600db Mon Sep 17 00:00:00 2001
+From: Linzhe Li <linzheli@fb.com>
+Date: Wed, 11 Aug 2021 18:16:11 -0700
+Subject: [PATCH] Redirect 802.1x authentication frame
+
+---
+ src/vnet/ethernet/ethernet.h |  10 ++++
+ src/vnet/ethernet/node.c     | 101 ++++++++++++++++++++++++++++++-----
+ src/vnet/interface_cli.c     |  53 +++++++++++++++++-
+ 3 files changed, 150 insertions(+), 14 deletions(-)
+
+diff --git a/src/vnet/ethernet/ethernet.h b/src/vnet/ethernet/ethernet.h
+index d22da7461..3da989dcd 100644
+--- a/src/vnet/ethernet/ethernet.h
++++ b/src/vnet/ethernet/ethernet.h
+@@ -310,6 +310,12 @@ typedef struct ethernet_main_t_
+   u32 redirect_l3;
+   u32 redirect_l3_next;
+ 
++  /* Terragraph: Interface bitmap and next node index for 802.1x redirection. */
++  uword *wired_802_1x_if_bitmap;
++  u32 wired_802_1x_next;
++  uword *wireless_802_1x_if_bitmap;
++  u32 wireless_802_1x_next;
++
+   /* Pool of ethernet interface instances. */
+   ethernet_interface_t *interfaces;
+ 
+@@ -390,6 +396,10 @@ void ethernet_register_l3_redirect (vlib_main_t * vm, u32 node_index);
+  */
+ void ethernet_register_l2_redirect (vlib_main_t * vm, u32 node_index, u32 sw_if_index, u32 enable);
+ 
++/* Register given node index to take redirected 802.1x frames, specifying wired
++ * or non-wired interface */
++void ethernet_register_802_1x_redirect (vlib_main_t * vm, u32 node_index, u32 sw_if_index, u32 is_wired);
++
+ /* Formats ethernet address X:X:X:X:X:X */
+ u8 *format_mac_address (u8 * s, va_list * args);
+ u8 *format_ethernet_address (u8 * s, va_list * args);
+diff --git a/src/vnet/ethernet/node.c b/src/vnet/ethernet/node.c
+index 87ae12ffc..5566b3ae4 100644
+--- a/src/vnet/ethernet/node.c
++++ b/src/vnet/ethernet/node.c
+@@ -98,6 +98,19 @@ typedef enum
+   ETHERNET_INPUT_VARIANT_NOT_L2,
+ } ethernet_input_variant_t;
+ 
++static_always_inline u32
++get_redirect_802_1x_next (u32 sw_if_index)
++{
++  ethernet_main_t *em = &ethernet_main;
++
++  if (clib_bitmap_get (em->wired_802_1x_if_bitmap, sw_if_index))
++    return em->wired_802_1x_next;
++
++  if (clib_bitmap_get (em->wireless_802_1x_if_bitmap, sw_if_index))
++    return em->wireless_802_1x_next;
++
++  return ETHERNET_INPUT_NEXT_PUNT;
++}
+ 
+ // Parse the ethernet header to extract vlan tags and innermost ethertype
+ static_always_inline void
+@@ -258,7 +271,7 @@ determine_next_node (ethernet_main_t * em,
+ 		     ethernet_input_variant_t variant,
+ 		     u32 is_l20,
+ 		     u32 type0, vlib_buffer_t * b0, u8 * error0, u8 * next0,
+-		     u32 ei_flags)
++		     u32 ei_flags, u32 sw_if_index)
+ {
+   vnet_buffer (b0)->l3_hdr_offset = b0->current_data;
+   b0->flags |= VNET_BUFFER_F_L3_HDR_OFFSET_VALID;
+@@ -299,6 +312,12 @@ determine_next_node (ethernet_main_t * em,
+       *next0 = em->l3_next.input_next_mpls;
+ 
+     }
++  else if (type0 == ETHERNET_TYPE_802_1X_AUTHENTICATION)
++    {
++      *next0 = get_redirect_802_1x_next (sw_if_index);
++      if (*next0 == ETHERNET_INPUT_NEXT_PUNT)
++	*error0 = ETHERNET_ERROR_UNKNOWN_TYPE;
++    }
+   else if (em->redirect_l3)
+     {
+       // L3 Redirect is on, the cached common next nodes will be
+@@ -601,14 +620,15 @@ eth_input_tag_lookup (vlib_main_t * vm, vnet_main_t * vnm,
+ 	l->next = em->l3_next.input_next_ip6;
+       else if (l->type == ETHERNET_TYPE_MPLS)
+ 	l->next = em->l3_next.input_next_mpls;
++      else if (l->type == ETHERNET_TYPE_802_1X_AUTHENTICATION)
++	l->next = get_redirect_802_1x_next (l->sw_if_index);
+       else if (em->redirect_l3)
+ 	l->next = em->redirect_l3_next;
+       else
+-	{
+-	  l->next = eth_input_next_by_type (l->type);
+-	  if (l->next == ETHERNET_INPUT_NEXT_PUNT)
+-	    l->err = ETHERNET_ERROR_UNKNOWN_TYPE;
+-	}
++	l->next = eth_input_next_by_type (l->type);
++
++      if (l->next == ETHERNET_INPUT_NEXT_PUNT)
++	l->err = ETHERNET_ERROR_UNKNOWN_TYPE;
+     }
+ 
+   if (check_dmac && l->adv > 0 && dmac_bad)
+@@ -1081,7 +1101,10 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 		{
+ 		  last_unknown_etype = etype;
+ 		  etype = clib_host_to_net_u16 (etype);
+-		  last_unknown_next = eth_input_next_by_type (etype);
++		  if (etype == ETHERNET_TYPE_802_1X_AUTHENTICATION)
++		    last_unknown_next = get_redirect_802_1x_next (hi->sw_if_index);
++		  else
++		    last_unknown_next = eth_input_next_by_type (etype);
+ 		}
+ 	      if (dmac_check && main_is_l3 && dmacs_bad[i])
+ 		{
+@@ -1392,10 +1415,12 @@ ethernet_input_inline (vlib_main_t * vm,
+ 		skip_dmac_check01:
+ 		  vlib_buffer_advance (b0, sizeof (ethernet_header_t));
+ 		  determine_next_node (em, variant, 0, type0, b0,
+-				       &error0, &next0, ei->flags);
++				       &error0, &next0, ei->flags,
++				       hi->sw_if_index);
+ 		  vlib_buffer_advance (b1, sizeof (ethernet_header_t));
+ 		  determine_next_node (em, variant, 0, type1, b1,
+-				       &error1, &next1, ei->flags);
++				       &error1, &next1, ei->flags,
++				       hi->sw_if_index);
+ 		}
+ 	      goto ship_it01;
+ 	    }
+@@ -1523,9 +1548,9 @@ ethernet_input_inline (vlib_main_t * vm,
+ 	  hi1 = vnet_get_sup_hw_interface (vnm, old_sw_if_index1);
+ 	  ei1 = pool_elt_at_index (em->interfaces, hi1->hw_instance);
+ 	  determine_next_node (em, variant, is_l20, type0, b0, &error0,
+-			       &next0, ei0->flags);
++			       &next0, ei0->flags, hi0->sw_if_index);
+ 	  determine_next_node (em, variant, is_l21, type1, b1, &error1,
+-			       &next1, ei1->flags);
++			       &next1, ei1->flags, hi1->sw_if_index);
+ 
+ 	ship_it01:
+ 	  b0->error = error_node->errors[error0];
+@@ -1638,7 +1663,8 @@ ethernet_input_inline (vlib_main_t * vm,
+ 		skip_dmac_check0:
+ 		  vlib_buffer_advance (b0, sizeof (ethernet_header_t));
+ 		  determine_next_node (em, variant, 0, type0, b0,
+-				       &error0, &next0, ei->flags);
++				       &error0, &next0, ei->flags,
++				       hi->sw_if_index);
+ 		}
+ 	      goto ship_it0;
+ 	    }
+@@ -1723,7 +1749,7 @@ ethernet_input_inline (vlib_main_t * vm,
+ 	  hi0 = vnet_get_sup_hw_interface (vnm, old_sw_if_index0);
+ 	  ei0 = pool_elt_at_index (em->interfaces, hi0->hw_instance);
+ 	  determine_next_node (em, variant, is_l20, type0, b0, &error0,
+-			       &next0, ei0->flags);
++			       &next0, ei0->flags, hi0->sw_if_index);
+ 
+ 	ship_it0:
+ 	  b0->error = error_node->errors[error0];
+@@ -2434,6 +2460,55 @@ ethernet_register_l2_redirect (vlib_main_t * vm, u32 node_index, u32 sw_if_index
+   vlib_cli_output(vm, "L2 redirect %s for SW IF %u", enable ? "enabled" : "disabled", sw_if_index);
+ }
+ 
++void
++ethernet_register_802_1x_redirect (vlib_main_t * vm, u32 node_index,
++                                   u32 sw_if_index, u32 is_wired)
++{
++  ethernet_main_t *em = &ethernet_main;
++  u32 i;
++
++  if (is_wired)
++    {
++      if (clib_bitmap_is_zero (em->wired_802_1x_if_bitmap))
++        {
++          em->wired_802_1x_next =
++            vlib_node_add_next (vm, ethernet_input_node.index, node_index);
++
++          /*
++           * Even if we never use these arcs, we have to align the next indices...
++           */
++          i = vlib_node_add_next (vm, ethernet_input_type_node.index, node_index);
++          ASSERT (i == em->wired_802_1x_next);
++
++          i = vlib_node_add_next (vm, ethernet_input_not_l2_node.index, node_index);
++          ASSERT (i == em->wired_802_1x_next);
++       }
++
++      em->wired_802_1x_if_bitmap =
++        clib_bitmap_set (em->wired_802_1x_if_bitmap, sw_if_index, 1);
++    }
++  else
++    {
++      if (clib_bitmap_is_zero (em->wireless_802_1x_if_bitmap))
++        {
++          em->wireless_802_1x_next =
++            vlib_node_add_next (vm, ethernet_input_node.index, node_index);
++
++          /*
++           * Even if we never use these arcs, we have to align the next indices...
++           */
++          i = vlib_node_add_next (vm, ethernet_input_type_node.index, node_index);
++          ASSERT (i == em->wireless_802_1x_next);
++
++          i = vlib_node_add_next (vm, ethernet_input_not_l2_node.index, node_index);
++          ASSERT (i == em->wireless_802_1x_next);
++       }
++
++      em->wireless_802_1x_if_bitmap =
++        clib_bitmap_set (em->wireless_802_1x_if_bitmap, sw_if_index, 1);
++    }
++}
++
+ #endif
+ 
+ /*
+diff --git a/src/vnet/interface_cli.c b/src/vnet/interface_cli.c
+index 67bfbfdb5..35116906c 100644
+--- a/src/vnet/interface_cli.c
++++ b/src/vnet/interface_cli.c
+@@ -1106,7 +1106,8 @@ promiscuous_cmd (vlib_main_t * vm,
+ 
+   eif = ethernet_get_interface (em, hw_if_index);
+   if (!eif)
+-    return clib_error_return (0, "not supported");
++    return clib_error_return (0, "unknown interface `%U'",
++			      format_unformat_error, input);
+ 
+   ethernet_set_promisc_mode_flag (vnm, hw_if_index, enable);
+   return 0;
+@@ -1120,6 +1121,56 @@ VLIB_CLI_COMMAND (set_interface_promiscuous_cmd, static) = {
+ };
+ /* *INDENT-ON* */
+ 
++static clib_error_t *
++eapol_only_cmd (vlib_main_t * vm, unformat_input_t * input,
++                vlib_cli_command_t * cmd)
++{
++  vnet_main_t *vnm = vnet_get_main ();
++  u32 hw_if_index;
++  u32 enable = 1;
++  ethernet_main_t *em = &ethernet_main;
++  ethernet_interface_t *eif;
++
++  if (unformat (input, "on %U", unformat_vnet_hw_interface, vnm, &hw_if_index))
++    ;
++  else if (unformat (input, "off %U",
++                     unformat_ethernet_interface, vnm, &hw_if_index))
++    enable = 0;
++  else
++    return clib_error_return (0, "unknown input `%U'",
++                              format_unformat_error, input);
++
++  eif = ethernet_get_interface (em, hw_if_index);
++  if (!eif)
++    return clib_error_return (0, "unknown interface `%U'",
++                              format_unformat_error, input);
++
++  ethernet_set_eapol_only_flag (vnm, hw_if_index, enable);
++  return 0;
++}
++
++/*?
++ * This command is used to change the EAPOL-only mode (on/off) of an interface.
++ *
++ * EAPOL-only mode is normally applied to unauthenticated interface. If EAPOL-only
++ * mode of an interface is turned on, this interface will only allow EAPOL frames
++ * passing through and drop all non-EAPOL frames. EAPOL-only mode should be turned
++ * off once authentication success.
++ *
++ * @cliexpar
++ * Example of how to turn EAPOL-only mode of an interface to '<em>on</em>':
++ * @cliexcmd{set interface eapol-only on GigabitEthernet2/0/0}
++ * Example of how to turn EAPOL-only mode of an interface to '<em>off</em>':
++ * @cliexcmd{set interface eapol-only off GigabitEthernet2/0/0}
++ ?*/
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (set_interface_eapol_only_cmd, static) = {
++  .path = "set interface eapol-only",
++  .short_help = "set interface eapol-only [on|off] <interface>",
++  .function = eapol_only_cmd,
++};
++/* *INDENT-ON* */
++
+ static clib_error_t *
+ mtu_cmd (vlib_main_t * vm, unformat_input_t * input, vlib_cli_command_t * cmd)
+ {
+-- 
+2.30.2
+

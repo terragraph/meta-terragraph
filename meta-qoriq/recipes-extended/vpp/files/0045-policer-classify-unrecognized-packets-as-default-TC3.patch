@@ -1,0 +1,90 @@
+From c0c5faea8075a4ab271fe0260cc0c019ec096f11 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 23 Dec 2021 13:47:04 -0800
+Subject: [PATCH] policer: classify unrecognized packets as default TC3 green
+
+---
+ src/vnet/policer/node_funcs.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/src/vnet/policer/node_funcs.c b/src/vnet/policer/node_funcs.c
+index fd7f197e9..669e5ac25 100644
+--- a/src/vnet/policer/node_funcs.c
++++ b/src/vnet/policer/node_funcs.c
+@@ -66,6 +66,13 @@ static char *vnet_policer_error_strings[] = {
+ #undef _
+ };
+ 
++/* Terragraph: Try to have policer classify packets as TC3 green if initial
++ * classification fails from unknown DSCP. Use a default data segment that
++ * matches the expected policer mask and key for TC3 green (AF11) to do this.
++ * TODO: Make this configurable? */
++static u8 policer_classify_default_data[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
++                                             0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
++                                             0x0, 0x0, 0x2, 0x80};
+ static inline uword
+ vnet_policer_inline (vlib_main_t * vm,
+ 		     vlib_node_runtime_t * node,
+@@ -493,6 +500,7 @@ format_policer_classify_trace (u8 * s, va_list * args)
+ _(MISS, "Policer classify misses")                     \
+ _(HIT, "Policer classify hits")                        \
+ _(CHAIN_HIT, "Policer classify hits after chain walk") \
++_(UNKNOWN, "Packets using policer default classification data") \
+ _(DROP, "Policer classify action drop")
+ 
+ typedef enum
+@@ -523,6 +531,7 @@ policer_classify_inline (vlib_main_t * vm,
+   u32 hits = 0;
+   u32 misses = 0;
+   u32 chain_hits = 0;
++  u32 unknowns = 0;
+   u32 n_next_nodes;
+   u64 time_in_policer_periods;
+ 
+@@ -645,6 +654,7 @@ policer_classify_inline (vlib_main_t * vm,
+ 	  u64 hash0;
+ 	  u8 *h0;
+ 	  u8 act0;
++	  u8 tried_default = 0;
+ 
+ 	  /* Stride 3 seems to work best */
+ 	  if (PREDICT_TRUE (n_left_from > 3))
+@@ -695,6 +705,7 @@ policer_classify_inline (vlib_main_t * vm,
+ 	    {
+ 	      hash0 = vnet_buffer (b0)->l2_classify.hash;
+ 	      t0 = pool_elt_at_index (vcm->tables, table_index0);
++start_search:
+ 	      e0 = vnet_classify_find_entry (t0, (u8 *) h0, hash0, now);
+ 
+ 	      if (e0)
+@@ -720,6 +731,18 @@ policer_classify_inline (vlib_main_t * vm,
+ 			  t0 = pool_elt_at_index (vcm->tables,
+ 						  t0->next_table_index);
+ 			}
++		      else if (!tried_default)
++			{
++			  /* If initial policer classification misses, try
++			   * classifying with a default data section before
++			   * giving up. */
++			  h0 = policer_classify_default_data;
++			  t0 = pool_elt_at_index (vcm->tables, table_index0);
++			  hash0 = vnet_classify_hash_packet (t0, h0);
++			  tried_default = 1;
++			  unknowns++;
++			  goto start_search;
++			}
+ 		      else
+ 			{
+ 			  next0 = (t0->miss_next_index < n_next_nodes) ?
+@@ -777,6 +800,8 @@ policer_classify_inline (vlib_main_t * vm,
+ 			       POLICER_CLASSIFY_ERROR_HIT, hits);
+   vlib_node_increment_counter (vm, node->node_index,
+ 			       POLICER_CLASSIFY_ERROR_CHAIN_HIT, chain_hits);
++  vlib_node_increment_counter (vm, node->node_index,
++			       POLICER_CLASSIFY_ERROR_UNKNOWN, unknowns);
+ 
+   return frame->n_vectors;
+ }
+-- 
+2.30.2
+

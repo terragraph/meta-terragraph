@@ -1,0 +1,28 @@
+From 8b6bb03f1f8919e506a221277fa4ae57c79e7049 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Fri, 18 Oct 2019 13:19:59 -0700
+Subject: [PATCH] Add support for absolute stats
+
+---
+ app/pktgen-stats.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/app/pktgen-stats.c b/app/pktgen-stats.c
+index 575c86d..3055e7c 100644
+--- a/app/pktgen-stats.c
++++ b/app/pktgen-stats.c
+@@ -726,7 +726,10 @@ _xstats_display(uint16_t port_id)
+     for (idx_xstat = 0; idx_xstat < info->cnt; idx_xstat++) {
+         uint64_t value;
+ 
+-        value = info->xstats[idx_xstat].value - info->prev[idx_xstat].value;
++        if (strstr(info->names[idx_xstat].name, "_nonmon") == NULL)
++            value = info->xstats[idx_xstat].value - info->prev[idx_xstat].value;
++        else
++            value = info->xstats[idx_xstat].value;
+         if (info->xstats[idx_xstat].value || value) {
+             if (idx == 0) {
+                 pktgen_display_set_color("stats.port.data");
+-- 
+2.30.2
+

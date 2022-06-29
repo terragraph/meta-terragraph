@@ -1,0 +1,3 @@
+#!/bin/sh
+
+sv restart host_manager_11ad

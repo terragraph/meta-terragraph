@@ -1,0 +1,50 @@
+From eeded66e7b2d5e16bfffb0b60c3449962abd63e2 Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Mon, 10 Aug 2020 22:45:18 -0700
+Subject: [PATCH] Add VAPI kernel tap MAC address
+
+---
+ src/vnet/unix/tap.api   | 2 ++
+ src/vnet/unix/tap_api.c | 5 ++++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/vnet/unix/tap.api b/src/vnet/unix/tap.api
+index 00a1d08ac..f478d3017 100644
+--- a/src/vnet/unix/tap.api
++++ b/src/vnet/unix/tap.api
+@@ -27,6 +27,7 @@ option version = "1.0.0";
+     @param use_random_mac - let the system generate a unique mac address
+     @param tap_name - name to associate with the new interface
+     @param mac_address - mac addr to assign to the interface if use_random not set
++    @param kernel_mac_address - mac addr to assign to kernel tap interface
+ */
+ define tap_connect
+ {
+@@ -35,6 +36,7 @@ define tap_connect
+   u8 use_random_mac;
+   u8 tap_name[64];
+   u8 mac_address[6];
++  u8 kernel_mac_address[6];
+   u8 renumber;
+   u32 custom_dev_instance;
+   u8 ip4_address_set;
+diff --git a/src/vnet/unix/tap_api.c b/src/vnet/unix/tap_api.c
+index e180973d7..a3c76eabd 100644
+--- a/src/vnet/unix/tap_api.c
++++ b/src/vnet/unix/tap_api.c
+@@ -89,8 +89,11 @@ vl_api_tap_connect_t_handler (vl_api_tap_connect_t * mp)
+   clib_memset (ap, 0, sizeof (*ap));
+ 
+   ap->intfc_name = mp->tap_name;
+-  if (!mp->use_random_mac)
++  if (!mp->use_random_mac) {
+     ap->hwaddr_arg = mp->mac_address;
++    ap->intfc_hwaddr_arg = mp->kernel_mac_address;
++  }
++
+   ap->renumber = mp->renumber;
+   ap->sw_if_indexp = &sw_if_index;
+   ap->custom_dev_instance = ntohl (mp->custom_dev_instance);
+-- 
+2.30.2
+

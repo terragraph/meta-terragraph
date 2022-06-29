@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+# Default config params
+ROUTE_TO_VPP_LOG="/var/log/linux_route_to_vpp.log"
+
+while [ : ]; do
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  # check if Open/R is enabled
+  if [ "${OPENR_ENABLED:-0}" -ne "1" ]; then
+    echo "Open/R is not enabled"
+    sleep ${DELAY}
+    continue
+  fi
+
+  # check if dpdk is enabled
+  if [ "${DPDK_ENABLED:-0}" -ne "1" ]; then
+    echo "dpdk is not enabled"
+    sleep ${DELAY}
+    continue
+  fi
+
+  # start Fib w/ VPP for Open/R (openr)
+  if [ "${OPENR_USE_FIB_VPP:-0}" -ne "1" ]; then
+    echo "fib-vpp is not enabled"
+    sleep ${DELAY}
+    continue
+  fi
+
+  echo "Running config_pop.sh..."
+  . /usr/sbin/config_pop.sh &
+
+  exec /usr/sbin/fib_vpp -v 1 -logtostderr 2>&1
+done

@@ -1,0 +1,596 @@
+From caed1c02965476769c74233b2d1954a1d9f576c3 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Sun, 5 Jul 2020 17:43:39 -0700
+Subject: [PATCH] Add API to configure port to thread mapping
+
+---
+ src/vnet/devices/dvpp/cli.c       | 235 +++++++++++++++++++++++++++++-
+ src/vnet/devices/dvpp/dvpp.c      |  69 ++++-----
+ src/vnet/devices/dvpp/dvpp.h      |  22 ++-
+ src/vnet/devices/dvpp/interface.h |  28 ++--
+ 4 files changed, 290 insertions(+), 64 deletions(-)
+
+diff --git a/src/vnet/devices/dvpp/cli.c b/src/vnet/devices/dvpp/cli.c
+index cf57f1ec0..1e652314e 100644
+--- a/src/vnet/devices/dvpp/cli.c
++++ b/src/vnet/devices/dvpp/cli.c
+@@ -6,7 +6,89 @@
+ #include <vlib/unix/unix.h>
+ #include <vnet/ethernet/ethernet.h>
+ 
++#include "dvpp_sched.h"
+ #include "dvpp.h"
++extern u32 default_worker_map[DVPP_NUM_PORT];
++extern struct dvpp_port_list port_list;
++
++/* TODO: obtain that from arch:
++ * 	asm volatile("mrs %0, cntfrq_el0" : "=r" (freq));
++ */
++#define DVPP_CLOCK_TO_NANO 40
++
++static clib_error_t *set_cpu_port_fn (vlib_main_t *vm,
++                                         unformat_input_t *input,
++                                         vlib_cli_command_t *cmd)
++{
++  clib_error_t *error = NULL;
++  u32 port = 0;
++  u32 cpu = 0;
++  int ret = 0, i, pipe;
++  struct dvpp_thread_map tmap;
++  vnet_main_t *vnm = vnet_get_main ();
++
++  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (input, "port %u", &port))
++        ;
++      else if (unformat (input, "cpu %u", &cpu))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, input);
++          goto done;
++        }
++    }
++
++  if (port >= DVPP_NUM_PORT)
++    {
++      error = clib_error_return (0, "Support only %u ports\n", DVPP_NUM_PORT);
++      goto done;
++    }
++
++  if (cpu != 2 && cpu != 3)
++    {
++      error = clib_error_return (0, "Support only cpu 2 and 3\n");
++      goto done;
++    }
++
++  vlib_cli_output (vm, "set port %u cpu %u\n", port, cpu);
++
++ default_worker_map[port] = -1;
++
++  /* TODO: this is propably not thread safe, needto unassign first? */
++  for (pipe = 0; pipe < DVPP_NUM_PIPE_PER_PORT; pipe++)
++    {
++      int hw_if_index = dvpp_main.hw_if_index[port][pipe];
++      vnet_hw_interface_assign_rx_thread (vnm, hw_if_index, 0 /* queue */,
++                                           cpu /* worker */);
++    }
++  default_worker_map[port] = cpu;
++
++  for (i = 0; i < DVPP_NUM_PORT; i++)
++    tmap.thread[i] = default_worker_map[i];
++  ret = ioctl (dvpp_main.dvpp_fd, DVPP_IOCTL_THREAD_MAP, &tmap);
++  if (ret < 0)
++    {
++      vlib_log_err (dvpp_main.logger,
++                    "%s: Error configuring thread map %d, %s...", __FUNCTION__,
++                    ret, strerror (errno));
++    }
++
++done:
++
++  return error;
++}
++
++/* *INDENT-OFF* */
++VLIB_CLI_COMMAND (set_cpu_port_command, static) = {
++    .path = "dvpp assign",
++    .short_help = "assign port <port> cpu <cpu>",
++    .function = set_cpu_port_fn,
++};
++/* *INDENT-ON* */
++
+ 
+ static clib_error_t *show_rings_command_fn (vlib_main_t *vm,
+                                             unformat_input_t *input,
+@@ -48,6 +130,10 @@ VLIB_CLI_COMMAND (show_rings_command, static) = {
+ };
+ /* *INDENT-ON* */
+ 
++
++dvpp_port_stat_t ext_port_stats[DVPP_NUM_PORT] = {};
++
++static u64 last_stat_print = 0;
+ static clib_error_t *show_stats_command_fn (vlib_main_t *vm,
+                                             unformat_input_t *input,
+                                             vlib_cli_command_t *cmd)
+@@ -55,14 +141,22 @@ static clib_error_t *show_stats_command_fn (vlib_main_t *vm,
+   clib_error_t *error = NULL;
+   dvpp_main_t *dvpp = &dvpp_main;
+   int verbose = 0;
+-  int i, j;
++  int noprint = 0;
++  int i, j, port;
++  u64 now, diff;
+ 
++  dvpp_port_stat_t total = {};
++  dvpp_port_stat_t port_stats[DVPP_NUM_PORT];
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+     {
+       if (unformat (input, "verbose"))
+         {
+           verbose = 1;
+         }
++      else if (unformat (input, "noprint"))
++        {
++          noprint = 1;
++        }
+       else
+         {
+           error = clib_error_return (0, "parse error: '%U'",
+@@ -71,11 +165,136 @@ static clib_error_t *show_stats_command_fn (vlib_main_t *vm,
+         }
+     }
+ 
++
++    /*
++     * Assume sizeof(dvpp_port_stat_t) is 32 bytes, so as to quickly read/clear
++     * first counters of the port stat.
++     * The goal is to Read-Clear the port stats in an "almost" atomic way, so as to not
++     * rely on scraping stats across threads with thread barriers.
++     */
++
++    for (port = 0; port < DVPP_NUM_PORT; port++)
++      {
++        /* Read-Clear the port stats */
++        /* TODO: ARMv8: tell assembler to trigger ldp/stp */
++
++        port_stats[port].data[0] = dvpp_main.port_stats[port].data[0];
++        dvpp_main.port_stats[port].data[0] = 0;
++        port_stats[port].data[1] = dvpp_main.port_stats[port].data[1];
++        dvpp_main.port_stats[port].data[1] = 0;
++        port_stats[port].data[2] = dvpp_main.port_stats[port].data[2];
++        dvpp_main.port_stats[port].data[2] = 0;
++        port_stats[port].data[3] = dvpp_main.port_stats[port].data[3];
++        dvpp_main.port_stats[port].data[3] = 0;
++      }
++
++  now = clib_cpu_time_now() * DVPP_CLOCK_TO_NANO;
++  diff = now - last_stat_print;
++  last_stat_print = now;
++
++  if (noprint) {
++    return NULL;
++  }
++
++  vlib_cli_output (vm, "\n\033[0;34mDVPP Stats Time Span %u nano (%8.3f seconds)\033[0m\n", diff, (float)diff/1e9);
++
++  vlib_cli_output (vm, "%s%s%s%s%s%s%s%s%s\n",
++          "Port  ",
++          "    Tx      ",
++          "    Rx      ",
++          "    RxAsk   ",
++          "   Fill%    ",
++          "   PerCall  ",
++          "   RxLow    ",
++          "   Alloc    ",
++          "   Release  "
++          );
++
++  /* Output port stats */
++  for (port = 0; port < DVPP_NUM_PORT; port++)
++    {
++      if (!port_list.ports[port].enable)
++        continue;
++      double r1 = 0, r2 = 0;
++      u8 * s = 0;
++      s = format(s, "%2u:   ", port);
++      if (port_stats[port].num_rx_pkts_asked)
++        {
++          r1 = 100.0 * (double)(port_stats[port].num_rx_pkts)
++                    / (double)port_stats[port].num_rx_pkts_asked;
++        }
++      if (port_stats[port].num_rx_calls)
++        {
++          r2 = (double)(port_stats[port].num_rx_pkts)
++                    / (double)port_stats[port].num_rx_calls;
++        }
++      s = format(s, " %11u", port_stats[port].num_tx_pkts);
++      s = format(s, " %11u", port_stats[port].num_rx_pkts);
++      s = format(s, " %11u %11.3f %11.3f",
++          port_stats[port].num_rx_pkts_asked, r1, r2);
++      s = format(s, " %11u", port_stats[port].num_rx_low);
++      s = format(s, " %11u", port_stats[port].num_alloc);
++      s = format(s, " %11u", port_stats[port].num_release);
++      vlib_cli_output (vm, "%v", s);
++      vec_free(s);
++      total.num_rx_pkts += port_stats[port].num_rx_pkts;
++      total.num_tx_pkts += port_stats[port].num_tx_pkts;
++      total.num_rx_calls += port_stats[port].num_rx_calls;
++      total.num_rx_pkts_asked += port_stats[port].num_rx_pkts_asked;
++      total.num_tx_pkts_asked += port_stats[port].num_tx_pkts_asked;
++      total.num_rx_low += port_stats[port].num_rx_low;
++      total.num_alloc += port_stats[port].num_alloc;
++      total.num_release += port_stats[port].num_release;
++    }
++
++    {
++      /* Print total stats */
++      double r1 = 0, r2 = 0;
++      u8 * s = 0;
++      s = format(s, "%s", "Total ");
++      if (total.num_rx_pkts_asked)
++        {
++          r1 = 100.0 * (double)(total.num_rx_pkts)
++                    / (double)total.num_rx_pkts_asked;
++        }
++      if (total.num_rx_calls)
++        {
++          r2 = (double)(total.num_rx_pkts)
++                    / (double)total.num_rx_calls;
++        }
++      s = format(s, " %11u", total.num_tx_pkts);
++      s = format(s, " %11u", total.num_rx_pkts);
++      s = format(s, " %11u %11.3f %11.3f",
++          total.num_rx_pkts_asked, r1, r2);
++      s = format(s, " %11u", total.num_rx_low);
++      s = format(s, " %11u", total.num_alloc);
++      s = format(s, " %11u", total.num_release);
++      vlib_cli_output (vm, "%v\n\n", s);
++      vec_free(s);
++    }
++
++    vlib_cli_output (vm, "%s%s%s%s%s%s%s%s%s\n",
++          "Pipe  ",
++          "    Tx      ",
++          "    Rx      ",
++          "   Queued   ",
++          "   Dropped  ",
++          "   DeqCall  ",
++          "   DeqPkts  ",
++          "   BadDeq   ",
++          "   TxFull   "
++          );
++
++  /* Output pipe stats */
+   for (i = 0; i < DVPP_NUM_PORT; i++)
+     {
++      if (!port_list.ports[port].enable)
++        continue;
+       vlib_cli_output (vm, "port %u:\n", i);
+       for (j = 0; j < DVPP_NUM_PIPE_PER_PORT; j++)
+         {
++          if (!port_list.ports[i].pipes[j].enable)
++            continue;
+           u64 num_pkt_read = dvpp->pipe_stats[i][j].num_pkt_read;
+           u64 num_pkt_written = dvpp->pipe_stats[i][j].num_pkt_written;
+           u64 num_pkt_queued = dvpp->pipe_stats[i][j].num_pkt_queued;
+@@ -83,18 +302,20 @@ static clib_error_t *show_stats_command_fn (vlib_main_t *vm,
+           u64 num_dequeue_call = dvpp->pipe_stats[i][j].num_dequeue_call;
+           u64 num_dequeue_pkts = dvpp->pipe_stats[i][j].num_dequeue_pkts;
+           u64 num_bad_dequeue = dvpp->pipe_stats[i][j].num_bad_dequeue;
++          u64 num_tx_full = dvpp->pipe_stats[i][j].num_tx_full;
+           if (verbose || num_pkt_read || num_pkt_written || num_pkt_queued ||
+               num_pkt_dropped || num_dequeue_call || num_dequeue_pkts ||
+               num_bad_dequeue)
+             {
+               vlib_cli_output (
+                   vm,
+-                  "     pipe %2u read %12u written %12u"
+-                  " queued %12u dropped %12llu dequeue_call %12llu "
+-                  "dequeue_pkts %12llu bad_dequeues %12llu\n",
++                  " %2u    %11u %11u"
++                  " %11u %11lu %11lu "
++                  " %11lu %11lu"
++                  " %11lu\n",
+                   j, num_pkt_read, num_pkt_written, num_pkt_queued,
+                   num_pkt_dropped, num_dequeue_call, num_dequeue_pkts,
+-                  num_bad_dequeue);
++                  num_bad_dequeue, num_tx_full);
+             }
+         }
+     }
+@@ -125,10 +346,10 @@ static clib_error_t *show_perf_command_fn (vlib_main_t *vm,
+   u64 diff = now - last_perf_show;
+   last_perf_show = now;
+ 
+-  vlib_cli_output (vm, " Diff: %12llu nano\n", 40 * diff);
++  vlib_cli_output (vm, " Diff: %12llu nano\n", DVPP_CLOCK_TO_NANO * diff);
+   for (i = 0; i < 7; i++)
+     {
+-      vlib_cli_output (vm, "intv %u:   %12llu\n", i, dvpp->time[i] * 40);
++      vlib_cli_output (vm, "intv %u:   %12llu\n", i, dvpp->time[i] * DVPP_CLOCK_TO_NANO);
+       dvpp->time[i] = 0;
+     }
+   return error;
+diff --git a/src/vnet/devices/dvpp/dvpp.c b/src/vnet/devices/dvpp/dvpp.c
+index 795714d10..187cd8a70 100644
+--- a/src/vnet/devices/dvpp/dvpp.c
++++ b/src/vnet/devices/dvpp/dvpp.c
+@@ -26,7 +26,7 @@ struct dvpp_port_list port_list = {};
+ 
+ #define DVPP_BURST_SIZE 128
+ 
+-u32 default_worker_map[DVPP_NUM_PORT] = {2, 2, 3, 3};
++u32 default_worker_map[DVPP_NUM_PORT] = {2, 2, 2, 2};
+ 
+ int dvpp_create_port (vlib_main_t *vm, struct dvpp_port *port, u32 port_id);
+ 
+@@ -293,11 +293,11 @@ static uword dvpp_process (vlib_main_t *vm, vlib_node_runtime_t *rt,
+   struct dvpp_port_list cur_port_list;
+   int ret;
+ 
+-  vlib_log_err (dvpp_main.logger, "%s: cdvpp_process\n", __FUNCTION__);
++  vlib_log_debug (dvpp_main.logger, "%s: dvpp_process\n", __FUNCTION__);
+   dvpp_main.dvpp_fd = open ("/dev/dvpp-cmd", O_CLOEXEC | O_RDWR);
+   if (dvpp_main.dvpp_fd < 0)
+     {
+-      vlib_log_notice (dvpp_main.logger, "%s: cannot open dvpp-cmd %d, %s\n",
++      vlib_log_debug (dvpp_main.logger, "%s: cannot open dvpp-cmd %d, %s\n",
+                        __FUNCTION__, dvpp_main.dvpp_fd, strerror (errno));
+       return 0;
+     }
+@@ -445,8 +445,6 @@ u8 *format_dvpp_rx_trace (u8 *s, va_list *va)
+ }
+ 
+ u32 log_count = 0;
+-int alloc = 0;
+-static int printp = 0;
+ VLIB_NODE_FN (dvpp_input_node)
+ (vlib_main_t *vm, vlib_node_runtime_t *node, vlib_frame_t *f)
+ {
+@@ -495,11 +493,12 @@ VLIB_NODE_FN (dvpp_input_node)
+ #endif
+       cache = (volatile u32 *)&dvpp_main.maps->cache_level[sync.thread];
+       /* check cache level */
+-      if (alloc == 0 && (*cache < DVPP_THRESHOLD_LOW))
++      if (*cache < DVPP_THRESHOLD_LOW)
+         {
+           u32 num_alloc = vlib_buffer_alloc (
+               vm, dvpp_main.maps->maps[port].alloc_vector[sync.thread], 128);
+           sync.alloc_size = num_alloc;
++          dvpp_main.port_stats[port].num_alloc += num_alloc;
+         }
+       else
+         {
+@@ -512,9 +511,12 @@ VLIB_NODE_FN (dvpp_input_node)
+ #ifdef USE_PERF
+       t3 = clib_cpu_time_now ();
+ #endif
++       dvpp_main.port_stats[port].num_rx_calls++;
++
+       if (ret > 0)
+         {
+           int num_in_chain = 1;
++          u32 pkt_out = 0;
+           u32 *buffers_out = to_next;
+           /* Head/Tail pointers of the list we will build in multi-segment case
+            */
+@@ -522,6 +524,10 @@ VLIB_NODE_FN (dvpp_input_node)
+           u32 head_idx;
+           vlib_buffer_t *tail = 0;
+           count = 0;
++          dvpp_main.port_stats[port].num_rx_pkts_asked += sync.size;
++          if (ret < 4) {
++            dvpp_main.port_stats[port].num_rx_low++;
++          }
+           while (count < ret)
+             {
+               dvpp_desc_t *rxb =
+@@ -621,6 +627,7 @@ VLIB_NODE_FN (dvpp_input_node)
+               count++;
+               if (rxb->seg.eop)
+                 {
++                  pkt_out++;
+                   n_rx_packets++;
+                   buffers_out[0] = head ? head_idx : buffer_idx;
+                   buffers_out += 1;
+@@ -629,6 +636,8 @@ VLIB_NODE_FN (dvpp_input_node)
+                   head_idx = ~0;
+                 }
+             }
++          dvpp_main.port_stats[port].num_rx_pkts += pkt_out;
++
+         }
+       else
+         {
+@@ -677,6 +686,7 @@ VLIB_NODE_FN (dvpp_input_node)
+           vlib_buffer_free (
+               vm, dvpp_main.maps->maps[port].release_vector[sync.thread],
+               *cache);
++          dvpp_main.port_stats[port].num_release += *cache;
+         }
+ #ifdef USE_PERF
+       t5 = clib_cpu_time_now ();
+@@ -690,7 +700,10 @@ VLIB_NODE_FN (dvpp_input_node)
+           int n;
+           u32 n_pkts = dvpp_main.maps->maps[port].tx_avail[i];
+           if (n_pkts == 0)
+-            continue;
++            {
++               dvpp_main.pipe_stats[port][i].num_tx_full++;
++              continue;
++            }
+           if (n_pkts > DVPP_BURST_SIZE)
+             n_pkts = DVPP_BURST_SIZE;
+ #ifdef USE_PERF
+@@ -736,6 +749,10 @@ VLIB_NODE_FN (dvpp_input_node)
+                                  "%s: Fail to transmit %d packets, ret %d\n",
+                                  __FUNCTION__, n_pkts, ret);
+                 }
++              else
++                {
++                  dvpp_main.port_stats[port].num_tx_pkts += ret;
++                }
+ #ifdef USE_PERF
+               dvpp_main.time[6] += t13 - t12;
+ #endif
+@@ -750,13 +767,13 @@ VLIB_NODE_FN (dvpp_input_node)
+       dvpp_main.time[3] += t5 - t4;
+       dvpp_main.time[4] += t6 - t5;
+ #endif
+-      dvpp_main.thread_rr[thread].rr = (port + 1) & (DVPP_NUM_PORT - 1);
+ 
+       if (n_left_to_next == 0)
+         break;
+     }
+   vlib_put_next_frame (vm, node, next_index, n_left_to_next);
+ 
++  dvpp_main.thread_rr[thread].rr++;
+   return n_rx_packets;
+ }
+ 
+@@ -764,42 +781,6 @@ static char *dvpp_input_error_strings[] = {
+     "NO_ERRORS",
+ };
+ 
+-#if 0
+-static uword
+-dvpp_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
+-		    vlib_frame_t * frame)
+-{
+-  u32 n_rx_packets = 0;
+-  u32 buffer_idx, read;
+-  vnet_device_input_runtime_t *rt = (void *) node->runtime_data;
+-  vnet_device_and_queue_t *dq;
+-  vlib_buffer_t *b;
+-  foreach_device_and_queue (dq, rt->devices_and_queues)
+-  {
+-
+-    if (dvpp_main.rx_ring[dq->dev_instance][0] & DVPP_RX_RING_STOP) {
+-      dvpp_main.rx_ring[dq->dev_instance][0] = 0; // start the ring
+-      dvpp_main.rx_ring_read[dq->dev_instance] = 0;
+-    }
+-
+-    read = dvpp_main.rx_ring_read[dq->dev_instance];
+-    buffer_idx = dvpp_main.rx_ring[dq->dev_instance][read];
+-    if (buffer_idx & DVPP_RX_RING_VALID) {
+-
+-        // take the buffer
+-
+-    }
+-
+-    //af_packet_if_t *apif;
+-    //apif = vec_elt_at_index (apm->interfaces, dq->dev_instance);
+-    //if (apif->is_admin_up)
+-    //  n_rx_packets += af_packet_device_input_fn (vm, node, frame, apif);
+-  }
+-
+-  return n_rx_packets;
+-}
+-#endif
+-
+ VLIB_REGISTER_NODE (dvpp_input_node) = {
+     .type = VLIB_NODE_TYPE_INPUT,
+     .name = "dvpp-input",
+diff --git a/src/vnet/devices/dvpp/dvpp.h b/src/vnet/devices/dvpp/dvpp.h
+index fb92cb8bc..c2e35b2a6 100644
+--- a/src/vnet/devices/dvpp/dvpp.h
++++ b/src/vnet/devices/dvpp/dvpp.h
+@@ -23,8 +23,25 @@ typedef struct {
+     u32 num_dequeue_call;
+     u32 num_dequeue_pkts;
+     u32 num_bad_dequeue;
+-    u32 res;
+-} dvpp_pipe_stat_t ;
++    u32 num_tx_full;
++} dvpp_pipe_stat_t;
++
++/* TODO: stats are per segment: make them per packet */
++typedef struct {
++  union{
++    struct {
++      u32 num_tx_pkts;
++      u32 num_rx_pkts;
++      u32 num_rx_calls;
++      u32 num_rx_pkts_asked;
++      u32 num_tx_pkts_asked;
++      u32 num_rx_low;
++      u32 num_alloc;
++      u32 num_release;
++    };
++    u64 data[4];
++  };
++} dvpp_port_stat_t;
+ 
+ typedef struct {
+   u8 port_id;
+@@ -50,6 +67,7 @@ typedef struct {
+   dvpp_port_rr_t thread_rr[DVPP_NUM_PORT];
+   CLIB_CACHE_LINE_ALIGN_MARK(cacheline1);
+   dvpp_pipe_stat_t pipe_stats[DVPP_NUM_PORT][DVPP_NUM_PIPE_PER_PORT];
++  dvpp_port_stat_t port_stats[DVPP_NUM_PORT];
+   u64 time[8];
+   pthread_t control_thread;
+ } dvpp_main_t __attribute((aligned(64)));
+diff --git a/src/vnet/devices/dvpp/interface.h b/src/vnet/devices/dvpp/interface.h
+index de129a177..dd81e48d0 100644
+--- a/src/vnet/devices/dvpp/interface.h
++++ b/src/vnet/devices/dvpp/interface.h
+@@ -59,7 +59,7 @@ typedef struct
+     } __attribute__ ((packed));
+     u64 data;
+   };
+-} dvpp_desc_t __attribute__ ((packed));
++} dvpp_desc_t;
+ 
+ static inline void dvpp_desc_clear (dvpp_desc_t *desc)
+ {
+@@ -126,16 +126,17 @@ struct dvpp_port_list
+   struct dvpp_port ports[DVPP_NUM_PORT];
+ } __attribute__ ((packed));
+ 
+-struct dvpp_port_map
+-{
+-  dvpp_desc_t rx_vector[DVPP_NUM_THREADS][DVPP_VLEN];
+-  dvpp_desc_t tx_vector[DVPP_NUM_THREADS][DVPP_VLEN];
+-  u32 alloc_vector[DVPP_NUM_THREADS][DVPP_ALLOC_VLEN];
+-  u32 release_vector[DVPP_NUM_THREADS][DVPP_VLEN];
+-  /*  No need per thread, for a given port it is
+-      accessed only from one core */
+-  u32 tx_avail[DVPP_NUM_PIPE_PER_PORT];
+-} __attribute__ ((packed));
++struct dvpp_port_map {
++	dvpp_desc_t rx_vector
++			[DVPP_NUM_THREADS][DVPP_VLEN + DVPP_MAX_NUM_SEGMENTS_IN_PACKET];
++	dvpp_desc_t tx_vector
++			[DVPP_NUM_THREADS][DVPP_VLEN + DVPP_MAX_NUM_SEGMENTS_IN_PACKET];
++	u32 alloc_vector[DVPP_NUM_THREADS][DVPP_ALLOC_VLEN];
++	u32 release_vector[DVPP_NUM_THREADS][DVPP_VLEN];
++	/*  No need per thread, for a given port it is
++        accessed only from one core */
++	u32 tx_avail[DVPP_NUM_PIPE_PER_PORT];
++} __attribute__((packed));
+ 
+ struct dvpp_port_maps
+ {
+@@ -158,10 +159,15 @@ struct dvpp_register_map
+   void *pa[DVPP_MAX_NB_BLOCK];
+ } __attribute__ ((packed));
+ 
++struct dvpp_thread_map {
++	u8 thread[DVPP_NUM_PORT];
++};
++
+ #define DVPP_TYPE 'v'
+ #define DVPP_IOCTL_GET_PORTS _IOWR (DVPP_TYPE, 1, struct dvpp_port_list)
+ #define DVPP_IOCTL_VECTOR_SYNC _IOWR (DVPP_TYPE, 2, struct dvpp_vector_sync)
+ #define DVPP_IOCTL_REGISTER_MAP _IOWR (DVPP_TYPE, 3, struct dvpp_register_map)
++#define DVPP_IOCTL_THREAD_MAP _IOWR(DVPP_TYPE, 4, struct dvpp_thread_map)
+ 
+ #endif
+ #endif
+-- 
+2.24.1
+

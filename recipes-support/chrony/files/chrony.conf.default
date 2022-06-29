@@ -1,0 +1,32 @@
+# THIS IS A FALLBACK FILE!
+# The real config file is located in:
+#   /data/etc/chrony.conf
+# To generate the real config file, run:
+#   /usr/sbin/update_chrony_conf
+
+# Add time servers
+server time1.facebook.com iburst
+server time2.facebook.com iburst
+server time3.facebook.com iburst
+server time4.facebook.com iburst
+server time5.facebook.com iburst
+
+# In first three updates step the system clock instead of slew
+# if the adjustment is larger than 1 second.
+makestep 1.0 3
+
+# Record the rate at which the system clock gains/loses time,
+# improving accuracy after reboot
+driftfile /var/lib/chrony/drift
+
+# Enable kernel synchronization of the hardware real-time clock (RTC).
+rtcsync
+
+# Specify directory for log files.
+logdir /var/log/chrony
+
+# Select which information is logged.
+log tracking measurements statistics rtc tempcomp
+
+# Change default pidfile to allow running parallel processes in -q mode
+pidfile /var/run/chrony/chronyd-main.pid

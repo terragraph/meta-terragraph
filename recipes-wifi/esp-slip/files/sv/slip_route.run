@@ -1,0 +1,36 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if SLIP is enabled
+if [ "${SLIP_ENABLED:-0}" -ne "1" ]; then
+  echo "SLIP is not enabled"
+  exit 1
+fi
+
+if [ -z "${SLIP_SERIAL_PORT}" ]; then
+  echo "SLIP serial port must be set"
+  exit 1
+fi
+
+# wait until slattach is running
+while ! pidof slattach > /dev/null; do
+  echo "Waiting for slattach"
+  sleep ${DELAY}
+done
+
+echo -n "Configuring SLIP interface..."
+/sbin/ifconfig sl0 192.168.5.1 pointopoint 192.168.5.2 up mtu 1500
+echo "Done."
+
+echo -n "Configuring default route..."
+# add route to ESP32
+/sbin/ip r a 192.168.4.0/24 via 192.168.5.2
+echo "Done."

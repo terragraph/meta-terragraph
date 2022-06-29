@@ -1,0 +1,123 @@
+From 55c79bb4336bcde942afd135851fb5e5ad0dce97 Mon Sep 17 00:00:00 2001
+From: Alex Landau <alandau@fb.com>
+Date: Thu, 31 Oct 2019 20:15:57 -0700
+Subject: [PATCH] Adaptations for TF-A boot
+
+- Don't init DRAM
+- Various addresses
+
+---
+ board/freescale/fb_ls1048a_puma/uboot_ddr1.c | 14 ++++++++++++--
+ configs/fb-ls1048a-puma_qspi_defconfig       |  9 ++++++---
+ include/configs/fb_ls1048a_puma.h            | 20 ++++++++------------
+ 3 files changed, 26 insertions(+), 17 deletions(-)
+
+diff --git a/board/freescale/fb_ls1048a_puma/uboot_ddr1.c b/board/freescale/fb_ls1048a_puma/uboot_ddr1.c
+index ff8a05719f..3421256d7f 100644
+--- a/board/freescale/fb_ls1048a_puma/uboot_ddr1.c
++++ b/board/freescale/fb_ls1048a_puma/uboot_ddr1.c
+@@ -304,6 +304,17 @@ phys_size_t fixed_sdram(void)
+         return ddr_size;
+ }
+ 
++#ifdef CONFIG_TFABOOT
++int fsl_initdram(void)
++{
++	gd->ram_size = tfa_get_dram_size();
++
++	if (!gd->ram_size)
++		gd->ram_size = fsl_ddr_sdram_size();
++
++	return 0;
++}
++#else
+ int fsl_initdram(void)
+ {
+         phys_size_t dram_size;
+@@ -319,5 +330,4 @@ int fsl_initdram(void)
+ 
+         return 0;
+ }
+-
+-
++#endif /* CONFIG_TFABOOT */
+diff --git a/configs/fb-ls1048a-puma_qspi_defconfig b/configs/fb-ls1048a-puma_qspi_defconfig
+index 3dd30fa1c1..a6cbfed799 100644
+--- a/configs/fb-ls1048a-puma_qspi_defconfig
++++ b/configs/fb-ls1048a-puma_qspi_defconfig
+@@ -1,8 +1,10 @@
+ CONFIG_ARM=y
+ CONFIG_TARGET_FB_LS1048A_PUMA=y
+-CONFIG_SYS_TEXT_BASE=0x20010000
+-CONFIG_FSL_LS_PPA=y
++CONFIG_SYS_TEXT_BASE=0x82000000
+ CONFIG_QSPI_AHB_INIT=y
++CONFIG_TFABOOT=y
++CONFIG_ARMV8_SEC_FIRMWARE_SUPPORT=y
++CONFIG_SEC_FIRMWARE_ARMV8_PSCI=y
+ CONFIG_DISTRO_DEFAULTS=y
+ CONFIG_NR_DRAM_BANKS=2
+ #
+@@ -10,7 +12,7 @@ CONFIG_NR_DRAM_BANKS=2
+ CONFIG_FIT_VERBOSE=y
+ CONFIG_OF_BOARD_SETUP=y
+ CONFIG_OF_STDOUT_VIA_ALIAS=y
+-CONFIG_SYS_EXTRA_OPTIONS="SYS_FSL_DDR4, QSPI_BOOT"
++CONFIG_SYS_EXTRA_OPTIONS="SYS_FSL_DDR4"
+ CONFIG_HUSH_PARSER=y
+ CONFIG_USE_BOOTARGS=y
+ CONFIG_BOOTARGS="console=ttyS0,115200 root=/dev/ram0 earlycon=uart8250,mmio,0x21c0500 ramdisk_size=0x3000000 default_hugepagesz=2m hugepagesz=2m hugepages=256"
+diff --git a/include/configs/fb_ls1048a_puma.h b/include/configs/fb_ls1048a_puma.h
+index 1fde1a0a2b..fc3905f4f7 100644
+--- a/include/configs/fb_ls1048a_puma.h
++++ b/include/configs/fb_ls1048a_puma.h
+@@ -12,9 +12,6 @@
+ #undef CONFIG_MAX_CPUS
+ #define CONFIG_MAX_CPUS 4
+ 
+-#undef CONFIG_SYS_TEXT_BASE
+-#define CONFIG_SYS_TEXT_BASE            0x20010000
+-
+ #undef CONFIG_CONS_INDEX
+ #define CONFIG_CONS_INDEX 2
+ 
+@@ -22,7 +19,7 @@
+ #define CONFIG_SYS_MMC_ENV_DEV		0
+ 
+ #define CONFIG_ENV_SIZE			0x2000          /* 8KB */
+-#define CONFIG_ENV_OFFSET		0x500000
++#define CONFIG_ENV_OFFSET		0x1a4000
+ #define CONFIG_ENV_ADDR			(CONFIG_SYS_FLASH_BASE + \
+ 					 CONFIG_ENV_OFFSET)
+ #define CONFIG_ENV_SECT_SIZE		0x40000
+@@ -135,14 +132,13 @@
+ 	"name=data,size=0\0"                    \
+ 
+ #define TG_SPI_PARTITIONS "tg_mtdparts="        \
+-	"1944K@0(allboot),"                     \
+-	"64K@0(rcw),"                           \
+-	"768K(u-boot),"                         \
+-	"64k(ppa),"                             \
+-	"8K(u-boot-env),"                       \
++	"4096K@0(allboot),"                     \
++	"128K@0(rcw),"                          \
+ 	"8K(dpl),"                              \
+ 	"8K(dpc),"                              \
+-	"1024K(MC)\0"
++	"1536K(MC),"                            \
++	"8K(u-boot-env),"                       \
++	"1536K(u-boot)\0"                       \
+ 
+ /*
+  * Some Terragraph specific variables for this platform for testcode support.
+@@ -159,8 +155,8 @@
+ 	"tg_rootfs_mtd=1\0"    \
+ 	"tg_fitimage_conf=5\0" \
+ 	"tg_bootargs_mmc=setenv bootargs console=ttyS0,115200 earlycon=uart8250,mmio,0x21c0600 rootfstype=ext4 root=/dev/mmcblk0p${tg_active_mtd} rw rootwait lpj=250000 mtdparts=20c0000.quadspi:${tg_mtdparts} ${tg_extra_kernel_args}\0" \
+-	"tg_load_mc=sf probe 0; sf read 0x80000000 0xe6000 0x100000; sf read 0x80100000 0xe4000 0x2000; fsl_mc start mc 0x80000000 0x80100000\0" \
+-	"tg_apply_mc_dpl=sf read 0x80200000 0xe2000 0x2000; fsl_mc apply dpl 0x80200000\0" \
++	"tg_load_mc=sf probe 0; sf read 0x80000000 0x24000 0x180000; sf read 0x80180000 0x22000 0x2000; fsl_mc start mc 0x80000000 0x80180000\0" \
++	"tg_apply_mc_dpl=sf read 0x80200000 0x20000 0x2000; fsl_mc apply dpl 0x80200000\0" \
+ 	"tg_bootcmd_mmc=setenv loadaddr 0x8f000000; ext4load mmc 0:${tg_active_mtd} $loadaddr /boot/fitImage; run tg_bootargs_mmc; setenv fdt_high ; bootm $loadaddr#conf@${tg_fitimage_conf}\0" \
+ 	"tg_bootcmd=run tg_load_mc; run tg_apply_mc_dpl; tgFindMtdBootOrder; for part in ${tg_mtd_1} ${tg_mtd_2} ${tg_mtd_3}; do setenv tg_active_mtd ${part}; tgPrepareToBoot; run tg_bootcmd_mmc; done\0" \
+ 	"bootcmd=run tg_bootcmd\0" \

@@ -1,0 +1,18 @@
+[Unit]
+Description=vector packet processing engine
+After=network.target hugetlbfs.mount
+
+# TODO: vfio-pci
+
+[Service]
+Type=simple
+ExecStartPre=/sbin/modprobe terragraph-dhd
+ExecStartPre=/sbin/modprobe dpdk-dhd
+ExecStart=/usr/bin/vpp -c /etc/vpp/startup.conf
+ExecStopPost=/bin/rm -f /dev/shm/db /dev/shm/global_vm /dev/shm/vpe-api
+ExecStopPost=/sbin/rmmod terragraph-dhd || exit 0
+ExecStopPost=/sbin/rmmod dpdk-dhd || exit 0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

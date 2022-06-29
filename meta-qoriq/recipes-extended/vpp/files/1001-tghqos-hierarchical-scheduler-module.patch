@@ -1,0 +1,820 @@
+From eed72d8dd5fc53f600b80452025e4e5823eb48b7 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 16 Apr 2021 16:41:21 -0700
+Subject: [PATCH] tghqos: hierarchical scheduler module
+
+Implements 4-level hierarchy of port, pipe, traffic class, queue.
+Provides API functions to configure port parameters, read stats, do
+time resync for RED, and to enqueue/dequeue packets.
+---
+ src/plugins/dpdk/tghqos/sched/tghqos_sched.c | 448 +++++++++++++++++++
+ src/plugins/dpdk/tghqos/sched/tghqos_sched.h | 342 ++++++++++++++
+ 2 files changed, 790 insertions(+)
+ create mode 100644 src/plugins/dpdk/tghqos/sched/tghqos_sched.c
+ create mode 100644 src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_sched.c b/src/plugins/dpdk/tghqos/sched/tghqos_sched.c
+new file mode 100644
+index 000000000..4c6f719ea
+--- /dev/null
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_sched.c
+@@ -0,0 +1,448 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2010-2014 Intel Corporation
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ */
++
++#include "tghqos_sched.h"
++#include <dpdk/dynfield/dynfield.h>
++#include <rte_byteorder.h>
++#include <vppinfra/string.h>
++
++#define BITFIELD(byte_array, pos, mask, shrink)           \
++  ({                                                      \
++    u64 slab = *((u64 *)&byte_array[pos]);                \
++    u64 val = (rte_be_to_cpu_64 (slab) & mask) >> shrink; \
++    val;                                                  \
++  })
++
++int tghqos_sched_port_red_config (
++    tghqos_sched_port_t *port,
++    struct tghqos_red_params red_params[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
++                                       [TGHQOS_COLORS])
++{
++  u32 i, j;
++  int rc;
++
++  /* Initialize RED config */
++  for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
++    {
++      for (j = 0; j < TGHQOS_COLORS; j++)
++        {
++          /* if min/max are both zero, then RED is disabled */
++          if ((red_params[i][j].min_th | red_params[i][j].max_th) == 0)
++            {
++              continue;
++            }
++
++          rc = tghqos_red_config_init (
++              &port->red_config[i][j], red_params[i][j].wq_log2,
++              red_params[i][j].min_th, red_params[i][j].max_th,
++              red_params[i][j].maxp_inv);
++          if (rc)
++            return rc;
++        }
++    }
++  return 0;
++}
++
++void tghqos_sched_port_queue_size_config (
++    tghqos_sched_port_t *port,
++    u32 queue_size[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
++                  [TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS])
++{
++  u32 i, j, k;
++  tghqos_sched_queue_t *queue;
++
++  for (i = 0; i < TGHQOS_SCHED_PIPES_PER_PORT; i++)
++    {
++      for (j = 0; j < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; j++)
++        {
++          for (k = 0; k < TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS; k++)
++            {
++              queue = &port->pipes[i].tcs[j].queues[k];
++              queue->size = queue_size[j][k];
++            }
++        }
++    }
++}
++
++void tghqos_sched_port_rate_config (tghqos_sched_port_t *port, u32 rate)
++{
++  u32 cycles_per_byte;
++
++  /* Timing for RED */
++  cycles_per_byte = (rte_get_tsc_hz () << TGHQOS_SCHED_TIME_SHIFT) / rate;
++  port->cycles_per_byte = cycles_per_byte;
++  port->inv_cycles_per_byte = rte_reciprocal_value (cycles_per_byte);
++}
++
++void tghqos_sched_port_fw_tx_ring_depth_config (tghqos_sched_port_t *port,
++                                                u32 depth)
++{
++  u32 i;
++  for (i = 0; i < TGHQOS_SCHED_PIPES_PER_PORT; i++)
++    {
++      if (depth >= port->hw_tx_pipe_size[i])
++        port->min_tx_pipe_credit[i] = 0;
++      else
++        port->min_tx_pipe_credit[i] = port->hw_tx_pipe_size[i] - depth;
++    }
++}
++
++void tghqos_sched_queue_read_stats (tghqos_sched_queue_t *queue,
++                                    tghqos_sched_stats_t *stats, u32 *qlen,
++                                    u32 *qsize, u32 clear)
++{
++  clib_memcpy_fast (stats, &queue->stats, sizeof (tghqos_sched_stats_t));
++  if (clear)
++    clib_memset (&queue->stats, 0, sizeof (tghqos_sched_stats_t));
++  if (qlen != NULL)
++    *qlen = queue->enq - queue->deq;
++  if (qsize != NULL)
++    *qsize = queue->size;
++}
++
++void tghqos_sched_traffic_class_read_stats (tghqos_sched_traffic_class_t *tc,
++                                            tghqos_sched_stats_t *stats,
++                                            u32 clear)
++{
++  u32 i, j;
++  clib_memset (stats, 0, sizeof (tghqos_sched_stats_t));
++  for (i = 0; i < TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS; i++)
++    {
++      tghqos_sched_stats_t q_stats;
++      tghqos_sched_queue_read_stats (&tc->queues[i], &q_stats, NULL, NULL,
++                                     clear);
++      stats->n_pkts += q_stats.n_pkts;
++      stats->n_pkts_dropped += q_stats.n_pkts_dropped;
++      stats->n_pkts_red_dropped += q_stats.n_pkts_red_dropped;
++      stats->n_bytes += q_stats.n_bytes;
++      stats->n_bytes_dropped += q_stats.n_bytes_dropped;
++      for (j = 0; j < TGHQOS_COLORS; j++)
++        {
++          stats->n_pkts_color[j] += q_stats.n_pkts_color[j];
++          stats->n_pkts_color_dropped[j][0] +=
++              q_stats.n_pkts_color_dropped[j][0];
++          stats->n_pkts_color_dropped[j][1] +=
++              q_stats.n_pkts_color_dropped[j][1];
++        }
++    }
++}
++
++void tghqos_sched_pipe_read_stats (tghqos_sched_pipe_t *pipe,
++                                   tghqos_sched_stats_t *stats, u32 clear)
++{
++  u32 i, j;
++  clib_memset (stats, 0, sizeof (tghqos_sched_stats_t));
++  for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
++    {
++      tghqos_sched_stats_t tc_stats;
++      tghqos_sched_traffic_class_read_stats (&pipe->tcs[i], &tc_stats, clear);
++      stats->n_pkts += tc_stats.n_pkts;
++      stats->n_pkts_dropped += tc_stats.n_pkts_dropped;
++      stats->n_pkts_red_dropped += tc_stats.n_pkts_red_dropped;
++      stats->n_bytes += tc_stats.n_bytes;
++      stats->n_bytes_dropped += tc_stats.n_bytes_dropped;
++      for (j = 0; j < TGHQOS_COLORS; j++)
++        {
++          stats->n_pkts_color[j] += tc_stats.n_pkts_color[j];
++          stats->n_pkts_color_dropped[j][0] +=
++              tc_stats.n_pkts_color_dropped[j][0];
++          stats->n_pkts_color_dropped[j][1] +=
++              tc_stats.n_pkts_color_dropped[j][1];
++        }
++    }
++}
++
++void tghqos_sched_port_read_stats (tghqos_sched_port_t *port,
++                                   tghqos_sched_stats_t *stats, u32 clear)
++{
++  u32 i, j;
++  clib_memset (stats, 0, sizeof (tghqos_sched_stats_t));
++  for (i = 0; i < TGHQOS_SCHED_PIPES_PER_PORT; i++)
++    {
++      tghqos_sched_stats_t pipe_stats;
++      tghqos_sched_pipe_read_stats (&port->pipes[i], &pipe_stats, clear);
++      stats->n_pkts += pipe_stats.n_pkts;
++      stats->n_pkts_dropped += pipe_stats.n_pkts_dropped;
++      stats->n_pkts_red_dropped += pipe_stats.n_pkts_red_dropped;
++      stats->n_bytes += pipe_stats.n_bytes;
++      stats->n_bytes_dropped += pipe_stats.n_bytes_dropped;
++      for (j = 0; j < TGHQOS_COLORS; j++)
++        {
++          stats->n_pkts_color[j] += pipe_stats.n_pkts_color[j];
++          stats->n_pkts_color_dropped[j][0] +=
++              pipe_stats.n_pkts_color_dropped[j][0];
++          stats->n_pkts_color_dropped[j][1] +=
++              pipe_stats.n_pkts_color_dropped[j][1];
++        }
++    }
++}
++
++/**
++ * @brief Update stats after dropping one packet.
++ *
++ * @param pipe Pointer to pipe
++ * @param queue Pointer to queue
++ * @param tc Packet's traffic class
++ * @param color Packet's color
++ * @param pkt_len Packet's length in bytes
++ * @param red Set if the reason for dropping is RED, 0 otherwise
++ */
++static inline void tghqos_sched_update_stats_drop (tghqos_sched_pipe_t *pipe,
++                                                   tghqos_sched_queue_t *queue,
++                                                   u32 tc, u32 color,
++                                                   u32 pkt_len, u32 red)
++{
++  queue->stats.n_pkts_dropped += 1;
++  queue->stats.n_pkts_red_dropped += red;
++  queue->stats.n_pkts_color_dropped[color][red] += 1;
++
++  pipe->stats.n_bytes_dropped += pkt_len;
++}
++
++/**
++ * @brief Update stats after successfully enqeueuing one packet.
++ *
++ * @param pipe Pointer to pipe
++ * @param queue Pointer to queue
++ * @param tc Packet's traffic class
++ * @param color Packet's color
++ * @param pkt_len Packet's length in bytes
++ */
++static inline void
++tghqos_sched_update_stats_enqueue (tghqos_sched_pipe_t *pipe,
++                                   tghqos_sched_queue_t *queue, u32 tc,
++                                   u32 color, u32 pkt_len)
++{
++  queue->stats.n_pkts += 1;
++  queue->stats.n_pkts_color[color] += 1;
++  queue->stats.n_bytes += pkt_len;
++
++  pipe->stats.nw_bytes += pkt_len;
++}
++
++/**
++ * @brief Update stats after dequeueing one packet.
++ *
++ * @param pipe Pointer to pipe
++ * @param pkt_len Packet's length in bytes
++ */
++static inline void
++tghqos_sched_update_stats_dequeue (tghqos_sched_pipe_t *pipe, u32 pkt_len)
++{
++  pipe->stats.nr_bytes += pkt_len;
++}
++
++/**
++ * @brief Use RED to determine whether or not to drop a packet for a queue.
++ *
++ * @param port Pointer to port
++ * @param red Pointer to queue's RED run-time data
++ * @param tc Packet's traffic class
++ * @param color Packet's color
++ * @param qlen Queue's current length
++ * @return 0 for enqueue, 1 for drop based on max threshold, 2 for drop based
++ *         on mark probability.
++ */
++static int tghqos_sched_port_red_drop (tghqos_sched_port_t *port,
++                                       struct tghqos_red *red, u32 tc,
++                                       u32 color, u32 qlen)
++{
++  struct tghqos_red_config *red_cfg = &port->red_config[tc][color];
++
++  /* always drop if max threshold is 0 */
++  if (red_cfg->max_th == 0)
++    {
++      return 1;
++    }
++  /* don't drop if thresholds not set */
++  if ((red_cfg->min_th | red_cfg->max_th) == 0)
++    {
++      return 0;
++    }
++
++  return tghqos_red_enqueue (red_cfg, red, qlen, port->time);
++}
++
++void tghqos_sched_set_pkt_metadata (struct rte_mbuf *pkt, u32 *tc_table)
++{
++  u8 *pkt_data = rte_pktmbuf_mtod (pkt, u8 *);
++  /* Terragraph uses wigig mbuf's dynfield field for peer id */
++  u32 pipe = wigig_mbuf_link_id_get (pkt);
++  u64 pkt_dscp = BITFIELD (pkt_data, TGHQOS_IPV6_DSCP_POS,
++                           TGHQOS_IPV6_DSCP_MASK, TGHQOS_IPV6_DSCP_SHRINK);
++  u32 pkt_tc = (tc_table[pkt_dscp & 0x3F] & 0x3c) >> 2;
++  u32 pkt_tc_q = tc_table[pkt_dscp & 0x3F] & 0x3;
++  u32 pkt_dscp_color = tc_table[pkt_dscp & 0x3F] >> 6;
++  /* RFC 2597 drop precedence, 3 color values used by tghqos are [0, 1, 2],
++   * corresponding to the DSCP color values of [1, 2, 3] */
++  u32 pkt_hqos_color = pkt_dscp_color - 1;
++
++  /* Use rte_mbuf's hash.sched field to store metadata */
++  pkt->hash.sched.queue_id = pkt_tc_q;
++  pkt->hash.sched.traffic_class = pkt_tc;
++  pkt->hash.sched.color = pkt_hqos_color;
++  pkt->hash.sched.reserved = pipe;
++}
++
++/**
++ * @brief Check that the packet metadata is valid.
++ * @param pipe Packet's pipe
++ * @param tc Packet's traffic class
++ * @param tc_queue Packet's queue index within its traffic class
++ * @param color Packet's color
++ * @return 1 if metadata is valid, 0 otherwise
++ */
++static inline int tghqos_sched_pkt_metadata_valid (u32 pipe, u32 tc,
++                                                   u32 tc_queue, u32 color)
++{
++  return pipe < TGHQOS_SCHED_PIPES_PER_PORT &&
++         tc < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE &&
++         tc_queue < TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS &&
++         color < TGHQOS_COLORS;
++}
++
++/**
++ * @brief Try to enqueue a single packet on a specific port and update stats
++ * upon success or failure.
++ *
++ * @param port Pointer to port
++ * @param pkt Pointer to packet to enqueue
++ * @param pipe Packet's pipe
++ * @param tc Packet's traffic class
++ * @param tc_queue Packet's queue index within its traffic class
++ * @param color Packet's color
++ * @return 0 if packet is dropped, 1 if packet is enqueued
++ */
++static u32 tghqos_sched_port_enqueue_pkt (tghqos_sched_port_t *port,
++                                          struct rte_mbuf *pkt, u32 pipe,
++                                          u32 tc, u32 tc_queue, u32 color)
++{
++  tghqos_sched_queue_t *queue = &port->pipes[pipe].tcs[tc].queues[tc_queue];
++  u16 qlen = queue->enq - queue->deq;
++  u16 qsize = queue->size;
++  u32 pkt_len = rte_pktmbuf_pkt_len (pkt);
++
++  /* drop packet according to RED algorithm or if queue is full */
++  if ((unlikely (
++           tghqos_sched_port_red_drop (port, &queue->red, tc, color, qlen)) ||
++       (qlen >= qsize)))
++    {
++      rte_pktmbuf_free (pkt);
++      /* update stats */
++      tghqos_sched_update_stats_drop (&port->pipes[pipe], queue, tc, color,
++                                      pkt_len, qlen < qsize);
++      return 0;
++    }
++
++  /* enqueue the packet */
++  queue->mbufs[queue->enq & (qsize - 1)] = pkt;
++  /* Prevent reordering for SMP. See tghqos_sched_port_dequeue_pipe(). */
++  rte_wmb ();
++  queue->enq++;
++  /* update stats */
++  tghqos_sched_update_stats_enqueue (&port->pipes[pipe], queue, tc, color,
++                                     pkt_len);
++  return 1;
++}
++
++u32 tghqos_sched_port_enqueue (tghqos_sched_port_t *port,
++                               struct rte_mbuf **pkts, u32 n_pkts)
++{
++  u32 i;
++  u32 num_enqueued = 0;
++  struct rte_mbuf *pkt;
++  u32 pipe, tc, tc_q, color;
++  /* TODO: prefetching pipeline for performance optimization? */
++  for (i = 0; i < n_pkts; i++)
++    {
++      pkt = pkts[i];
++      pipe = pkt->hash.sched.reserved;
++      tc = pkt->hash.sched.traffic_class;
++      tc_q = pkt->hash.sched.queue_id;
++      color = pkt->hash.sched.color;
++      if (!tghqos_sched_pkt_metadata_valid (pipe, tc, tc_q, color))
++        {
++          /* Drop packet if it has invalid metadata */
++          port->counters.bad_metadata_drop += 1;
++          rte_pktmbuf_free (pkt);
++          continue;
++        }
++
++      num_enqueued +=
++          tghqos_sched_port_enqueue_pkt (port, pkt, pipe, tc, tc_q, color);
++    }
++
++  return num_enqueued;
++}
++
++/**
++ * @brief Use strict priority scheduling to dequeue packets from a specific
++ * port and pipe.
++ *
++ * @param port Pointer to port
++ * @param pipe Pipe index
++ * @param pkts Array used for storing dequeued packets
++ * @param n_seg Maximum number of packet segments to dequeue
++ * @return Number of packets successfully dequeued
++ */
++static u32 tghqos_sched_port_dequeue_pipe_strict (tghqos_sched_port_t *port,
++                                                  u32 pipe_id,
++                                                  struct rte_mbuf **pkts,
++                                                  u32 n_seg)
++{
++  tghqos_sched_pipe_t *pipe = &port->pipes[pipe_id];
++  tghqos_sched_queue_t *queue;
++  u16 qlen;
++  u32 i, j, qsize, pkt_len, num_pkts = 0;
++
++  for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
++    {
++      for (j = 0; j < TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS; j++)
++        {
++          queue = &pipe->tcs[i].queues[j];
++          qsize = queue->size;
++          qlen = queue->enq - queue->deq;
++
++          while (n_seg && qlen)
++            {
++              struct rte_mbuf *m = queue->mbufs[queue->deq & (qsize - 1)];
++              RTE_VERIFY (m != NULL);
++              if (m->nb_segs > n_seg)
++                {
++                  /* Not enough space for this packet, skip it */
++                  port->counters.incomplete_dequeue += 1;
++                  break;
++                }
++              /* Advance port time */
++              pkt_len = rte_pktmbuf_pkt_len (m);
++              port->time += pkt_len + port->frame_overhead;
++
++              /* Dequeue current packet */
++              queue->mbufs[queue->deq & (qsize - 1)] = 0;
++              queue->deq++;
++              *pkts++ = m;
++              n_seg -= m->nb_segs;
++              num_pkts++;
++              qlen--;
++              if (qlen == 0)
++                {
++                  tghqos_red_mark_queue_empty (&queue->red, port->time);
++                }
++              tghqos_sched_update_stats_dequeue (pipe, pkt_len);
++            }
++          if (n_seg == 0)
++            break;
++        }
++    }
++
++  return num_pkts;
++}
++
++u32 tghqos_sched_port_dequeue_pipe (tghqos_sched_port_t *port, u32 pipe,
++                                    struct rte_mbuf **pkts, u32 n_seg)
++{
++  /* TODO: add WRR option */
++  return tghqos_sched_port_dequeue_pipe_strict (port, pipe, pkts, n_seg);
++}
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+new file mode 100644
+index 000000000..76fcd772c
+--- /dev/null
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+@@ -0,0 +1,342 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2010-2014 Intel Corporation
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ */
++
++/**
++ * @file
++ * TGHQoS Hierarchical Scheduler
++ *
++ * The scheduler supports the following 4-level hierarchy:
++ *     1. Port:
++ *           - Output WiGig device
++ *     2. Pipe:
++ *           - WiGig peers
++ *     3. Traffic class:
++ *           - Traffic classes handled in strict priority order
++ *     4. Queue:
++ *           - Only one queue is used per traffic class (TODO: WRR)
++ *
++ * Packets can be enqueued by port and dequeued by port-pipe.
++ */
++
++#include <vlib/vlib.h>
++
++#undef always_inline
++#include <rte_mbuf.h>
++#include <rte_reciprocal.h>
++#include "tghqos_red.h"
++
++#ifndef __TGHQOS_SCHED_H_INCLUDED__
++#define __TGHQOS_SCHED_H_INCLUDED__
++
++/* Values to read the DSCP field from an IPv6 packet.
++ * The pos is the byte position in the packet, and the mask is the
++ * 64 bit mask from the pos. The pos has to be a multiple of 8 so
++ * that the mask aligns to an 8-byte boundary.
++ * The mask is always 8 bytes.
++ * The mask (+ pos) has 14 bytes and 1 nibble of leading zeros.
++ * The 14 bytes correspond to the ethernet header. The 1 nibble of the
++ * 15th byte corresponds to the Version field of the IPV6 header.
++ * The 6 bits of the Traffic Class (DSCP) field, following the IPV6 Version
++ * field are then selected.
++ */
++#define TGHQOS_IPV6_DSCP_POS 8
++#define TGHQOS_IPV6_DSCP_MASK 0x0000000000000FC0LLU
++#define TGHQOS_IPV6_DSCP_SHRINK count_trailing_zeros (TGHQOS_IPV6_DSCP_MASK)
++
++#define NUM_DSCP_VALUES 64
++
++#define TGHQOS_SCHED_PIPES_PER_PORT 16
++#define TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE 8
++#define TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS 4
++
++#define TGHQOS_SCHED_MAX_QUEUE_SIZE 4096
++
++/* Scaling for cycles_per_byte calculation
++ * Chosen so that minimum rate is 480 bit/sec */
++#define TGHQOS_SCHED_TIME_SHIFT 8
++
++/*
++ * Ethernet framing overhead. Overhead fields per Ethernet frame:
++ * 1. Preamble:                             7 bytes;
++ * 2. Start of Frame Delimiter (SFD):       1 byte;
++ * 3. Frame Check Sequence (FCS):           4 bytes;
++ * 4. Inter Frame Gap (IFG):               12 bytes.
++ *
++ * The FCS is considered overhead only if not included in the packet
++ * length (field pkt_len of struct rte_mbuf).
++ */
++#define TGHQOS_SCHED_FRAME_OVERHEAD_DEFAULT 24
++
++/**
++ * HQoS packet colors
++ * 3 color values used by tghqos are [0, 1, 2], corresponding to the DSCP color
++ * values of [1, 2, 3] (RFC 2597 drop precedence)
++ */
++typedef enum
++{
++  TGHQOS_GREEN = 0,
++  TGHQOS_YELLOW,
++  TGHQOS_RED,
++  TGHQOS_COLORS
++} tghqos_colors_t;
++
++/**
++ * Port-level counters distinct from packet/byte statistics
++ */
++typedef struct
++{
++  /* Packets dropped due to invalid metadata from mapped DSCP value
++   * in tc_table */
++  u32 bad_metadata_drop;
++  /* Number of times that a dequeue on a pipe finishes from exhausting credits
++   * rather than emptying all queues */
++  u32 incomplete_dequeue;
++} tghqos_sched_port_counters_t;
++
++/**
++ * Statistics for an element within a hierarchy level.
++ */
++typedef struct
++{
++  u32 n_pkts;                      /* Packets successfully enqueued */
++  u32 n_pkts_color[TGHQOS_COLORS]; /* Packets successfully enqueued by color */
++  u32 n_pkts_dropped;              /* Packets dropped */
++  u32 n_pkts_red_dropped;          /* Packets dropped by RED */
++  u32 n_pkts_color_dropped[TGHQOS_COLORS][2]; /* Packets dropped by color, by
++                                               * reason (0=queue full, 1=RED)
++                                               */
++
++  u32 n_bytes;         /* Bytes successfully enqueued */
++  u32 n_bytes_dropped; /* Bytes dropped */
++} tghqos_sched_stats_t;
++
++/**
++ * Extra statistics per pipe used for firmware queue stats.
++ */
++typedef struct
++{
++  u32 nw_bytes;        /* Bytes successfully enqueued (written) */
++  u32 nr_bytes;        /* Bytes dequeued (read) */
++  u32 n_bytes_dropped; /* Bytes dropped */
++} tghqos_sched_pipe_stats_extra_t;
++
++/**
++ * 4th-level: queue
++ */
++typedef struct
++{
++  u16 deq;  /* Index to dequeue next packet from (front of queue) */
++  u16 enq;  /* Index to enqueue next packet to (end of queue) */
++  u32 size; /* Configured size of this queue in packets */
++  struct rte_mbuf *mbufs[TGHQOS_SCHED_MAX_QUEUE_SIZE]; /* Packet buffer */
++  struct tghqos_red red;      /* RED dropper for this queue */
++  tghqos_sched_stats_t stats; /* Per-queue stats */
++} tghqos_sched_queue_t;
++
++/**
++ * 3rd-level: traffic class
++ */
++typedef struct
++{
++  tghqos_sched_queue_t queues[TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS];
++} tghqos_sched_traffic_class_t;
++
++/**
++ * 2nd-level: pipe (WiGig peer)
++ */
++typedef struct
++{
++  tghqos_sched_pipe_stats_extra_t stats; /* Used for firmware queue stats */
++  tghqos_sched_traffic_class_t tcs[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE];
++} tghqos_sched_pipe_t;
++
++/**
++ * 1st-level: port (WiGig sector)
++ */
++typedef struct
++{
++  rte_spinlock_t lock;
++
++  /* Timing for RED */
++  u64 time_cpu_cycles; /* Current CPU time measured in CPU cyles */
++  u64 time_cpu_bytes;  /* Current CPU time measured in bytes */
++  u64 time;            /* Current NIC TX time measured in bytes */
++  u64 cycles_per_byte; /* CPU cycles per byte */
++  struct rte_reciprocal inv_cycles_per_byte;
++  u32 frame_overhead; /* Added to each packet for time advancement */
++
++  u32 burst_deq; /* For each pipe, dequeue a maximum of this many segments per
++                  * tx routine from hqos into the driver */
++  u32 burst_enq; /* Dequeue this many segments at once from swq when using
++                  * hqos threads */
++
++  /* The minimum number of credits that must be available in the tx ring
++   * before a packet can be pushed, used to reduce the number of packets
++   * enqueued into the tx ring at a given time. */
++  u16 min_tx_pipe_credit[TGHQOS_SCHED_PIPES_PER_PORT];
++  /* The size of the tx ring, read from the driver */
++  u16 hw_tx_pipe_size[TGHQOS_SCHED_PIPES_PER_PORT];
++
++  /* Configuration used by RED dropper */
++  struct tghqos_red_config red_config[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
++                                     [TGHQOS_COLORS];
++
++  tghqos_sched_port_counters_t counters;
++
++  tghqos_sched_pipe_t pipes[TGHQOS_SCHED_PIPES_PER_PORT];
++} tghqos_sched_port_t;
++
++/**
++ * @brief Do port configuration for RED.
++ *
++ * @param port Pointer to port
++ * @param red_params RED parameters used to set port->red_config values
++ * @return 0 upon success, error code otherwise
++ */
++int tghqos_sched_port_red_config (
++    tghqos_sched_port_t *port,
++    struct tghqos_red_params red_params[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
++                                       [TGHQOS_COLORS]);
++
++/**
++ * @brief Do port configuration for queue sizes. Sets sizes for all queues in
++ * the port.
++ *
++ * @param port Pointer to port
++ * @param queue_size Array of queue size values, per traffic class, per queue
++ * index.
++ */
++void tghqos_sched_port_queue_size_config (
++    tghqos_sched_port_t *port,
++    u32 queue_size[TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE]
++                  [TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS]);
++
++/**
++ * @brief Do port configuration for interface rate (in bytes), used to
++ * calculate RED timing parameters.
++ *
++ * @param port Pointer to port
++ * @param rate Interface throughput rate in bytes per second
++ */
++void tghqos_sched_port_rate_config (tghqos_sched_port_t *port, u32 rate);
++
++/**
++ * @brief Do port configuration for maximum firmware tx ring depth. This
++ * changes the min_tx_pipe_credit on all the pipes for that port.
++ *
++ * @param port Pointer to port
++ * @param depth Maximum firmware tx ring depth
++ */
++void tghqos_sched_port_fw_tx_ring_depth_config (tghqos_sched_port_t *port,
++                                                u32 depth);
++
++/**
++ * @brief Resync time on a port using the port's existing timing parameters.
++ * Should be called at the beginning of a tx routine prior to dequeuing
++ * packets.
++ *
++ * @param port Pointer to port
++ */
++static inline void tghqos_sched_port_time_resync (tghqos_sched_port_t *port)
++{
++  u64 cycles = rte_get_tsc_cycles ();
++  u64 cycles_diff;
++  u64 bytes_diff;
++
++  if (cycles < port->time_cpu_cycles)
++    port->time_cpu_cycles = 0;
++
++  cycles_diff = cycles - port->time_cpu_cycles;
++  /* Compute elapsed time in bytes */
++  bytes_diff = rte_reciprocal_divide (cycles_diff << TGHQOS_SCHED_TIME_SHIFT,
++                                      port->inv_cycles_per_byte);
++
++  /* Advance port time */
++  port->time_cpu_cycles +=
++      (bytes_diff * port->cycles_per_byte) >> TGHQOS_SCHED_TIME_SHIFT;
++  port->time_cpu_bytes += bytes_diff;
++  if (port->time < port->time_cpu_bytes)
++    port->time = port->time_cpu_bytes;
++}
++
++/**
++ * @brief Do hierarchical classification for a packet based on it's DSCP value.
++ *
++ * @param pkt Pointer to packet to classify
++ * @param tc_table Pointer to table used to look up metadata from DSCP value
++ */
++void tghqos_sched_set_pkt_metadata (struct rte_mbuf *pkt, u32 *tc_table);
++
++/**
++ * @brief Enqueue packets on a port. Frees packets that cannot be enqueued.
++ *
++ * @param port Pointer to port
++ * @param pkts Array of packets (rte_mbuf pointers) to enqueue
++ * @param n_pkts Number of packets in array to enqueue
++ * @return Number of packets successfully enqueued
++ */
++u32 tghqos_sched_port_enqueue (tghqos_sched_port_t *port,
++                               struct rte_mbuf **pkts, u32 n_pkts);
++
++/**
++ * @brief Dequeue packets from a pipe in a port.
++ *
++ * @param port Pointer to port
++ * @param pipe Index of pipe in the port
++ * @param pkts Array to place dequeued packets (rte_mbuf pointers)
++ * @param n_seg Maximum number of packet segments to dequeue
++ * @return Number of packets dequeued
++ */
++u32 tghqos_sched_port_dequeue_pipe (tghqos_sched_port_t *port, u32 pipe,
++                                    struct rte_mbuf **pkts, u32 n_seg);
++
++/**
++ * @brief Read stats from a queue.
++ *
++ * @param queue Pointer to port
++ * @param stats Pointer to struct to store read stats
++ * @param qlen Pointer to store read queue length
++ * @param qsize Pointer ot store read queue size
++ * @param clear Clear recorded stats after reading
++ */
++void tghqos_sched_queue_read_stats (tghqos_sched_queue_t *queue,
++                                    tghqos_sched_stats_t *stats, u32 *qlen,
++                                    u32 *qsize, u32 clear);
++
++/**
++ * @brief Read stats from a traffic class in a pipe by reading stats from all
++ * queues within the traffic class and aggregating them.
++ *
++ * @param tc Pointer to traffic class
++ * @param stats Pointer to struct to store read stats
++ * @param clear Clear recorded stats after reading
++ */
++void tghqos_sched_traffic_class_read_stats (tghqos_sched_traffic_class_t *tc,
++                                            tghqos_sched_stats_t *stats,
++                                            u32 clear);
++
++/**
++ * @brief Read stats from a pipe in a port by reading stats from all queues
++ * within the pipe and aggregating them.
++ *
++ * @param pipe Pointer to pipe
++ * @param stats Pointer to struct to store read stats
++ * @param clear Clear recorded stats after reading
++ */
++void tghqos_sched_pipe_read_stats (tghqos_sched_pipe_t *pipe,
++                                   tghqos_sched_stats_t *stats, u32 clear);
++
++/**
++ * @brief Read stats from a port by reading stats from all queues within
++ * the port and aggregating them.
++ *
++ * @param port Pointer to port
++ * @param stats Pointer to struct to store read stats
++ * @param clear Clear recorded stats after reading
++ */
++void tghqos_sched_port_read_stats (tghqos_sched_port_t *port,
++                                   tghqos_sched_stats_t *stats, u32 clear);
++
++#endif /* __TGHQOS_SCHED_H_INCLUDED__ */
+-- 
+2.30.2
+

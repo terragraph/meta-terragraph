@@ -1,0 +1,5 @@
+#!/bin/sh
+
+exec 2>&1
+
+exec /usr/sbin/radvd --logmethod=stderr --nodaemon --config=/var/run/radvd.conf

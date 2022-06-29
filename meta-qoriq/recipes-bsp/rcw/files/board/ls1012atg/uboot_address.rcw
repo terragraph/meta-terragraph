@@ -1,0 +1,8 @@
+/*
+ * PBI Commands for LS1012AFB
+ */
+
+.pbi
+write 0x570604, 0x40010000
+write 0x570600, 0x00000000
+.end

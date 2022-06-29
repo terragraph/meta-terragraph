@@ -1,0 +1,24 @@
+diff --git a/thrift/cmake/FBThriftConfig.cmake.in b/thrift/cmake/FBThriftConfig.cmake.in
+index e1297ed18..20a004c0a 100644
+--- a/thrift/cmake/FBThriftConfig.cmake.in
++++ b/thrift/cmake/FBThriftConfig.cmake.in
+@@ -22,10 +22,15 @@ set(FBTHRIFT_PREFIX_DIR "${PACKAGE_PREFIX_DIR}")
+
+ set_and_check(FBTHRIFT_CMAKE_DIR "@PACKAGE_CMAKE_INSTALL_DIR@")
+ set_and_check(FBTHRIFT_INCLUDE_DIR "@PACKAGE_INCLUDE_INSTALL_DIR@")
+-if (WIN32)
+-  set_and_check(FBTHRIFT_COMPILER "@PACKAGE_BIN_INSTALL_DIR@/thrift1.exe")
+-else()
+-  set_and_check(FBTHRIFT_COMPILER "@PACKAGE_BIN_INSTALL_DIR@/thrift1")
++if (NOT FBTHRIFT_COMPILER)
++  if (WIN32)
++    set_and_check(FBTHRIFT_COMPILER "@PACKAGE_BIN_INSTALL_DIR@/thrift1.exe")
++  else()
++    set_and_check(FBTHRIFT_COMPILER "@PACKAGE_BIN_INSTALL_DIR@/thrift1")
++  endif()
++endif()
++if (NOT FBTHRIFT_TEMPLATES_DIR)
++  set_and_check(FBTHRIFT_TEMPLATES_DIR "@PACKAGE_TEMPLATES_INSTALL_DIR@")
+ endif()
+
+ find_dependency(ZLIB REQUIRED)

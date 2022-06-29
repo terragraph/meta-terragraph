@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Make clang --analyze work like clang -Werror in that it will compile a .o unless
+# a static analyzer warning is found.  We also use CC and CXX to link so only invoke
+# the static analyzer when building a .o file via use of ' -c ' on the command line.
+
+# Pull clang++ 9.0 locally off of gvfs
+CLANGXX=/mnt/gvfs/third-party2/llvm-fb/c77b63924dc5f5116aad6a58d2ae639a6353a0f0/9.0.0/platform009/651ee30/bin/clang++
+if [ ! -x $CLANGXX ]; then
+    CLANGXX=clang++
+fi
+
+echo "$@" | grep ' -c '
+if [ $? -eq 0 ]
+then
+    ${CLANGXX} --analyze "$@" 2>&1 | tee | grep -s 'warning: '
+    result=$?
+
+    if [ $result -eq 0 ]
+    then
+        exit 1
+    fi
+fi
+
+${CLANG_ANALYZE_REAL_CXX} "$@"

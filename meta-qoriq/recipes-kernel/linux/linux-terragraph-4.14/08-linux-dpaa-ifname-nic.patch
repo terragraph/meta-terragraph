@@ -1,0 +1,24 @@
+From cc6608c1cd67f73c38667ad72c3ae2f630a592e7 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Fri, 6 Apr 2018 15:15:01 -0700
+Subject: [PATCH] Rename DPAA2 wired port to nicX by default
+
+---
+ drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c b/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c
+index a8bea3c..2f6ec9b 100644
+--- a/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c
++++ b/drivers/staging/fsl-dpaa2/ethernet/dpaa2-eth.c
+@@ -3533,6 +3533,7 @@ static int dpaa2_eth_probe(struct fsl_mc_device *dpni_dev)
+ 		err = -ENOMEM;
+ 		goto err_alloc_percpu_extras;
+ 	}
++	snprintf(net_dev->name, IFNAMSIZ, "nic%d", dpni_dev->obj_desc.id);
+ 
+ 	err = netdev_init(net_dev);
+ 	if (err)
+-- 
+2.9.5
+

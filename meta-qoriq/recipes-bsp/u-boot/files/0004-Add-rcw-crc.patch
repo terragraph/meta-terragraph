@@ -1,0 +1,37 @@
+From cf5b4bc12a8ed1d825dca874c0e2299adf1f04ed Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Tue, 14 Nov 2017 18:22:50 -0800
+Subject: [PATCH 04/21] Add rcw crc
+
+---
+ arch/arm/cpu/armv8/fsl-layerscape/cpu.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/arm/cpu/armv8/fsl-layerscape/cpu.c b/arch/arm/cpu/armv8/fsl-layerscape/cpu.c
+index 91e2c1cab6..30e6a6fe51 100644
+--- a/arch/arm/cpu/armv8/fsl-layerscape/cpu.c
++++ b/arch/arm/cpu/armv8/fsl-layerscape/cpu.c
+@@ -962,6 +962,7 @@ int print_cpuinfo(void)
+ 	char buf[32];
+ 	unsigned int i, core;
+ 	u32 type, rcw, svr = gur_in32(&gur->svr);
++	u32 crc;
+ 
+ 	puts("SoC: ");
+ 
+@@ -1009,6 +1010,12 @@ int print_cpuinfo(void)
+ 	}
+ 	puts("\n");
+ 
++	/*
++	 * Also show RCW CRC so it is easy to compare.
++	 */
++	crc = crc32(0, (u8 *)gur->rcwsr, sizeof(gur->rcwsr));
++	printf("RCW CRC: %x\n", crc);
++
+ 	return 0;
+ }
+ #endif
+-- 
+2.17.1
+

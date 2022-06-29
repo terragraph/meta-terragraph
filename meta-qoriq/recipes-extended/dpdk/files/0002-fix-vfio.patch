@@ -1,0 +1,551 @@
+From 0c9c20f042bc055fc91a4fd1018b8d13229d9ba7 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Wed, 21 Aug 2019 14:54:02 -0700
+Subject: [PATCH] Fixup VFIO NXP DPAA2 platforms
+
+Do not allow NXP to create own containerand attempt to sync
+memory into it. Using default container is working just fine,
+stick with that. NXPs home made code results in a new container
+per device being created instead which does not quite work
+when there are actual DPAA2 devices and PCIe devices in the
+mix.
+---
+ drivers/bus/fslmc/fslmc_vfio.c | 426 ++-------------------------------
+ lib/librte_eal/version.map     |   2 +
+ 2 files changed, 25 insertions(+), 403 deletions(-)
+
+diff --git a/drivers/bus/fslmc/fslmc_vfio.c b/drivers/bus/fslmc/fslmc_vfio.c
+index 54b989310a..64cb57f462 100644
+--- a/drivers/bus/fslmc/fslmc_vfio.c
++++ b/drivers/bus/fslmc/fslmc_vfio.c
+@@ -21,6 +21,7 @@
+ #include <sys/eventfd.h>
+ 
+ #include <eal_filesystem.h>
++#include <linux/eal_vfio.h>
+ #include <rte_mbuf.h>
+ #include <rte_ethdev_driver.h>
+ #include <rte_malloc.h>
+@@ -47,7 +48,6 @@ static struct fslmc_vfio_group vfio_group;
+ static struct fslmc_vfio_container vfio_container;
+ static int container_device_fd;
+ char *fslmc_container;
+-static int fslmc_iommu_type;
+ static uint32_t *msi_intr_vaddr;
+ void *(*rte_mcp_ptr_list);
+ 
+@@ -97,9 +97,6 @@ fslmc_get_container_group(int *groupid)
+ 		}
+ 	}
+ 
+-	fslmc_iommu_type = (rte_vfio_noiommu_is_enabled() == 1) ?
+-		RTE_VFIO_NOIOMMU : VFIO_TYPE1_IOMMU;
+-
+ 	/* get group number */
+ 	ret = rte_vfio_get_group_num(SYSFS_FSL_MC_DEVICES,
+ 				     fslmc_container, groupid);
+@@ -124,45 +121,13 @@ vfio_connect_container(void)
+ 		return -1;
+ 	}
+ 
+-	/* Try connecting to vfio container if already created */
+-	if (!ioctl(vfio_group.fd, VFIO_GROUP_SET_CONTAINER,
+-		&vfio_container.fd)) {
+-		DPAA2_BUS_DEBUG(
+-		    "Container pre-exists with FD[0x%x] for this group",
+-		    vfio_container.fd);
+-		vfio_group.container = &vfio_container;
+-		return 0;
+-	}
+-
+ 	/* Opens main vfio file descriptor which represents the "container" */
+-	fd = rte_vfio_get_container_fd();
++	fd = vfio_get_default_container_fd();
+ 	if (fd < 0) {
+ 		DPAA2_BUS_ERR("Failed to open VFIO container");
+ 		return -errno;
+ 	}
+ 
+-	/* Check whether support for SMMU type IOMMU present or not */
+-	if (ioctl(fd, VFIO_CHECK_EXTENSION, fslmc_iommu_type)) {
+-		/* Connect group to container */
+-		ret = ioctl(vfio_group.fd, VFIO_GROUP_SET_CONTAINER, &fd);
+-		if (ret) {
+-			DPAA2_BUS_ERR("Failed to setup group container");
+-			close(fd);
+-			return -errno;
+-		}
+-
+-		ret = ioctl(fd, VFIO_SET_IOMMU, fslmc_iommu_type);
+-		if (ret) {
+-			DPAA2_BUS_ERR("Failed to setup VFIO iommu");
+-			close(fd);
+-			return -errno;
+-		}
+-	} else {
+-		DPAA2_BUS_ERR("No supported IOMMU available");
+-		close(fd);
+-		return -EINVAL;
+-	}
+-
+ 	vfio_container.used = 1;
+ 	vfio_container.fd = fd;
+ 	vfio_container.group = &vfio_group;
+@@ -200,233 +165,23 @@ static int vfio_map_irq_region(struct fslmc_vfio_group *group)
+ 	return -errno;
+ }
+ 
+-static int fslmc_map_dma(uint64_t vaddr, rte_iova_t iovaddr, size_t len);
+-static int fslmc_unmap_dma(uint64_t vaddr, rte_iova_t iovaddr, size_t len);
+-
+-static void
+-fslmc_memevent_cb(enum rte_mem_event type, const void *addr, size_t len,
+-		void *arg __rte_unused)
+-{
+-	struct rte_memseg_list *msl;
+-	struct rte_memseg *ms;
+-	size_t cur_len = 0, map_len = 0;
+-	uint64_t virt_addr;
+-	rte_iova_t iova_addr;
+-	int ret;
+-
+-	msl = rte_mem_virt2memseg_list(addr);
+-
+-	while (cur_len < len) {
+-		const void *va = RTE_PTR_ADD(addr, cur_len);
+-
+-		ms = rte_mem_virt2memseg(va, msl);
+-		iova_addr = ms->iova;
+-		virt_addr = ms->addr_64;
+-		map_len = ms->len;
+-
+-		DPAA2_BUS_DEBUG("Request for %s, va=%p, "
+-				"virt_addr=0x%" PRIx64 ", "
+-				"iova=0x%" PRIx64 ", map_len=%zu",
+-				type == RTE_MEM_EVENT_ALLOC ?
+-					"alloc" : "dealloc",
+-				va, virt_addr, iova_addr, map_len);
+-
+-		/* iova_addr may be set to RTE_BAD_IOVA */
+-		if (iova_addr == RTE_BAD_IOVA) {
+-			DPAA2_BUS_DEBUG("Segment has invalid iova, skipping\n");
+-			cur_len += map_len;
+-			continue;
+-		}
+-
+-		if (type == RTE_MEM_EVENT_ALLOC)
+-			ret = fslmc_map_dma(virt_addr, iova_addr, map_len);
+-		else
+-			ret = fslmc_unmap_dma(virt_addr, iova_addr, map_len);
+-
+-		if (ret != 0) {
+-			DPAA2_BUS_ERR("DMA Mapping/Unmapping failed. "
+-					"Map=%d, addr=%p, len=%zu, err:(%d)",
+-					type, va, map_len, ret);
+-			return;
+-		}
+-
+-		cur_len += map_len;
+-	}
+-
+-	if (type == RTE_MEM_EVENT_ALLOC)
+-		DPAA2_BUS_DEBUG("Total Mapped: addr=%p, len=%zu",
+-				addr, len);
+-	else
+-		DPAA2_BUS_DEBUG("Total Unmapped: addr=%p, len=%zu",
+-				addr, len);
+-}
+-
+-static int
+-fslmc_map_dma(uint64_t vaddr, rte_iova_t iovaddr __rte_unused, size_t len)
+-{
+-	struct fslmc_vfio_group *group;
+-	struct vfio_iommu_type1_dma_map dma_map = {
+-		.argsz = sizeof(struct vfio_iommu_type1_dma_map),
+-		.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
+-	};
+-	int ret;
+-
+-	if (fslmc_iommu_type == RTE_VFIO_NOIOMMU) {
+-		DPAA2_BUS_DEBUG("Running in NOIOMMU mode");
+-		return 0;
+-	}
+-
+-	dma_map.size = len;
+-	dma_map.vaddr = vaddr;
+-
+-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+-	dma_map.iova = iovaddr;
+-#else
+-	dma_map.iova = dma_map.vaddr;
+-#endif
+-
+-	/* SET DMA MAP for IOMMU */
+-	group = &vfio_group;
+-
+-	if (!group->container) {
+-		DPAA2_BUS_ERR("Container is not connected ");
+-		return -1;
+-	}
+-
+-	DPAA2_BUS_DEBUG("--> Map address: 0x%"PRIx64", size: %"PRIu64"",
+-			(uint64_t)dma_map.vaddr, (uint64_t)dma_map.size);
+-	ret = ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA, &dma_map);
+-	if (ret) {
+-		DPAA2_BUS_ERR("VFIO_IOMMU_MAP_DMA API(errno = %d)",
+-				errno);
+-		return -1;
+-	}
+-
+-	return 0;
+-}
+-
+-static int
+-fslmc_unmap_dma(uint64_t vaddr, uint64_t iovaddr __rte_unused, size_t len)
+-{
+-	struct fslmc_vfio_group *group;
+-	struct vfio_iommu_type1_dma_unmap dma_unmap = {
+-		.argsz = sizeof(struct vfio_iommu_type1_dma_unmap),
+-		.flags = 0,
+-	};
+-	int ret;
+-
+-	if (fslmc_iommu_type == RTE_VFIO_NOIOMMU) {
+-		DPAA2_BUS_DEBUG("Running in NOIOMMU mode");
+-		return 0;
+-	}
+-
+-	dma_unmap.size = len;
+-	dma_unmap.iova = vaddr;
+-
+-	/* SET DMA MAP for IOMMU */
+-	group = &vfio_group;
+-
+-	if (!group->container) {
+-		DPAA2_BUS_ERR("Container is not connected ");
+-		return -1;
+-	}
+-
+-	DPAA2_BUS_DEBUG("--> Unmap address: 0x%"PRIx64", size: %"PRIu64"",
+-			(uint64_t)dma_unmap.iova, (uint64_t)dma_unmap.size);
+-	ret = ioctl(group->container->fd, VFIO_IOMMU_UNMAP_DMA, &dma_unmap);
+-	if (ret) {
+-		DPAA2_BUS_ERR("VFIO_IOMMU_UNMAP_DMA API(errno = %d)",
+-				errno);
+-		return -1;
+-	}
+-
+-	return 0;
+-}
+-
+-static int
+-fslmc_dmamap_seg(const struct rte_memseg_list *msl __rte_unused,
+-		const struct rte_memseg *ms, void *arg)
+-{
+-	int *n_segs = arg;
+-	int ret;
+-
+-	/* if IOVA address is invalid, skip */
+-	if (ms->iova == RTE_BAD_IOVA)
+-		return 0;
+-
+-	ret = fslmc_map_dma(ms->addr_64, ms->iova, ms->len);
+-	if (ret)
+-		DPAA2_BUS_ERR("Unable to VFIO map (addr=%p, len=%zu)",
+-				ms->addr, ms->len);
+-	else
+-		(*n_segs)++;
+-
+-	return ret;
+-}
+-
++/* This function might be unnecessary, but is being called by
++ * example code and in the corner case of DPAA2 buffer being populated
++ * by memory not yet known to DPDK (which should not be done to
++ * start with).
++ */
+ int
+ rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size)
+ {
+-	int ret;
+-	struct fslmc_vfio_group *group;
+-	struct vfio_iommu_type1_dma_map dma_map = {
+-		.argsz = sizeof(struct vfio_iommu_type1_dma_map),
+-		.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
+-	};
+-
+-	if (fslmc_iommu_type == RTE_VFIO_NOIOMMU) {
+-		DPAA2_BUS_DEBUG("Running in NOIOMMU mode");
+-		return 0;
+-	}
+-
+-	/* SET DMA MAP for IOMMU */
+-	group = &vfio_group;
+-	if (!group->container) {
+-		DPAA2_BUS_ERR("Container is not connected");
+-		return -1;
+-	}
+-
+-	dma_map.size = size;
+-	dma_map.vaddr = vaddr;
+-	dma_map.iova = iova;
+-
+-	DPAA2_BUS_DEBUG("VFIOdmamap 0x%"PRIx64":0x%"PRIx64",size 0x%"PRIx64"\n",
+-			(uint64_t)dma_map.vaddr, (uint64_t)dma_map.iova,
+-			(uint64_t)dma_map.size);
+-	ret = ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA,
+-		    &dma_map);
+-	if (ret) {
+-		printf("Unable to map DMA address (errno = %d)\n",
+-			errno);
+-		return ret;
+-	}
+-
+-	return 0;
++	return rte_vfio_container_dma_map(RTE_VFIO_DEFAULT_CONTAINER_FD, vaddr,
++					  iova, size);
+ }
+ 
+ int rte_fslmc_vfio_dmamap(void)
+ {
+-	int i = 0, ret;
+-
+ 	/* Lock before parsing and registering callback to memory subsystem */
+ 	rte_mcfg_mem_read_lock();
+ 
+-	if (rte_memseg_walk(fslmc_dmamap_seg, &i) < 0) {
+-		rte_mcfg_mem_read_unlock();
+-		return -1;
+-	}
+-
+-	ret = rte_mem_event_callback_register("fslmc_memevent_clb",
+-			fslmc_memevent_cb, NULL);
+-	if (ret && rte_errno == ENOTSUP)
+-		DPAA2_BUS_DEBUG("Memory event callbacks not supported");
+-	else if (ret)
+-		DPAA2_BUS_DEBUG("Unable to install memory handler");
+-	else
+-		DPAA2_BUS_DEBUG("Installed memory callback handler");
+-
+-	DPAA2_BUS_DEBUG("Total %d segments found.", i);
+-
+ 	/* TODO - This is a W.A. as VFIO currently does not add the mapping of
+ 	 * the interrupt region to SMMU. This should be removed once the
+ 	 * support is added in the Kernel.
+@@ -445,129 +200,14 @@ static int
+ fslmc_vfio_setup_device(const char *sysfs_base, const char *dev_addr,
+ 		int *vfio_dev_fd, struct vfio_device_info *device_info)
+ {
+-	struct vfio_group_status group_status = {
+-			.argsz = sizeof(group_status)
+-	};
+-	int vfio_group_fd, vfio_container_fd, iommu_group_no, ret;
+-
+-	/* get group number */
+-	ret = rte_vfio_get_group_num(sysfs_base, dev_addr, &iommu_group_no);
+-	if (ret < 0)
+-		return -1;
+-
+-	/* get the actual group fd */
+-	vfio_group_fd = rte_vfio_get_group_fd(iommu_group_no);
+-	if (vfio_group_fd < 0 && vfio_group_fd != -ENOENT)
+-		return -1;
+-
+-	/*
+-	 * if vfio_group_fd == -ENOENT, that means the device
+-	 * isn't managed by VFIO
+-	 */
+-	if (vfio_group_fd == -ENOENT) {
+-		RTE_LOG(WARNING, EAL, " %s not managed by VFIO driver, skipping\n",
+-				dev_addr);
+-		return 1;
+-	}
+-
+-	/* Opens main vfio file descriptor which represents the "container" */
+-	vfio_container_fd = rte_vfio_get_container_fd();
+-	if (vfio_container_fd < 0) {
+-		DPAA2_BUS_ERR("Failed to open VFIO container");
+-		return -errno;
+-	}
+-
+-	/* check if the group is viable */
+-	ret = ioctl(vfio_group_fd, VFIO_GROUP_GET_STATUS, &group_status);
+-	if (ret) {
+-		DPAA2_BUS_ERR("  %s cannot get group status, "
+-				"error %i (%s)\n", dev_addr,
+-				errno, strerror(errno));
+-		close(vfio_group_fd);
+-		rte_vfio_clear_group(vfio_group_fd);
+-		return -1;
+-	} else if (!(group_status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
+-		DPAA2_BUS_ERR("  %s VFIO group is not viable!\n", dev_addr);
+-		close(vfio_group_fd);
+-		rte_vfio_clear_group(vfio_group_fd);
+-		return -1;
+-	}
+-	/* At this point, we know that this group is viable (meaning,
+-	 * all devices are either bound to VFIO or not bound to anything)
+-	 */
+-
+-	/* check if group does not have a container yet */
+-	if (!(group_status.flags & VFIO_GROUP_FLAGS_CONTAINER_SET)) {
+-
+-		/* add group to a container */
+-		ret = ioctl(vfio_group_fd, VFIO_GROUP_SET_CONTAINER,
+-				&vfio_container_fd);
+-		if (ret) {
+-			DPAA2_BUS_ERR("  %s cannot add VFIO group to container, "
+-					"error %i (%s)\n", dev_addr,
+-					errno, strerror(errno));
+-			close(vfio_group_fd);
+-			close(vfio_container_fd);
+-			rte_vfio_clear_group(vfio_group_fd);
+-			return -1;
+-		}
+-
+-		/*
+-		 * set an IOMMU type for container
+-		 *
+-		 */
+-		if (ioctl(vfio_container_fd, VFIO_CHECK_EXTENSION,
+-			  fslmc_iommu_type)) {
+-			ret = ioctl(vfio_container_fd, VFIO_SET_IOMMU,
+-				    fslmc_iommu_type);
+-			if (ret) {
+-				DPAA2_BUS_ERR("Failed to setup VFIO iommu");
+-				close(vfio_group_fd);
+-				close(vfio_container_fd);
+-				return -errno;
+-			}
+-		} else {
+-			DPAA2_BUS_ERR("No supported IOMMU available");
+-			close(vfio_group_fd);
+-			close(vfio_container_fd);
+-			return -EINVAL;
+-		}
+-	}
+-
+-	/* get a file descriptor for the device */
+-	*vfio_dev_fd = ioctl(vfio_group_fd, VFIO_GROUP_GET_DEVICE_FD, dev_addr);
+-	if (*vfio_dev_fd < 0) {
+-		/* if we cannot get a device fd, this implies a problem with
+-		 * the VFIO group or the container not having IOMMU configured.
+-		 */
+-
+-		DPAA2_BUS_WARN("Getting a vfio_dev_fd for %s failed", dev_addr);
+-		close(vfio_group_fd);
+-		close(vfio_container_fd);
+-		rte_vfio_clear_group(vfio_group_fd);
+-		return -1;
+-	}
+-
+-	/* test and setup the device */
+-	ret = ioctl(*vfio_dev_fd, VFIO_DEVICE_GET_INFO, device_info);
+-	if (ret) {
+-		DPAA2_BUS_ERR("  %s cannot get device info, error %i (%s)",
+-				dev_addr, errno, strerror(errno));
+-		close(*vfio_dev_fd);
+-		close(vfio_group_fd);
+-		close(vfio_container_fd);
+-		rte_vfio_clear_group(vfio_group_fd);
+-		return -1;
+-	}
+-
+-	return 0;
++	return rte_vfio_setup_device(sysfs_base, dev_addr, vfio_dev_fd,
++	    device_info);
+ }
+ 
+ static intptr_t vfio_map_mcp_obj(const char *mcp_obj)
+ {
+ 	intptr_t v_addr = (intptr_t)MAP_FAILED;
+ 	int32_t ret, mc_fd;
+-	struct vfio_group_status status = { .argsz = sizeof(status) };
+ 
+ 	struct vfio_device_info d_info = { .argsz = sizeof(d_info) };
+ 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info) };
+@@ -1055,7 +695,7 @@ fslmc_vfio_setup_group(void)
+ {
+ 	int groupid;
+ 	int ret;
+-	struct vfio_group_status status = { .argsz = sizeof(status) };
++	struct vfio_device_info dev_info = { .argsz = sizeof(dev_info) };
+ 
+ 	/* if already done once */
+ 	if (container_device_fd)
+@@ -1079,48 +719,28 @@ fslmc_vfio_setup_group(void)
+ 		return ret;
+ 	vfio_group.fd = ret;
+ 
+-	/* Check group viability */
+-	ret = ioctl(vfio_group.fd, VFIO_GROUP_GET_STATUS, &status);
+-	if (ret) {
+-		DPAA2_BUS_ERR("VFIO error getting group status");
++	/* Let rte_vfio_setup_device do the heavy lifting */
++	ret = rte_vfio_setup_device(SYSFS_FSL_MC_DEVICES, fslmc_container,
++	    &container_device_fd, &dev_info);
++	if (ret != 0) {
++		DPAA2_BUS_ERR("VFIO error setting up the container device");
+ 		close(vfio_group.fd);
+ 		rte_vfio_clear_group(vfio_group.fd);
+ 		return ret;
+ 	}
+ 
+-	if (!(status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
+-		DPAA2_BUS_ERR("VFIO group not viable");
+-		close(vfio_group.fd);
+-		rte_vfio_clear_group(vfio_group.fd);
+-		return -EPERM;
+-	}
+-	/* Since Group is VIABLE, Store the groupid */
+ 	vfio_group.groupid = groupid;
+ 
+-	/* check if group does not have a container yet */
+-	if (!(status.flags & VFIO_GROUP_FLAGS_CONTAINER_SET)) {
+-		/* Now connect this IOMMU group to given container */
+-		ret = vfio_connect_container();
+-		if (ret) {
+-			DPAA2_BUS_ERR(
+-				"Error connecting container with groupid %d",
+-				groupid);
+-			close(vfio_group.fd);
+-			rte_vfio_clear_group(vfio_group.fd);
+-			return ret;
+-		}
+-	}
+-
+-	/* Get Device information */
+-	ret = ioctl(vfio_group.fd, VFIO_GROUP_GET_DEVICE_FD, fslmc_container);
+-	if (ret < 0) {
+-		DPAA2_BUS_ERR("Error getting device %s fd from group %d",
+-			      fslmc_container, vfio_group.groupid);
++	ret = vfio_connect_container();
++	if (ret) {
++		DPAA2_BUS_ERR(
++			"Error connecting container with groupid %d",
++			groupid);
+ 		close(vfio_group.fd);
+ 		rte_vfio_clear_group(vfio_group.fd);
+ 		return ret;
+ 	}
+-	container_device_fd = ret;
++
+ 	DPAA2_BUS_DEBUG("VFIO Container FD is [0x%X]",
+ 			container_device_fd);
+ 
+diff --git a/lib/librte_eal/version.map b/lib/librte_eal/version.map
+index bd9984610d..cac68fe41d 100644
+--- a/lib/librte_eal/version.map
++++ b/lib/librte_eal/version.map
+@@ -217,6 +217,8 @@ DPDK_21 {
+ 	rte_zmalloc;
+ 	rte_zmalloc_socket;
+ 
++	vfio_get_default_container_fd;
++
+ 	local: *;
+ };
+ 
+-- 
+2.30.2
+

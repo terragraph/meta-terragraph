@@ -1,0 +1,253 @@
+From a7676d16901018115c8e0f5562ac0013df9c9089 Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Tue, 14 Nov 2017 18:19:35 -0800
+Subject: [PATCH 03/21] Add gpio support
+
+---
+ .../include/asm/arch-fsl-layerscape/gpio.h    |  21 +++
+ configs/ls1012afrdm_qspi_defconfig            |   2 +
+ drivers/gpio/Kconfig                          |  11 ++
+ drivers/gpio/Makefile                         |   1 +
+ drivers/gpio/ls10xxa_gpio.c                   | 163 ++++++++++++++++++
+ 5 files changed, 198 insertions(+)
+ create mode 100644 arch/arm/include/asm/arch-fsl-layerscape/gpio.h
+ create mode 100644 drivers/gpio/ls10xxa_gpio.c
+
+diff --git a/arch/arm/include/asm/arch-fsl-layerscape/gpio.h b/arch/arm/include/asm/arch-fsl-layerscape/gpio.h
+new file mode 100644
+index 0000000000..4cd4a28ff3
+--- /dev/null
++++ b/arch/arm/include/asm/arch-fsl-layerscape/gpio.h
+@@ -0,0 +1,21 @@
++/*
++ * Copyright 2014 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++/*
++ * Dummy header file to enable CONFIG_OF_CONTROL.
++ * If CONFIG_OF_CONTROL is enabled, lib/fdtdec.c is compiled.
++ * It includes <asm/arch/gpio.h> via <asm/gpio.h>, so those SoCs that enable
++ * OF_CONTROL must have arch/gpio.h.
++ */
++
++#ifndef __ASM_ARCH_LS102XA_GPIO_H_
++#define __ASM_ARCH_LS102XA_GPIO_H_
++
++#define gpio_status gpio_info
++
++void gpio_info(void);
++
++#endif
+diff --git a/configs/ls1012afrdm_qspi_defconfig b/configs/ls1012afrdm_qspi_defconfig
+index e521b67639..20ba6a5c3a 100644
+--- a/configs/ls1012afrdm_qspi_defconfig
++++ b/configs/ls1012afrdm_qspi_defconfig
+@@ -53,3 +53,5 @@ CONFIG_SATA_CEVA=y
+ CONFIG_SCSI_AHCI=y
+ CONFIG_SCSI=y
+ CONFIG_AHCI=y
++CONFIG_DISTRO_DEFAULTS=y
++CONFIG_CMD_GPIO=y
+diff --git a/drivers/gpio/Kconfig b/drivers/gpio/Kconfig
+index 5cd8b34400..795edb7cea 100644
+--- a/drivers/gpio/Kconfig
++++ b/drivers/gpio/Kconfig
+@@ -314,4 +314,15 @@ config MPC8XXX_GPIO
+ 	  Aside from the standard functions of input/output mode, and output
+ 	  value setting, the open-drain feature, which can configure individual
+ 	  GPIOs to work as open-drain outputs, is supported.
++
++	  The driver has been tested on MPC85XX, but it is likely that other
++	  PowerQUICC III devices will work as well.
++
++config LS10XXA_GPIO
++	bool "Freescale LS10XXA GPIO driver"
++	depends on DM_GPIO
++	default y
++	help
++		This driver supports the GPIO banks on Freescale ls10XXA SoCs.
++
+ endmenu
+diff --git a/drivers/gpio/Makefile b/drivers/gpio/Makefile
+index f186120684..27a7881576 100644
+--- a/drivers/gpio/Makefile
++++ b/drivers/gpio/Makefile
+@@ -58,3 +58,4 @@ obj-$(CONFIG_MVEBU_GPIO)	+= mvebu_gpio.o
+ obj-$(CONFIG_MSM_GPIO)		+= msm_gpio.o
+ obj-$(CONFIG_$(SPL_)PCF8575_GPIO)	+= pcf8575_gpio.o
+ obj-$(CONFIG_PM8916_GPIO)	+= pm8916_gpio.o
++obj-$(CONFIG_LS10XXA_GPIO)	+= ls10xxa_gpio.o
+diff --git a/drivers/gpio/ls10xxa_gpio.c b/drivers/gpio/ls10xxa_gpio.c
+new file mode 100644
+index 0000000000..05c25c3ccb
+--- /dev/null
++++ b/drivers/gpio/ls10xxa_gpio.c
+@@ -0,0 +1,163 @@
++/*
++ * Copyright (c) 2017, Facebook Inc.
++ * All rights reserved.
++ */
++
++#include <common.h>
++#include <dm.h>
++#include <errno.h>
++#include <fdtdec.h>
++#include <malloc.h>
++#include <asm/arch/gpio.h>
++#include <asm/io.h>
++#include <asm/gpio.h>
++#include <dm/device-internal.h>
++#include <dt-bindings/gpio/gpio.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define BANK_TO_GPIO(bank) \
++	((struct ccsr_gpio *)((uintptr_t)GPIO1_BASE_ADDR + (bank) * 0x10000))
++
++#define GPIO_BANK(pin)		((pin) >> 5)
++#define GPIO_NUM(pin)		(((pin) & 0x1f) ^ 0x1f)
++#define GPIO_MASK(num)		(1u << (num))
++
++#define LS10XXA_GPIO_INPUT  0
++#define LS10XXA_GPIO_OUTPUT 1
++
++#ifdef CONFIG_FSL_LSCH3
++# define MAX_NUM_BANKS	4
++# define MAX_NUM_GPIOS	128
++#else
++# define MAX_NUM_BANKS	2
++# define MAX_NUM_GPIOS	64
++#endif
++
++static struct gpio_state {
++	u32 def;
++	u32 iod;
++	u32 val;
++} gpio_info_cache[MAX_NUM_BANKS];
++
++static void ls10xxa_gpio_set_dir(u32 pin, int dir)
++{
++	u32 bank = GPIO_BANK(pin);
++	u32 num = GPIO_NUM(pin);
++	u32 mask = GPIO_MASK(num);
++
++	struct ccsr_gpio *pgpio = BANK_TO_GPIO(bank);
++
++	if (dir == LS10XXA_GPIO_OUTPUT) {
++		gpio_info_cache[bank].iod |= mask;
++		setbits_be32(&pgpio->gpdir, mask);
++	} else {
++		gpio_info_cache[bank].iod &= ~mask;
++		clrbits_be32(&pgpio->gpdir, mask);
++	}
++
++	gpio_info_cache[bank].def |= mask;
++}
++
++static int ls10xxa_gpio_output(u32 pin, u32 val)
++{
++	u32 bank = GPIO_BANK(pin);
++	u32 num = GPIO_NUM(pin);
++	u32 mask = GPIO_MASK(num);
++	u32 reg;
++
++	struct ccsr_gpio *pgpio = BANK_TO_GPIO(bank);
++
++	/* Only change pins that were set to output */
++	mask &= gpio_info_cache[bank].iod;
++	if (mask == 0)
++		return  0;
++
++	/* Read old value */
++	reg = in_be32(&pgpio->gpdat);
++	/* Change only bits we know the value for */
++	reg &= ~gpio_info_cache[bank].iod;
++
++	if (val)
++		gpio_info_cache[bank].val |= mask;
++	else
++		gpio_info_cache[bank].val &= ~mask;
++	reg |= (gpio_info_cache[bank].val & gpio_info_cache[bank].iod);
++	setbits_be32(&pgpio->gpdat, reg);
++	return val ? 1 : 0;
++}
++
++static int ls10xxa_gpio_input(u32 pin)
++{
++	u32 dat;
++	u32 bank = GPIO_BANK(pin);
++	u32 num = GPIO_NUM(pin);
++	u32 mask = GPIO_MASK(num);
++
++	struct ccsr_gpio *pgpio = BANK_TO_GPIO(bank);
++	if (gpio_info_cache[bank].def & mask) {
++		/* For output, return value last written */
++		if (gpio_info_cache[bank].iod & mask)
++			dat = gpio_info_cache[bank].val;
++		else
++			dat = in_be32(&pgpio->gpdat);
++	} else /* We do now know */
++		dat = 0;
++
++	return (dat & mask) ? 1 : 0;
++}
++
++int gpio_request(unsigned gpio, const char *label)
++{
++	/* Only allow subset of gpios */
++	if (gpio < MAX_NUM_GPIOS)
++	       return 0;
++	return -ENOENT;
++}
++
++int gpio_free(unsigned gpio)
++{
++	return 0;
++}
++
++int gpio_direction_input(unsigned gpio)
++{
++	ls10xxa_gpio_set_dir(gpio, LS10XXA_GPIO_INPUT);
++	return 0;
++}
++
++int gpio_direction_output(unsigned gpio, int value)
++{
++	ls10xxa_gpio_set_dir(gpio, LS10XXA_GPIO_OUTPUT);
++	return ls10xxa_gpio_output(gpio, value);
++}
++
++int gpio_get_value(unsigned gpio)
++{
++	return ls10xxa_gpio_input(gpio);
++}
++
++int gpio_set_value(unsigned gpio, int value)
++{
++	return ls10xxa_gpio_output(gpio, value);
++}
++
++void gpio_info(void)
++{
++	unsigned pin, dir, val;
++
++	for (pin = 0; pin < MAX_NUM_GPIOS; ++pin) {
++		u32 bank = GPIO_BANK(pin);
++		u32 num = GPIO_NUM(pin);
++		u32 mask = GPIO_MASK(num);
++
++		/* Skip all gpios not yet set up */
++		if ((gpio_info_cache[bank].def & mask) == 0)
++			continue;
++
++		dir = gpio_info_cache[bank].iod & mask;
++		val = ls10xxa_gpio_input(pin);
++
++		printf("% 4d: %s: %d\n", pin, dir ? "out" : " in", val);
++	}
++}
+-- 
+2.17.1
+

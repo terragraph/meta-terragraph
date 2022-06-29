@@ -1,0 +1,43 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+breeze tech-support
+
+# Additional debug if bgp is running
+if pidof bgpd > /dev/null ; then
+  echo -e "\n------- BGPD enabled -------\n"
+
+  echo ">> Default routes"
+  ip -6 route ls | grep default
+  echo
+
+  echo ">> BGP routes"
+  vtysh -d bgpd -c show ipv6 bgp
+  echo
+
+  echo ">> BGP neighbors"
+  vtysh -d bgpd -c show ipv6 bgp summary
+  echo
+
+  echo ">> BGPD logs"
+  cat /var/log/bgpd.log
+elif ps aux | grep -Eq "/usr/bin/exabgp(\s|$)" ; then
+  echo -e "\n------- ExaBGP enabled -------\n"
+
+  echo ">> ExaBGP neighbors"
+  exabgpcli show neighbor summary
+  echo
+
+  echo ">> ExaBGP received routes"
+  exabgpcli show adj-rib in
+  echo
+
+  echo ">> ExaBGP advertised routes"
+  exabgpcli show adj-rib out
+fi
+
+exit 0

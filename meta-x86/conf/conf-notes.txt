@@ -1,0 +1,3 @@
+Common targets are:
+    terragraph-image-x86
+    e2e-image

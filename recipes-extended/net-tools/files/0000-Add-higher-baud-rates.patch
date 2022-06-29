@@ -1,0 +1,24 @@
+--- a/slattach.c	2020-09-09 15:27:44.423713909 -0700
++++ b/slattach.c	2020-09-09 15:27:44.423713909 -0700
+@@ -102,6 +102,21 @@
+ #ifdef B115200
+   { "115200",	B115200	},
+ #endif
++#ifdef B230400
++  { "230400",	B230400 },
++#endif
++#ifdef B460800
++  { "460800",	B460800	},
++#endif
++#ifdef B576000
++  { "576000",	B576000	},
++#endif
++#ifdef B921600
++  { "921600",	B921600	},
++#endif
++#ifdef B2000000
++  { "2000000", B2000000 },
++#endif
+   { NULL,	0	}
+ };
+ struct termios	tty_saved,		/* saved TTY device state	*/

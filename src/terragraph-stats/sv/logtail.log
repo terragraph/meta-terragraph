@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/logtail
+exec svlogd /var/log/logtail

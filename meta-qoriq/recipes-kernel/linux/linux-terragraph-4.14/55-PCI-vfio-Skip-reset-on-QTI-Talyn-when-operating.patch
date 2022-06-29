@@ -1,0 +1,62 @@
+From a8ae94da84f1e8f11125d67ca841817780135a5d Mon Sep 17 00:00:00 2001
+From: Javier Cardona <jcardona@fb.com>
+Date: Mon, 21 Sep 2020 10:25:48 -0700
+Subject: [PATCHv2] PCI: vfio: Skip reset on QTI Talyn on
+initialization
+
+Talyn chip cannot handle being reset when PCI is enabled/disabled.  Add
+a custom reset function for that chip on that bus.
+
+---
+ drivers/pci/quirks.c    | 11 ++++++++++
+ include/linux/pci_ids.h |  3 +++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/drivers/pci/quirks.c b/drivers/pci/quirks.c
+index 3afcfe240749..c23f3d78ac8f 100644
+--- a/drivers/pci/quirks.c
++++ b/drivers/pci/quirks.c
+@@ -3835,6 +3835,17 @@ static int reset_chelsio_generic_dev(struct pci_dev *dev, int probe)
+ 	return 0;
+ }
+ 
++/*
++ * Talyn will sometimes fail to return from reset.
++ * The suggested solution is to avoid resets on initialization.
++ */
++static int reset_talyn(struct pci_dev *dev, int probe)
++{
++	pci_info(dev, "Reset skipped for this device");
++	return 0;
++
++}
++
+ #define PCI_DEVICE_ID_INTEL_82599_SFP_VF   0x10ed
+ #define PCI_DEVICE_ID_INTEL_IVB_M_VGA      0x0156
+ #define PCI_DEVICE_ID_INTEL_IVB_M2_VGA     0x0166
+@@ -3848,6 +3873,8 @@ static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
+ 		reset_ivb_igd },
+ 	{ PCI_VENDOR_ID_CHELSIO, PCI_ANY_ID,
+ 		reset_chelsio_generic_dev },
++	{ PCI_VENDOR_ID_QUALCOMM, PCI_DEVICE_ID_TALYN,
++		reset_talyn },
+ 	{ 0 }
+ };
+ 
+diff --git a/include/linux/pci_ids.h b/include/linux/pci_ids.h
+index 7fa3f1498b34..0cef8fcacd3a 100644
+--- a/include/linux/pci_ids.h
++++ b/include/linux/pci_ids.h
+@@ -2337,6 +2337,9 @@
+ 
+ #define PCI_VENDOR_ID_ATHEROS		0x168c
+ 
++#define PCI_VENDOR_ID_QUALCOMM      0x17cb
++#define PCI_DEVICE_ID_TALYN		    0x1201
++
+ #define PCI_VENDOR_ID_NETCELL		0x169c
+ #define PCI_DEVICE_ID_REVOLUTION	0x0044
+ 
+-- 
+2.24.1
+

@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+import argparse
+import mmap
+import os
+import struct
+
+
+SFP_MEM_START = 0x1E80000
+SFP_MEM_LEN = 0x288
+
+INGR = 0x20
+SVHESR = 0x24
+VER = 0x38
+OTPMKR0 = 0x234
+OUIDR4 = 0x284
+
+
+def read_reg(mm, reg):
+    mm.seek(reg)
+    return struct.unpack("I", mm.read(4))[0]
+
+
+def write_reg(mm, reg, value):
+    mm.seek(reg)
+    mm.write(struct.pack("I", value))
+
+
+def issue_command(mm, cmd, cmdstr):
+    # Write READFB/PROGFB instruction to register INGR
+    mm.seek(INGR)
+    mm.write(struct.pack("I", cmd))
+    # Wait until command complete
+    while True:
+        mm.seek(INGR)
+        val = struct.unpack("I", mm.read(4))[0]
+        if val & 0xFF == 0:
+            break
+    if val & 0x100:
+        print("ERROR in {} command, aborting".format(cmdstr))
+        exit(1)
+
+
+def issue_read_command(mm):
+    issue_command(mm, 1, "READFB")
+
+
+def issue_prog_command(mm):
+    issue_command(mm, 2, "PROGFB")
+
+
+def otpmk_to_bytes(otpmk_as_hex_or_random):
+    return (
+        os.urandom(32)
+        if otpmk_as_hex_or_random == "random"
+        else bytes.fromhex(otpmk_as_hex_or_random)
+    )
+
+
+# Adapted from
+# https://github.com/qoriq-open-source/cst/blob/integration/lib_hash_drbg/src/otpmk.c
+def otpmk_add_hamming(otpmk):
+    # Parity for whole OTPMK
+    parity_bit = 0
+    # Bit, which if flipped, will make OTPMK valid
+    code_bit = 0
+
+    otpmk = bytearray(otpmk)
+    for i in range(256):
+        if otpmk[i // 8] & (1 << (i % 8)) != 0:
+            parity_bit ^= 1
+            code_bit ^= i
+
+    if code_bit != 0:
+        # Flipping code_bit and parity would make OTPMK valid
+        otpmk[code_bit // 8] ^= 1 << (code_bit % 8)
+        parity_bit ^= 1
+
+    # Adjust overall parity
+    otpmk[0] ^= parity_bit
+
+    return bytes(otpmk)
+
+
+def otpmk_calc(otpmk_hex):
+    otpmk_bytes = otpmk_to_bytes(otpmk_hex)
+    with_hamming = otpmk_add_hamming(otpmk_bytes)
+    print("OTPMK: {}".format(with_hamming.hex()))
+    return with_hamming
+
+
+def otpmk_write(mm, otpmk):
+    for i in range(8):
+        # Get next 4 bytes
+        value_as_bytes = otpmk[i * 4 : (i + 1) * 4]
+        # Convert to big-endian integer
+        value = struct.unpack(">I", value_as_bytes)[0]
+        # Write to register
+        write_reg(mm, OTPMKR0 + i * 4, value)
+
+    # Verify result
+    # Secret Value Hamming Error Status Register
+    error = read_reg(mm, SVHESR)
+    # OEL (OTPMK Error Location) is bits 18:11
+    oel = (error >> 11) & 0xFF
+    # OPE (OTPMK Parity Error) is bit 10
+    ope = (error >> 10) & 1
+
+    if oel != 0 or ope != 0:
+        print(
+            "ERROR in OTPMK parity check: OEL={}, OPE={}. Fuses not programmed, aborting.".format(
+                oel, ope
+            )
+        )
+        exit(1)
+
+
+def otpmk_is_blown(mm):
+    # For every i, OTPMKRi = 0 if not blown or 0xfff..ff if blown
+    otpmkr0 = read_reg(mm, OTPMKR0)
+    return otpmkr0 != 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Write/Program Secure Fuse Processor (SFP) registers"
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Actually program fuses (simulate otherwise)",
+    )
+    parser.add_argument(
+        "--otpmk",
+        help="Program OTPMK. Pass 'random' to generate a random key, "
+        "otherwise pass a hex-encoded 32-byte value",
+    )
+    parser.add_argument(
+        "--otpmk-test",
+        action="store_true",
+        help="If used with --otpmk, adds hamming code to OTPMK and writes "
+        "result to stdout. Does NOT program registers",
+    )
+
+    args = parser.parse_args()
+
+    if args.otpmk is not None:
+        # Validate that it's either 'random' or a 32-byte hex-string
+        hexdigits = set("0123456789abcdefABCDEF")
+        if args.otpmk != "random" and not (
+            len(args.otpmk) == 64 and all(c in hexdigits for c in args.otpmk)
+        ):
+            print(
+                "Bad --otpmk argument. Should be 'random' or a 32-byte hex-string (64 chars)"
+            )
+            exit(1)
+        otpmk = otpmk_calc(args.otpmk)
+        if args.otpmk_test:
+            exit(0)
+
+    f = os.open("/dev/mem", os.O_SYNC | os.O_RDWR)
+    mm = mmap.mmap(
+        f,
+        SFP_MEM_LEN,
+        mmap.MAP_SHARED,
+        mmap.PROT_READ | mmap.PROT_WRITE,
+        offset=SFP_MEM_START,
+    )
+
+    issue_read_command(mm)
+
+    # Sanity check - version should be 3.5.0
+    if read_reg(mm, VER) != 0x30500:
+        print("BAD VERSION 0x{:x}, should be 0x30500. Aborting.".format(regs["VER"]))
+        exit(1)
+
+    if args.otpmk is not None:
+        if otpmk_is_blown(mm):
+            print("ERROR: OTPMK already blown, aborting")
+            exit(1)
+        otpmk_write(mm, otpmk)
+
+    if args.force:
+        issue_prog_command(mm)
+        print("Programmed into fuses")
+    else:
+        print(
+            "Dry-run: Programmed into SFP registers but not into fuses, use '-f' to force"
+        )
+
+    mm.close()
+    os.close(f)
+
+
+if __name__ == "__main__":
+    main()

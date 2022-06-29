@@ -1,0 +1,68 @@
+#! /bin/sh
+set -e
+
+FLUENTBIT_CONF_FILE=/var/run/fluent-bit/fluent-bit.conf
+FLUENTBIT_OUTPUT_CONF_FILE=/var/run/fluent-bit/fluent-bit-output.conf
+FLUENTBIT_LOG_DIR=/var/log/fluent-bit
+PIDFILE=/var/run/fluent-bit.pid
+
+# source init function library
+. /etc/init.d/functions
+
+# /etc/init.d/fluentbit: start and stop the fluentbit agent
+
+test -x /usr/bin/fluent-bit || exit 0
+
+generate_fluentbit_config() {
+  # Generate tg environment if necessary
+  /usr/sbin/config_get_env.sh
+
+  # if fluent-bit log dir does not exist create it
+  mkdir -p "$FLUENTBIT_LOG_DIR"
+
+  # Get node ID
+  MAC_ADDR=$(get_hw_info NODE_ID)
+
+  # Remove any old fluent-bit configuration files
+  rm -f $FLUENTBIT_CONF_FILE $FLUENTBIT_OUTPUT_CONF_FILE
+
+  # Try to generate fluent-bit config file
+  /usr/sbin/generate_fluentbit_config $MAC_ADDR
+  FLUENTBIT_OUTPUT_CONF=`cat $FLUENTBIT_OUTPUT_CONF_FILE`
+  FLUENTBIT_OPTS="-c $FLUENTBIT_CONF_FILE $FLUENTBIT_OUTPUT_CONF -v"
+
+  # Check if fluent-bit configuration file was created to determine if we should
+  # start this service
+  if [ ! -f $FLUENTBIT_CONF_FILE ]; then
+    echo "No fluent-bit configuration file found, refusing to start service"
+    exit 1
+  fi
+}
+
+case "$1" in
+  start)
+  touch $PIDFILE
+  generate_fluentbit_config
+  start-stop-daemon -S -p $PIDFILE -b -m -x /usr/bin/fluent-bit -- $FLUENTBIT_OPTS
+  ;;
+  stop)
+  start-stop-daemon -K -p $PIDFILE -x /usr/bin/fluent-bit
+  rm -rf $PIDFILE
+  ;;
+  status)
+  status /usr/bin/fluent-bit
+  exit $?
+  ;;
+  restart)
+  start-stop-daemon -K -p $PIDFILE -x /usr/bin/fluent-bit --oknodo
+  rm -rf $PIDFILE
+  touch $PIDFILE
+  generate_fluentbit_config
+  start-stop-daemon -S -p $PIDFILE -b -m -x /usr/bin/fluent-bit -- $FLUENTBIT_OPTS
+  ;;
+  *)
+  echo "Usage: /etc/init.d/fluent-bit {start|stop|status|restart}"
+  exit 1
+esac
+
+exit 0

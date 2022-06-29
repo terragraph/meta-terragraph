@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  # check if dpdk is enabled
+  if [ "${DPDK_ENABLED:-0}" -ne "1" ]; then
+    echo "dpdk is not enabled"
+    sleep ${DELAY}
+    continue
+  fi
+
+  NODE_ID=$(get_hw_info NODE_ID)
+
+  if [ "${OPENR_ENABLED:-0}" -eq "1" ] && $(pgrep "openr" > /dev/null); then
+    NODE_PREFIX=$(puff kvstore prefixes | awk '/PREFIX_ALLOCATOR/ {print $1}')
+  fi
+  NODE_PREFIX=${NODE_PREFIX:-'::/128'}
+
+  exec /usr/sbin/vpp_chaperone -v 2 --node_mac $NODE_ID --node_prefix ${NODE_PREFIX} 2>&1
+done

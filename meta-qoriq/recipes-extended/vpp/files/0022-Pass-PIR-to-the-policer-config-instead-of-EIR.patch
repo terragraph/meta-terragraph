@@ -1,0 +1,37 @@
+From 15b8aeccb46f39607961ada592c40cbeade75b3a Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Thu, 13 Aug 2020 20:00:37 -0700
+Subject: [PATCH] Pass PIR to the policer config, instead of EIR
+
+We are using RFC4115 which follows PIR = CIR + EIR. RFC2698 uses
+only CIR and PIR, and VPP uses the "EIR" field as PIR in that case.
+VPP erroneously treats RFC4115 and RFC2698 the same when validating
+parameters.
+---
+ src/vnet/policer/xlate.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/vnet/policer/xlate.c b/src/vnet/policer/xlate.c
+index afc0c05c3..eb85e5583 100644
+--- a/src/vnet/policer/xlate.c
++++ b/src/vnet/policer/xlate.c
+@@ -1126,7 +1126,6 @@ x86_pol_compute_hw_params (sse2_qos_pol_cfg_params_st * cfg,
+       // Two-rate policer
+ 
+       if ((cfg->rb.kbps.cir_kbps == 0) || (cfg->rb.kbps.eir_kbps == 0)
+-	  || (cfg->rb.kbps.eir_kbps < cfg->rb.kbps.cir_kbps)
+ 	  || (cfg->rb.kbps.cb_bytes == 0) || (cfg->rb.kbps.eb_bytes == 0))
+ 	{
+ 	  SSE2_QOS_DEBUG_ERROR ("Config parameter validation failed.");
+@@ -1136,7 +1135,7 @@ x86_pol_compute_hw_params (sse2_qos_pol_cfg_params_st * cfg,
+       if (compute_policer_params (hz,
+ 				  (u64) cfg->rb.kbps.cir_kbps *
+ 				  BYTES_PER_KBIT,
+-				  (u64) cfg->rb.kbps.eir_kbps *
++				  (u64) (cfg->rb.kbps.eir_kbps + cfg->rb.kbps.cir_kbps) *
+ 				  BYTES_PER_KBIT, &hw->current_limit,
+ 				  &hw->extended_limit,
+ 				  &hw->cir_tokens_per_period,
+-- 
+2.30.2
+

@@ -1,0 +1,368 @@
+{
+  "dhcpParams": {
+    "dhcpGlobalConfigAppend": "",
+    "dhcpNameServer": "",
+    "dhcpRangeMax": 65535,
+    "dhcpRangeMin": 10,
+    "dhcpInterface": "",
+    "dhcpPreferredLifetime": 3600,
+    "dhcpValidLifetime": 7200,
+    "dhcpRenewTimer": 1800,
+    "dhcpRebindTimer": 2700,
+    "dhcpPdPool": "",
+    "dhcpPdDelegatedLen": 64,
+    "keaEnabled": false,
+    "prefixSplitEnabled": false
+  },
+  "envParams": {
+    "BH_AMSDU_FRAME_FORMAT": "tg-short",
+    "CPE_INTERFACE": "",
+    "CPE_IFACE_IP_PREFIX": "",
+    "CPE_TUNNEL_ENDPOINT": "",
+    "DPDK_ENABLED": "0",
+    "DVPP_ENABLED": "0",
+    "E2E_ENABLED": "1",
+    "FB_DRIVER_VERBOSE": "0",
+    "FB_PLATFORM_ENABLE_DPAA2": "0",
+    "FW_IF2IF": "0",
+    "FW_LOGGING_ENABLED": "0",
+    "FW_LOG_VERBOSE": "0",
+    "FW_USE_NATIVE_BOARDFILE": "0",
+    "GPSD_BAUD_RATE": "",
+    "GPSD_DEVICE": "",
+    "GPSD_ENABLED": "0",
+    "GPSD_GPS_MODULE": "",
+    "GPSD_NMEA_TIME_OFFSET": "",
+    "GPSD_POSITION_HOLD_ENABLED": "1",
+    "GPSD_PPS_DEVICE": "",
+    "HMAC_VERBOSE": "1",
+    "KMOD_VERBOSE": "0",
+    "LOGTAIL_ENABLED": "1",
+    "MARVELL_SFP_SPEED": "10000",
+    "MINION_VERBOSE": "2",
+    "OOB_INTERFACE": "nic0",
+    "OOB_NETNS": "1",
+    "OPENR_ALLOC_PREFIX": "1",
+    "OPENR_ENABLED": "1",
+    "OPENR_USE_FIB_NSS": "0",
+    "OPENR_USE_FIB_VPP": "0",
+    "OPENR_USE_RTT_METRIC": "0",
+    "OPENR_STATIC_PREFIX_ALLOC": "true",
+    "OPENR_LINK_FLAP_MAX_BACKOFF_MS": "5000",
+    "OPENR_IFACE_PREFIXES": "terra,nic1,nic2",
+    "SNMP_ENABLED": "0",
+    "SSH_ENABLED": "1",
+    "STATS_AGENT_VERBOSE": "2",
+    "UDP_PING_SERVER_ENABLED": "1",
+    "VPP_COREDUMP_ENABLED": "0",
+    "VPP_FW_RECOVERY_ENABLED": "0",
+    "VPP_USE_EEPROM_MACS": "0",
+    "WEBUI_ENABLED": "0"
+  },
+  "fluentdParams": {
+    "endpoints": {},
+    "sources": {
+      "e2e_minion": {
+        "enabled": true,
+        "filename": "/var/log/e2e_minion/current"
+      },
+      "kern": {
+        "enabled": true,
+        "filename": "/var/log/kern.log"
+      },
+      "openr": {
+        "enabled": true,
+        "filename": "/var/log/openr/current"
+      }
+    }
+  },
+  "kvstoreParams": {},
+  "linkParamsBase": {
+    "fwParams": {
+      "beamConfig": 2,
+      "controlSuperframe": 255,
+      "laConvergenceFactordBperSFQ8": 256,
+      "laInvPERTarget": 200,
+      "laMaxMcs": 12,
+      "laMinMcs": 2,
+      "latpc100PercentPERDrop": 532,
+      "latpcLinkImpairConfig": 17716,
+      "latpcUseIterations": 1,
+      "maxAgcMinRssi": -40,
+      "maxAgcTrackingEnabled": 1,
+      "maxAgcTrackingMargindB": 7,
+      "maxTxPower": 21,
+      "mcs": 35,
+      "minTxPower": 0,
+      "respNodeType": 1,
+      "rxBeamIndex": -1,
+      "rxBuffer": 63,
+      "tpcEnable": 3,
+      "txBeamIndex": -1,
+      "txPower": 21
+    },
+    "openrLinkParams": {
+      "softDisable": false
+    }
+  },
+  "linkParamsOverride": {},
+  "logTailParams": {
+    "sources": {
+      "terragraph_kern_logs": {
+        "enabled": true,
+        "filename": "/var/log/kern.log"
+      },
+      "terragraph_minion_logs": {
+        "enabled": true,
+        "filename": "/var/log/e2e_minion/current"
+      },
+      "terragraph_openr_logs": {
+        "enabled": true,
+        "filename": "/var/log/openr/current"
+      }
+    }
+  },
+  "openrParams": {
+    "linkMetricConfig": {
+      "enabled": true,
+      "metricMap": {
+        "MCS2": 15,
+        "MCS3": 15,
+        "MCS4": 3,
+        "MCS5": 3,
+        "MCS6": 3,
+        "MCS7": 3,
+        "MCS8": 3,
+        "MCS9": 1,
+        "MCS10": 1,
+        "MCS11": 1,
+        "MCS12": 1,
+        "MCS13": 1,
+        "MCS14": 1,
+        "MCS15": 1,
+        "MCS16": 1
+      },
+      "tokenGenRate": 0.1,
+      "tokenBurstSize": 3,
+      "successiveChangeCount": 10
+    }
+  },
+  "popParams": {
+    "GW_ADDR": "",
+    "VPP_ADDR": "",
+    "POP_ADDR": "",
+    "POP_BGP_ROUTING": "0",
+    "POP_IFACE": "",
+    "POP_STATIC_ROUTING": "0"
+  },
+  "radioParamsBase": {
+    "fwParams": {
+      "beamConfig": 2,
+      "bfMode": 1,
+      "cb2Enable": 0,
+      "crsScale": 24,
+      "forceGpsDisable": 0,
+      "gpioConfig": 0,
+      "ibfUseRssi": 0,
+      "key0": 1,
+      "key1": 2,
+      "key2": 3,
+      "key3": 4,
+      "laConvergenceFactordBperSFQ8": 256,
+      "laInvPERTarget": 200,
+      "laMaxMcs": 12,
+      "laMinMcs": 2,
+      "latpc100PercentPERDrop": 532,
+      "latpcLinkImpairConfig": 17716,
+      "latpcUseIterations": 1,
+      "linkImpairmentDetectionEnable": 1,
+      "linkImpairmentLongPending": 1200,
+      "linkImpairmentShortPending": 200,
+      "linkImpairmentShortUp": 1000,
+      "lsmAssocRespAckTimeout": 500,
+      "lsmAssocRespTimeout": 500,
+      "lsmFirstHeartbTimeout": 260,
+      "lsmRepeatAck": 1,
+      "lsmRepeatAckInterval": 50,
+      "lsmSendAssocReqRetry": 5,
+      "lsmSendAssocRespRetry": 5,
+      "maxAgcIfGaindBperIndexQ8": 256,
+      "maxAgcMaxRfGainIndex": 5,
+      "maxAgcMinRfGainIndex": 0,
+      "maxAgcMaxIfGainIndex": 31,
+      "maxAgcMinIfGainIndex": 0,
+      "maxAgcMaxIfSweetGainRange": 17,
+      "maxAgcMinIfSweetGainRange": 7,
+      "maxAgcMinRssi": -40,
+      "maxAgcRawAdcScaleFactorQ8": 128,
+      "maxAgcRfGaindBperIndexQ8": 1792,
+      "maxAgcRfGainHiLo": 0,
+      "maxAgcTargetRawAdc": -14,
+      "maxAgcTrackingEnabled": 1,
+      "maxAgcTrackingMargindB": 7,
+      "maxAgcUseMinRssi": 0,
+      "maxAgcUseSameForAllSta": 1,
+      "maxTxPower": 21,
+      "mcs": 35,
+      "minTxPower": 0,
+      "mtpoEnabled": 0,
+      "mtpoPhaseHysteresis_dBQ2": 6,
+      "noLinkTimeout": 15,
+      "numOfHbLossToFail": 10,
+      "rxBeamIndex": -1,
+      "rxBuffer": 63,
+      "rxSlot0End": 86,
+      "rxSlot0Start": 0,
+      "rxSlot1End": 177,
+      "rxSlot1Start": 94,
+      "rxSlot2End": 192,
+      "rxSlot2Start": 185,
+      "statsLogInterval": 625,
+      "statsPrintInterval": 1024,
+      "topoScanEnable": 1,
+      "tpcAlphaDownRssiStep3Q10": 768,
+      "tpcAlphaDownTargetRssiStep3Q10": 1004,
+      "tpcAlphaUpRssiStep3Q10": 1014,
+      "tpcAlphaUpTargetRssiStep3Q10": 829,
+      "tpcDelPowerStep1": 10,
+      "tpcDelPowerStep2": 8,
+      "tpcDelPowerStep3": 1,
+      "tpcEnable": 3,
+      "tpcRefRssi": -36,
+      "tpcRefStfSnrStep1": 20,
+      "tpcRefStfSnrStep2": 17,
+      "tpcRefStfSnrStep3": 14,
+      "txBeamIndex": -1,
+      "txPower": 21,
+      "txPowerTableLinear": 0,
+      "txSlot0End": 86,
+      "txSlot0Start": 2,
+      "txSlot1End": 177,
+      "txSlot1Start": 96,
+      "txSlot2End": 192,
+      "txSlot2Start": 187,
+      "wsecEnable": 1,
+      "maxTxPowerPerMcs": 286595100,
+      "maxTxPowerPerMcsEdmg": 269488144,
+      "noTrafficMaxMcsFallback": 9,
+      "autoPbfEnable": 1,
+      "ibfProcedureType": 0,
+      "ibfNumberOfBeams": 31,
+      "ibfSet1RficBitmap": 0,
+      "ibfSet2RficBitmap": 0,
+      "ibfCodebookVariant": 0,
+      "useUpdateAwvForPbf": 0,
+      "mcsLqmQ3_1_4": 1178218801,
+      "mcsLqmQ3_5_8": 1616136959,
+      "mcsLqmQ3_9_12": 2609610088,
+      "mcsLqmQ3_13_16": 4294967295,
+      "latpcBlerToPer": 81
+    },
+    "wsecParams": {
+      "hostapdVerbosity": 5,
+      "supplicantVerbosity": 4,
+      "eapolParams": {
+        "radius_server_ip": "",
+        "radius_server_port": 1812,
+        "radius_user_identity": "tg",
+        "ca_cert_path": "/data/secure/keys/ca.pem",
+        "client_cert_path": "/data/secure/keys/client.pem",
+        "private_key_path": "/data/secure/keys/client.key",
+        "secrets": {
+          "radius_server_shared_secret": "",
+          "radius_user_password": "",
+          "private_key_password": ""
+        }
+      }
+    }
+  },
+  "radioParamsOverride": {},
+  "snmpConfig": {
+    "contact": "Facebook",
+    "location": "Menlo Park, CA"
+  },
+  "statsAgentParams": {
+    "sources": {
+      "controller": {
+        "enabled": false,
+        "zmq_url": "tcp://localhost:28989"
+      },
+      "driver-if": {
+        "enabled": true,
+        "zmq_url": "tcp://localhost:18990"
+      },
+      "minion": {
+        "enabled": true,
+        "zmq_url": "tcp://localhost:18989"
+      },
+      "openr": {
+        "enabled": true,
+        "zmq_url": "tcp://localhost:60007"
+      },
+      "system": {
+        "enabled": true,
+        "zmq_url": "tcp://localhost:18991"
+      }
+    },
+    "endpointParams": {
+      "kafkaParams": {
+        "enabled": true,
+        "config": {
+          "brokerEndpointList": "",
+          "queueBufferingMaxMs": 1000,
+          "queueBufferingMaxMessages": 1000,
+          "queueBufferingMaxKbytes": 1024,
+          "batchNumMessages": 100,
+          "enableIdempotence": false,
+          "compressionCodec": "none",
+          "compressionLevel": -1,
+          "messageTimeoutMs": 30000
+        },
+        "topics": {
+          "eventsTopic": "events",
+          "hfStatsTopic": "hf_stats",
+          "statsTopic": "stats",
+          "scanResultsTopic": "scan_results",
+          "iperfResultsTopic": "iperf_results",
+          "pingResultsTopic": "ping_results"
+        }
+      },
+      "nmsPublisherParams": {
+        "enabled": false,
+        "zmqSndHwm": 100
+      }
+    },
+    "collectors": {
+      "marvellSwitchStatsEnabled": false
+    },
+    "publisherParams": {
+      "defaultStatsInterval": 30,
+      "highFrequencyStatsInterval": 1,
+      "statsBlacklist": {
+        "gpsSkyview": "tgd\\.gpsStat\\.[0-9]+\\..+"
+      },
+      "highFrequencyStatsWhitelist": {
+        "staPktStats": ".*staPkt\\.(.*Fail|.*Ok|mcs|perE6|.*Ba|.*Ppdu|txPowerIndex|linkAvailable|mgmtLinkUp)",
+        "phyStatusStats": ".*phystatus\\.(ssnrEst|srssi)",
+        "latpcStats": ".*noTrafficCountSF"
+      },
+      "statsBufferSize": 10000,
+      "eventLogsBufferSize": 2000
+    }
+  },
+  "sysParams": {
+    "managedConfig": false,
+    "sshTrustedUserCAKeys": {},
+    "allowFactoryCA": true,
+    "dnsServers": {},
+    "ntpServers": {},
+    "distributedIgnitionEnabled": true
+  },
+  "syslogParams": {
+    "enabled": false,
+    "remoteHost": "",
+    "remotePort": 514,
+    "protocol": "udp",
+    "selector": "*.*"
+  }
+}

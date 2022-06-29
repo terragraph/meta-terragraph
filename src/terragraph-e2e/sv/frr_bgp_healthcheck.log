@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/frr_bgp_healthcheck
+exec svlogd /var/log/frr_bgp_healthcheck

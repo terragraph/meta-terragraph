@@ -1,0 +1,49 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+echo "-------------------------------------"
+echo "BASIC PYTHON EXECUTION TEST"
+echo
+echo "Determine if all of the installed python"
+echo "executables are runnable (using --help)."
+echo "-------------------------------------"
+echo
+
+ERROR_LIST=""
+FAILCOUNT=0
+
+for i in /usr/bin/* /usr/sbin/*
+do
+    if file -ib "$i" | grep -q x-python
+    then
+        echo "CHECKING $i"
+        if ! "$i" --help
+        then
+            echo "FAILED TO RUN $i $?"
+            FAILCOUNT=$((FAILCOUNT+1))
+            ERROR_LIST="${ERROR_LIST}  $i"
+        else
+            echo "PASS $i"
+        fi
+        echo
+        echo
+    fi
+done
+
+echo "-------------------------------------"
+if [ "${FAILCOUNT}" = "0" ]; then
+    echo "All python programs appear to be runnable"
+else
+    echo "${FAILCOUNT} python programs FAILED to run"
+    for e in ${ERROR_LIST}
+    do
+        echo "  $e"
+    done
+    exit 1
+fi
+echo "-------------------------------------"
+echo

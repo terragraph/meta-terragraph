@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+# Only run on MBH
+hw_board_id=$(/usr/sbin/get_hw_info HW_BOARD_ID)
+if [ "$hw_board_id" != "NXP_LS1048A_MBH" ]; then
+  echo "Not running on HW_BOARD_ID = $hw_board_id"
+  sv stop malibu_char
+else
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  RUN_MALIBU_CHAR="/usr/bin/malibu_char"
+
+  CTRL_SOCKET="${PTP_VSC_CTRL_SOCKET}"
+  TS_PORT="${PTP_VSC_PORT:-0}"
+  if [ -z "$CTRL_SOCKET" ]; then
+    # Use default socket path, but don't enable PTP timestamping
+    CTRL_SOCKET="/tmp/malibu_char.sock"
+  else
+    RUN_MALIBU_CHAR="$RUN_MALIBU_CHAR --ptp-init=$TS_PORT"
+  fi
+  RUN_MALIBU_CHAR="$RUN_MALIBU_CHAR --dgram-socket=$CTRL_SOCKET"
+  RUN_MALIBU_CHAR="$RUN_MALIBU_CHAR --synce-output=$TS_PORT"
+
+  exec $RUN_MALIBU_CHAR 2>&1
+fi

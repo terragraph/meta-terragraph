@@ -1,0 +1,53 @@
+all
+rule 'MD003', :style => :atx
+rule 'MD004', :style => :asterisk
+rule 'MD007', :indent => 4
+rule 'MD013', :code_blocks => false, :tables => false
+rule 'MD026', :punctuation => '.,;:!'
+rule 'MD029', :style => :ordered
+
+# "Header levels should only increment by one level at a time"
+# Don't care.
+exclude_rule 'MD001'
+
+# "Dollar signs used before commands without showing output"
+# Completely disagree with rationale.
+exclude_rule 'MD014'
+
+# "Headers should be surrounded by blank lines"
+# Don't care.
+exclude_rule 'MD022'
+
+# "Multiple headers with the same content"
+# Their reasoning is that auto-generated anchor tags won't work, but that's not
+# true for us.
+exclude_rule 'MD024'
+
+# "Ordered list item prefix"
+# Would be nice, but way too buggy and doesn't handle whitespace/HTML/etc.
+# between list items.
+exclude_rule 'MD029'
+
+# "Fenced code blocks should be surrounded by blank lines"
+# Don't care.
+exclude_rule 'MD031'
+
+# "Lists should be surrounded by blank lines"
+# Don't care.
+exclude_rule 'MD032'
+
+# "Inline HTML"
+# We use inline HTML for formatting that is not supported in pure Markdown.
+exclude_rule 'MD033'
+
+# "Bare URL used"
+# This is a bug, as the linter doesn't handle reference-style links.
+exclude_rule 'MD034'
+
+# "Emphasis used instead of a header"
+# We sometimes caption tables in italics, etc., which this does not handle.
+exclude_rule 'MD036'
+
+# "Fenced code blocks should have a language specified"
+# We aren't always using code blocks for code.
+exclude_rule 'MD040'

@@ -1,0 +1,13 @@
+Index: libnl-3.4.0/lib/route/route_obj.c
+===================================================================
+--- libnl-3.4.0.orig/lib/route/route_obj.c
++++ libnl-3.4.0/lib/route/route_obj.c
+@@ -1490,7 +1490,7 @@ struct nl_object_ops route_obj_ops = {
+ 	.oo_attrs2str		= route_attrs2str,
+ 	.oo_id_attrs		= (ROUTE_ATTR_FAMILY | ROUTE_ATTR_TOS |
+ 				   ROUTE_ATTR_TABLE | ROUTE_ATTR_DST |
+-				   ROUTE_ATTR_PRIO),
++				   ROUTE_ATTR_PRIO | ROUTE_ATTR_MULTIPATH),
+ 	.oo_id_attrs_get	= route_id_attrs_get,
+ };
+ /** @endcond */

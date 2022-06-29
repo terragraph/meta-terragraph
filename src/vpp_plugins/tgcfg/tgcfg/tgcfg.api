@@ -1,0 +1,15 @@
+option version = "1.0.0";
+
+define interface_map_details
+{
+    u32 context;
+    u32 sw_if_index;
+    u8 linux_tap_name[64];
+};
+
+define interface_map_dump
+{
+    u32 client_index;
+    u32 context;
+};
+

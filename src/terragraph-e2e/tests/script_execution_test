@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+echo "-------------------------------------"
+echo "BASIC SCRIPT EXECUTION TEST"
+echo
+echo "Determine if all of the installed"
+echo "executable scripts [Python, Lua] are"
+echo "runnable (by passing --help)."
+echo "-------------------------------------"
+echo
+
+ERROR_LIST=""
+FAILCOUNT=0
+TOTAL_RUN=0
+
+for i in /usr/bin/* /usr/sbin/*; do
+    if file -ib "$i" | grep -q -e x-python -e x-lua; then
+        echo "CHECKING $i"
+        if "$i" --help; then
+            echo "[PASS] $i"
+        else
+            echo "[FAIL] $i (exited with $?)"
+            FAILCOUNT=$((FAILCOUNT+1))
+            ERROR_LIST="${ERROR_LIST}  $i"
+        fi
+        echo
+        echo
+        TOTAL_RUN=$((TOTAL_RUN+1))
+    fi
+done
+
+echo "-------------------------------------"
+echo
+if [ "${FAILCOUNT}" = "0" ]; then
+    echo "[PASS] All scripts are runnable ($TOTAL_RUN total)"
+else
+    echo "[FAIL] ${FAILCOUNT}/${TOTAL_RUN} script(s) failed to run:"
+    for e in ${ERROR_LIST}; do
+        echo "  $e"
+    done
+fi
+echo
+echo "-------------------------------------"
+echo
+if [ "${FAILCOUNT}" != "0" ]; then
+    exit 1
+fi

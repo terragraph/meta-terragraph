@@ -1,0 +1,177 @@
+/*
+ * Device Tree file for Freescale LS1012A Freedom Board.
+ *
+ * Copyright 2016 Freescale Semiconductor, Inc.
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPLv2 or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This library is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This library is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
+/dts-v1/;
+
+#include "fsl-ls1012a.dtsi"
+
+/ {
+	model = "NXP TG Board LS1012A";
+	compatible = "fsl,ls1012a-frdm", "fsl,ls1012a";
+
+	chosen {
+		eeprom = "/sys/bus/nvmem/devices/0-00540/nvmem" ;
+		bb1_eeprom = "/sys/bus/i2c/devices/0-0052/eeprom";
+	};
+
+	aliases {
+		ethernet0 = &pfe_mac1;
+		ethernet1 = &pfe_mac0;
+	};
+
+	sys_mclk: clock-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <25000000>;
+	};
+
+	reg_1p8v: regulator-1p8v {
+		compatible = "regulator-fixed";
+		regulator-name = "1P8V";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+	};
+
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	eeprom@52 {
+	        compatible = "at24,24c32";
+	         reg = <0x52>;
+	};
+
+	eeprom@54 {
+	        compatible = "at24,24c64";
+	         reg = <0x54>;
+	 };
+
+	codec: sgtl5000@a {
+		#sound-dai-cells = <0>;
+		compatible = "fsl,sgtl5000";
+		reg = <0xa>;
+		VDDA-supply = <&reg_1p8v>;
+		VDDIO-supply = <&reg_1p8v>;
+		clocks = <&sys_mclk>;
+	};
+};
+
+&qspi {
+	num-cs = <1>;
+	bus-num = <0>;
+	status = "okay";
+
+	qflash0: s25fs512s@0 {
+		compatible = "spansion,m25p80";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		m25p,fast-read;
+		spi-max-frequency = <20000000>;
+		spi-rx-bus-width = <1>;
+	        spi-tx-bus-width = <1>;
+		reg = <0>;
+	};
+};
+
+&esdhc0 {
+	broken-cd;
+};
+
+/delete-node/ &esdhc1;
+
+&pfe {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	pfe_mac0: ethernet@0 {
+		compatible = "fsl,pfe-gemac-port";
+		status = "disabled";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x0>;	/* GEM_ID */
+		fsl,mdio-mux-val = <0x0>;
+		local-mac-address = [ 00 1A 2B 3C 4D 5E ];
+		phy-mode = "sgmii";
+		fsl,pfe-gemac-if-name = "nic1";
+	};
+
+	pfe_mac1: ethernet@1 {
+		compatible = "fsl,pfe-gemac-port";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x1>;	/* GEM_ID */
+		fsl,mdio-mux-val = <0x0>;
+		local-mac-address = [ 00 AA BB CC DD EE ];
+		phy-mode = "sgmii";
+		phy-handle = <&sgmii_phy>;
+		fsl,pfe-gemac-if-name = "nic0";
+
+		mdio@0 {
+			reg = <0x1>; /* enabled/disabled */
+		};
+	};
+
+	mdio@0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		sgmii_phy: ethernet-phy@2 {
+			reg = <0x2>;
+		};
+
+		rgmii_phy: ethernet-phy@1 {
+			reg = <0x1>;
+		};
+	};
+};
+
+&sata {
+	status = "okay";
+};

@@ -1,0 +1,29 @@
+name: 🤔 Question
+description: Send us a question.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Use this form for questions _only_!** For bug reports or feature requests, please fill out the appropriate forms.
+
+        > TIP: Before opening an issue, see if your question can be answered by our extensive documentation.
+
+  - type: checkboxes
+    attributes:
+      label: Prerequisites
+      description: Please check the following items before proceeding.
+      options:
+        - label: I have read the [Contributing Guidelines](../blob/main/CONTRIBUTING.md).
+          required: true
+        - label: I have read the [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Question
+      description: |
+        Type your question here.
+        Do not provide customer information that could be considered personally identifiable information (PII).
+    validations:
+      required: true

@@ -1,0 +1,79 @@
+{
+  "flags": {
+    "v": "3",
+    "bt_tracker_ipv6_global_addressable_ifname": "ens160"
+  },
+  "ignitionParams": {
+    "enable": true,
+    "linkUpInterval": 5,
+    "linkUpDampenInterval": 10,
+    "linkAutoIgnite": {}
+  },
+  "scanParams": {
+    "cbfConfigJson": "",
+    "centralLaTpcConfig": {
+      "maxMcsAutoEnable": false,
+      "maxMcsLow": 9,
+      "maxMcsHigh": 12,
+      "maxMcsInrLimit": 3.0,
+      "maxMcsInrAlpha": 0.0,
+      "maxMcsTxPowerMin": 0,
+      "maxMcsTxPowerMax": 21
+    },
+    "scanSchedule": {
+      "cbfEnable": false,
+      "combinedScanTimeoutSec": 14400,
+      "imEnable": true,
+      "imScanTimeoutSec": -1,
+      "pbfEnable": true,
+      "rtcalEnable": false
+    }
+  },
+  "statsAgentParams": {
+    "sources": {
+      "controller": {
+        "enabled": true,
+        "zmq_url": "tcp://localhost:28989"
+      },
+      "system": {
+        "enabled": true,
+        "zmq_url": "ipc://stats-monitor-pub"
+      }
+    },
+    "endpointParams": {
+      "kafkaParams": {
+        "enabled": true,
+        "config": {
+          "brokerEndpointList": "",
+          "queueBufferingMaxMs": 1000,
+          "queueBufferingMaxMessages": 1000,
+          "queueBufferingMaxKbytes": 1024,
+          "batchNumMessages": 100,
+          "enableIdempotence": false,
+          "compressionCodec": "none",
+          "compressionLevel": -1,
+          "messageTimeoutMs": 30000
+        },
+        "topics": {
+          "eventsTopic": "events",
+          "hfStatsTopic": "hf_stats",
+          "statsTopic": "stats",
+          "scanResultsTopic": "scan_results",
+          "iperfResultsTopic": "iperf_results",
+          "pingResultsTopic": "ping_results"
+        }
+      }
+    },
+    "publisherParams": {
+      "defaultStatsInterval": 30,
+      "highFrequencyStatsInterval": 1,
+      "statsBlacklist": {},
+      "highFrequencyStatsWhitelist": {},
+      "statsBufferSize": 10000,
+      "eventLogsBufferSize": 2000
+    }
+  },
+  "topologyParams": {
+    "enabledChannels": "2"
+  }
+}

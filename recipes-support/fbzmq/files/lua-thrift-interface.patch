@@ -1,0 +1,12 @@
+diff --git a/fbzmq/service/if/Monitor.thrift b/fbzmq/service/if/Monitor.thrift
+index 085ef324..7f5a7cbc 100644
+--- a/fbzmq/service/if/Monitor.thrift
++++ b/fbzmq/service/if/Monitor.thrift
+@@ -11,6 +11,7 @@ namespace go fbzmq.Monitor
+ namespace php Fbzmq
+ namespace py fbzmq.Monitor
+ namespace py3 fbzmq.thrift
++namespace lua fbzmq.Monitor
+
+ enum MonitorCommand {
+   // operations on counters in the monitor

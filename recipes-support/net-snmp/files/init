@@ -1,0 +1,80 @@
+#! /bin/sh
+# /etc/init.d/snmpd: start snmp daemon.
+
+. /etc/init.d/functions
+
+# Defaults
+export MIBDIRS=/usr/share/snmp/mibs
+SNMPDRUN=yes
+SNMPDOPTS='-Lsd -Lf /dev/null -p /var/run/snmpd.pid'
+PIDFILE=/var/run/snmpd.pid
+SNMPDCONF=/etc/snmp/snmpd.conf
+CONFGEN=/usr/sbin/update_snmpd_conf
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# Reads config file if exists (will override defaults above)
+[ -r /etc/default/snmpd ] && . /etc/default/snmpd
+
+[ "$SNMPDRUN" = "yes" ] && { test -x /usr/sbin/snmpd || exit 0; }
+
+generate_config() {
+  $CONFGEN -c "${SNMPDCONF}"
+}
+
+case "$1" in
+  start)
+    # check if SNMP is enabled
+    if [ -z "$SNMP_ENABLED" ] || [ "$SNMP_ENABLED" -ne "1" ]; then
+      echo "SNMP is not enabled"
+      exit 1
+    fi
+
+    echo -n "Generating snmpd config:"
+    generate_config
+    echo " done."
+
+    echo -n "Starting network management services:"
+    if [ "$SNMPDRUN" = "yes" -a -f "${SNMPDCONF}" -a ! -f "$PIDFILE" ]; then
+      start-stop-daemon -o --start --quiet --name snmpd --pidfile "$PIDFILE" \
+        --exec /usr/sbin/snmpd -- $SNMPDOPTS
+      echo -n " snmpd"
+    fi
+    echo "."
+
+    test ! -x /sbin/restorecon || /sbin/restorecon -FR /var/lib/net-snmp
+    ;;
+  stop)
+    echo -n "Stopping network management services:"
+    if [ -f  "$PIDFILE" ] ; then
+      start-stop-daemon -o --stop --quiet --pidfile $PIDFILE \
+        --name snmpd
+    fi
+    echo -n " snmpd"
+    echo "."
+    # ensure process exited
+    if [ -f "$PIDFILE" ] ; then
+      echo -n "Forcibly ending snmpd:"
+      kill -KILL $(cat $PIDFILE)
+      rm -f $PIDFILE
+      echo " done."
+    fi
+    ;;
+  status)
+    status /usr/sbin/snmpd;
+    exit $?
+    ;;
+  restart|reload|force-reload)
+    $0 stop
+    # Allow the daemons time to exit completely.
+    sleep 2
+    $0 start
+    ;;
+  *)
+    echo "Usage: /etc/init.d/snmpd {start|stop|status|restart|reload|force-reload}"
+    exit 1
+esac
+
+exit 0

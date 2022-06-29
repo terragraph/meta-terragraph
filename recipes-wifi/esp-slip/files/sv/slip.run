@@ -1,0 +1,38 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+  # load tg config environment variables
+  # shellcheck source=/dev/null
+  . /usr/sbin/config_get_env.sh
+
+  # check if SLIP is enabled
+  if [ "${SLIP_ENABLED:-0}" -ne "1" ]; then
+    echo "SLIP is not enabled"
+    sleep ${DELAY}
+    continue
+  fi
+
+  if [ -z "${SLIP_SERIAL_PORT}" ]; then
+    echo "SLIP serial port must be set"
+    sleep ${DELAY}
+    continue
+  fi
+
+  # kill any running slattach
+  killall slattach 2> /dev/null
+
+  # program route to SLIP tunnel via secondary sv script
+  sv once slip_route
+
+  # attach SLIP interface to serial port
+  echo "Attaching SLIP tunnel"
+  exec slattach -L -p slip -s "${SLIP_BAUD_RATE:-115200}" "$SLIP_SERIAL_PORT"
+
+  # wait before retrying
+  sleep ${DELAY}
+done

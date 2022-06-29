@@ -1,0 +1,40 @@
+From 324d6162dc7ca51ccb1584e2f092187dd6ceb9e1 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Mon, 4 May 2020 17:44:07 -0700
+Subject: [PATCH] Tune DPDK burst size params for best performance
+
+---
+ src/plugins/dpdk/device/dpdk_priv.h | 3 ++-
+ src/plugins/dpdk/device/init.c      | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/dpdk/device/dpdk_priv.h b/src/plugins/dpdk/device/dpdk_priv.h
+index 02e36d77f..0fd8b5707 100644
+--- a/src/plugins/dpdk/device/dpdk_priv.h
++++ b/src/plugins/dpdk/device/dpdk_priv.h
+@@ -18,7 +18,8 @@
+ #define DPDK_NB_RX_DESC_VIRTIO    256
+ #define DPDK_NB_TX_DESC_VIRTIO    256
+ 
+-#define DPDK_RX_BURST_GIVEUP_THRESHOLD_DEFAULT 32
++#define DPDK_RX_BURST_GIVEUP_THRESHOLD_DEFAULT 8
++#define DPDK_RX_BURST_RX_BURST_SIZE_DEFAULT 32
+ 
+ #define I40E_DEV_ID_SFP_XL710           0x1572
+ #define I40E_DEV_ID_QSFP_A              0x1583
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index e067e4538..e74b0a100 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -285,7 +285,7 @@ dpdk_lib_init (dpdk_main_t * dm)
+       xd->nb_tx_desc = DPDK_NB_TX_DESC_DEFAULT;
+       xd->cpu_socket = (i8) rte_eth_dev_socket_id (i);
+       xd->rx_burst_giveup_threshold = DPDK_RX_BURST_GIVEUP_THRESHOLD_DEFAULT;
+-      xd->rx_burst_size = VLIB_FRAME_SIZE;
++      xd->rx_burst_size = DPDK_RX_BURST_RX_BURST_SIZE_DEFAULT;
+ 
+       if (p)
+ 	{
+-- 
+2.30.2
+

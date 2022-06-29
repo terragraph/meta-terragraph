@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+while [ : ]; do
+
+  # load tg config environment variables
+  . /usr/sbin/config_get_env.sh
+
+  # check if UDP ping server is enabled
+  if [ -z "$UDP_PING_SERVER_ENABLED" ] || [ "$UDP_PING_SERVER_ENABLED" -ne "1" ]; then
+    echo "UDP ping server is not enabled"
+    sleep "$DELAY"
+    continue
+  fi
+
+  # force udp ping to use realtime scheduling so we get a fair share of CPU
+  exec /usr/bin/chrt --rr 1 /usr/sbin/udp_ping_server -logtostderr 2>&1
+
+done

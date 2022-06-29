@@ -1,0 +1,45 @@
+From f9a0457911494f8b0672c5e5b94ab1d6d41875b3 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Mon, 20 Apr 2020 14:13:03 -0700
+Subject: [PATCH] interface-output node should trace packets
+
+---
+ src/vnet/interface_output.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/vnet/interface_output.c b/src/vnet/interface_output.c
+index e79ad451c..0ae66cd4c 100644
+--- a/src/vnet/interface_output.c
++++ b/src/vnet/interface_output.c
+@@ -47,6 +47,7 @@
+ #include <vnet/feature/feature.h>
+ #include <vnet/classify/trace_classify.h>
+ #include <vnet/interface_output.h>
++#include <vnet/ethernet/ethernet.h>
+ 
+ typedef struct
+ {
+@@ -560,6 +561,11 @@ VLIB_NODE_FN (vnet_per_buffer_interface_output_node) (vlib_main_t * vm,
+ 
+   n_left_from = frame->n_vectors;
+ 
++  if (node->flags & VLIB_NODE_FLAG_TRACE)
++    {
++      vnet_interface_output_trace (vm, node, frame, n_left_from);
++    }
++
+   from = vlib_frame_vector_args (frame);
+   next_index = node->cached_next_index;
+ 
+@@ -1125,6 +1131,8 @@ VLIB_REGISTER_NODE (interface_punt) = {
+ /* *INDENT-OFF* */
+ VLIB_REGISTER_NODE (vnet_per_buffer_interface_output_node) = {
+   .name = "interface-output",
++  .format_trace = format_vnet_interface_output_trace,
++  .format_buffer = format_ethernet_header_with_length,
+   .vector_size = sizeof (u32),
+ };
+ /* *INDENT-ON* */
+-- 
+2.30.2
+

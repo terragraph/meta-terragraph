@@ -1,0 +1,27 @@
+From b73316657e888a79723983b0261037aed91cdf1e Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Wed, 14 Mar 2018 18:16:10 -0700
+Subject: [PATCH 2/2] change sparsmem constants for kdump kernel
+
+---
+ arch/arm64/include/asm/sparsemem.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/include/asm/sparsemem.h b/arch/arm64/include/asm/sparsemem.h
+index 74a9d30..7e33ef0 100644
+--- a/arch/arm64/include/asm/sparsemem.h
++++ b/arch/arm64/include/asm/sparsemem.h
+@@ -17,8 +17,8 @@
+ #define __ASM_SPARSEMEM_H
+ 
+ #ifdef CONFIG_SPARSEMEM
+-#define MAX_PHYSMEM_BITS	48
+-#define SECTION_SIZE_BITS	30
++#define MAX_PHYSMEM_BITS	32
++#define SECTION_SIZE_BITS	28
+ #endif
+ 
+ #endif
+-- 
+2.9.5
+

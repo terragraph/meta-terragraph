@@ -1,0 +1,25 @@
+From fe15f9ebadb26452379a3f1eb1044def64818d57 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Thu, 23 Jul 2020 12:08:18 -0700
+Subject: [PATCH] Properly format dpdk devargs
+
+---
+ src/plugins/dpdk/device/init.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index e74b0a100..ac416b102 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -1467,7 +1467,7 @@ dpdk_config (vlib_main_t * vm, unformat_input_t * input)
+ 	  vec_add1 (conf->eal_init_args, tmp);
+ 	  if (devconf->devargs)
+ 	  {
+-	    tmp = format (0, "%U,%s", format_vlib_pci_addr, &devconf->pci_addr, devconf->devargs, 0);
++	    tmp = format (0, "%U,%s%c", format_vlib_pci_addr, &devconf->pci_addr, devconf->devargs, 0);
+ 	  }
+ 	  else
+ 	  {
+-- 
+2.30.2
+

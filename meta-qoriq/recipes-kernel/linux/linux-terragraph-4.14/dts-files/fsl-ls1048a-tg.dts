@@ -1,0 +1,174 @@
+/*
+ * Device Tree file for NXP LS1088A RDB Board.
+ *
+ * Copyright 2017 NXP
+ *
+ * Harninder Rai <harninder.rai@nxp.com>
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPLv2 or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This library is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This library is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/dts-v1/;
+
+#include "fsl-ls1048a.dtsi"
+
+/ {
+	model = "NXP TG Board LS1048A";
+	compatible = "fsl,ls1088a-rdb", "fsl,ls1088a";
+
+	chosen {
+		bootargs = "iommu.passthrough=1 default_hugepagesz=2m hugepagesz=2m hugepages=512 pcie_aspm=off cma=512M crashkernel=32M@3G ";
+		eeprom = "/sys/bus/nvmem/devices/1-00540/nvmem" ;
+		bb1_eeprom = "/sys/bus/i2c/devices/1-0052/eeprom";
+		bb2_eeprom = "/sys/bus/i2c/devices/2-0052/eeprom";
+		bb3_eeprom = "/sys/bus/i2c/devices/3-0052/eeprom";
+		bb4_eeprom = "/sys/bus/i2c/devices/3-0052/eeprom";
+		sec2_eeprom = "/sys/bus/i2c/devices/2-0056/eeprom";
+		sec3_eeprom = "/sys/bus/i2c/devices/3-0056/eeprom";
+		sec4_eeprom = "/sys/bus/i2c/devices/3-0056/eeprom";
+	};
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	ublox@42 {
+		compatible = "facebook,ublox-gps";
+		reg = <0x42>;
+	};
+
+	eeprom@54 {
+		compatible = "at24,24c64";
+		reg = <0x54>;
+	};
+
+	eeprom@52 {
+		compatible = "at24,24c32";
+		reg = <0x52>;
+	};
+
+	rtc@51 {
+		compatible = "nxp,pcf8563";
+		reg = <0x51>;
+	};
+
+	lm75: lm75@48 {
+		compatible = "national,lm75";
+		reg = <0x48>;
+	};
+
+};
+
+&i2c2 {
+	status = "okay";
+
+	eeprom@52 {
+		compatible = "at24,24c32";
+		reg = <0x52>;
+	};
+
+	eeprom@56 {
+		compatible = "at24,24c32";
+		reg = <0x56>;
+	};
+};
+
+&i2c3 {
+	status = "okay";
+
+	eeprom@52 {
+		compatible = "at24,24c32";
+		reg = <0x52>;
+	};
+
+	eeprom@56 {
+		compatible = "at24,24c32";
+		reg = <0x56>;
+	};
+};
+
+&qspi {
+	status = "okay";
+	qflash0: s25fs512s@0 {
+		compatible = "spansion,m25p80";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-max-frequency = <20000000>;
+		spi-rx-bus-width = <1>;
+		spi-tx-bus-width = <1>;
+		reg = <0>;
+	};
+};
+
+&ifc {
+	status = "disabled";
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&duart1 {
+	status = "okay";
+};
+
+&esdhc {
+	status = "okay";
+	non-removable;
+};
+
+&emdio1 {
+	/* Freescale F104 PHY1 */
+	mdio1_phy1: emdio1_phy@1 {
+		reg = <0x1>;
+		phy-connection-type = "sgmii";
+	};
+};
+
+/* DPMAC connections to external PHYs
+ * based on LS1088A RM RevC - $24.1.2 SerDes Options
+ */
+/* DPMAC2 is SFP+, fixed link */
+&dpmac7 {
+	phy-handle = <&mdio1_phy1>;
+};

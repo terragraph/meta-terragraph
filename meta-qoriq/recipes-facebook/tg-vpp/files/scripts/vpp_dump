@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Run script only if VPP is running
+if pidof vpp > /dev/null ; then
+  echo ">> VPP interfaces summary"
+  vppctl show interface
+  echo
+
+  echo ">> VPP forwarding information base (FIB) summary"
+  vppctl show ip6 fib
+  echo
+
+  echo ">> VPP stats dump"
+  vpp_get_stats dump
+else
+  echo "VPP is not running"
+fi
+
+exit 0

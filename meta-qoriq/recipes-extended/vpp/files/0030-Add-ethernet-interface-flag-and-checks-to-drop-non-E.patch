@@ -1,0 +1,278 @@
+From 0e67dfe50b03bf07be010704903f86ffff879c7d Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Wed, 24 Feb 2021 15:44:46 -0800
+Subject: [PATCH] Add ethernet interface flag and checks to drop non-EAPOL
+ packets
+
+To prevent processing data packets before security handshake is finished.
+---
+ src/vnet/ethernet/error.def   |  2 +-
+ src/vnet/ethernet/ethernet.h  |  5 +++
+ src/vnet/ethernet/interface.c | 18 +++++++++++
+ src/vnet/ethernet/node.c      | 60 +++++++++++++++++++++++++----------
+ 4 files changed, 68 insertions(+), 17 deletions(-)
+
+diff --git a/src/vnet/ethernet/error.def b/src/vnet/ethernet/error.def
+index 36679c0ce..bf8ab8570 100644
+--- a/src/vnet/ethernet/error.def
++++ b/src/vnet/ethernet/error.def
+@@ -43,4 +43,4 @@ ethernet_error (UNKNOWN_TYPE, PUNT, "unknown ethernet type")
+ ethernet_error (UNKNOWN_VLAN, DROP, "unknown vlan")
+ ethernet_error (L3_MAC_MISMATCH, DROP, "l3 mac mismatch")
+ ethernet_error (DOWN, DROP, "subinterface down")
+-
++ethernet_error (EAPOL_ONLY, DROP, "interface flagged to only accept EAPOL packets")
+diff --git a/src/vnet/ethernet/ethernet.h b/src/vnet/ethernet/ethernet.h
+index 5a2a39511..cfbe47476 100644
+--- a/src/vnet/ethernet/ethernet.h
++++ b/src/vnet/ethernet/ethernet.h
+@@ -165,6 +165,9 @@ typedef struct ethernet_interface
+   /* Change MTU on interface from hw interface structure */
+ #define ETHERNET_INTERFACE_FLAG_MTU        2
+ 
++  /* Drop all non-EAPOL packets (before a secure handshake is complete) */
++#define ETHERNET_INTERFACE_FLAG_EAPOL_ONLY (1 << 2)
++
+   /* Callback, e.g. to turn on/off promiscuous mode */
+   ethernet_flag_change_function_t *flag_change;
+ 
+@@ -476,6 +479,8 @@ ethernet_buffer_get_header (vlib_buffer_t * b)
+ 
+ ethernet_main_t *ethernet_get_main (vlib_main_t * vm);
+ u32 ethernet_set_flags (vnet_main_t * vnm, u32 hw_if_index, u32 flags);
++void ethernet_set_eapol_only_flag (vnet_main_t *vnm, u32 hw_if_index,
++				   u32 enable);
+ void ethernet_sw_interface_set_l2_mode (vnet_main_t * vnm, u32 sw_if_index,
+ 					u32 l2);
+ void ethernet_sw_interface_set_l2_mode_noport (vnet_main_t * vnm,
+diff --git a/src/vnet/ethernet/interface.c b/src/vnet/ethernet/interface.c
+index c68ba3b4c..fd56af61a 100644
+--- a/src/vnet/ethernet/interface.c
++++ b/src/vnet/ethernet/interface.c
+@@ -490,6 +490,24 @@ ethernet_set_flags (vnet_main_t * vnm, u32 hw_if_index, u32 flags)
+   return ~0;
+ }
+ 
++void
++ethernet_set_eapol_only_flag (vnet_main_t *vnm, u32 hw_if_index, u32 enable)
++{
++  ethernet_main_t *em = &ethernet_main;
++  vnet_hw_interface_t *hi;
++  ethernet_interface_t *ei;
++
++  hi = vnet_get_hw_interface (vnm, hw_if_index);
++
++  ASSERT (hi->hw_class_index == ethernet_hw_interface_class.index);
++
++  ei = pool_elt_at_index (em->interfaces, hi->hw_instance);
++  if (enable)
++    ei->flags |= ETHERNET_INTERFACE_FLAG_EAPOL_ONLY;
++  else
++    ei->flags &= ~ETHERNET_INTERFACE_FLAG_EAPOL_ONLY;
++}
++
+ /**
+  * Echo packets back to ethernet/l2-input.
+  */
+diff --git a/src/vnet/ethernet/node.c b/src/vnet/ethernet/node.c
+index c07ad625d..87ae12ffc 100644
+--- a/src/vnet/ethernet/node.c
++++ b/src/vnet/ethernet/node.c
+@@ -257,7 +257,8 @@ static_always_inline void
+ determine_next_node (ethernet_main_t * em,
+ 		     ethernet_input_variant_t variant,
+ 		     u32 is_l20,
+-		     u32 type0, vlib_buffer_t * b0, u8 * error0, u8 * next0)
++		     u32 type0, vlib_buffer_t * b0, u8 * error0, u8 * next0,
++		     u32 ei_flags)
+ {
+   vnet_buffer (b0)->l3_hdr_offset = b0->current_data;
+   b0->flags |= VNET_BUFFER_F_L3_HDR_OFFSET_VALID;
+@@ -267,6 +268,12 @@ determine_next_node (ethernet_main_t * em,
+       // some error occurred
+       *next0 = ETHERNET_INPUT_NEXT_DROP;
+     }
++  else if ((ei_flags & ETHERNET_INTERFACE_FLAG_EAPOL_ONLY) != 0
++	   && type0 != ETHERNET_TYPE_802_1X_AUTHENTICATION)
++    {
++      *next0 = ETHERNET_INPUT_NEXT_DROP;
++      *error0 = ETHERNET_ERROR_EAPOL_ONLY;
++    }
+   else if (is_l20)
+     {
+       // record the L2 len and reset the buffer so the L2 header is preserved
+@@ -838,7 +845,7 @@ static_always_inline void
+ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 			 vnet_hw_interface_t * hi,
+ 			 u32 * buffer_indices, u32 n_packets, int main_is_l3,
+-			 int ip4_cksum_ok, int dmac_check)
++			 int ip4_cksum_ok, int dmac_check, int eapol_only)
+ {
+   ethernet_main_t *em = &ethernet_main;
+   u16 nexts[VLIB_FRAME_SIZE], *next;
+@@ -854,6 +861,7 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
+   u16 et_mpls = clib_host_to_net_u16 (ETHERNET_TYPE_MPLS);
+   u16 et_vlan = clib_host_to_net_u16 (ETHERNET_TYPE_VLAN);
+   u16 et_dot1ad = clib_host_to_net_u16 (ETHERNET_TYPE_DOT1AD);
++  u16 et_8021x = clib_host_to_net_u16 (ETHERNET_TYPE_802_1X_AUTHENTICATION);
+   i32 n_left = n_packets;
+   vlib_buffer_t *bufs[VLIB_FRAME_SIZE];
+   vlib_buffer_t **b = bufs;
+@@ -941,11 +949,13 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
+   u16x16 et16_ip6 = u16x16_splat (et_ip6);
+   u16x16 et16_mpls = u16x16_splat (et_mpls);
+   u16x16 et16_vlan = u16x16_splat (et_vlan);
++  u16x16 et16_8021x = u16x16_splat (et_8021x);
+   u16x16 et16_dot1ad = u16x16_splat (et_dot1ad);
+   u16x16 next16_ip4 = u16x16_splat (next_ip4);
+   u16x16 next16_ip6 = u16x16_splat (next_ip6);
+   u16x16 next16_mpls = u16x16_splat (next_mpls);
+   u16x16 next16_l2 = u16x16_splat (next_l2);
++  u16x16 next16_drop = u16x16_splat (ETHERNET_INPUT_NEXT_DROP);
+   u16x16 zero = { 0 };
+   u16x16 stairs = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+ #endif
+@@ -966,14 +976,17 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	{
+ 	  u16x16 r = zero;
+ 	  u16x16 e16 = u16x16_load_unaligned (etype);
+-	  if (main_is_l3)
++	  r += (u16x16_splat (eapol_only) & e16 != et16_8021x) & next16_drop;
++	  if (main_is_l3 && !eapol_only)
+ 	    {
+ 	      r += (e16 == et16_ip4) & next16_ip4;
+ 	      r += (e16 == et16_ip6) & next16_ip6;
+ 	      r += (e16 == et16_mpls) & next16_mpls;
+ 	    }
+-	  else
+-	    r = ((e16 != et16_vlan) & (e16 != et16_dot1ad)) & next16_l2;
++	  else if (!eapol_only)
++	    {
++	      r = ((e16 != et16_vlan) & (e16 != et16_dot1ad)) & next16_l2;
++	    }
+ 	  u16x16_store_unaligned (r, next);
+ 
+ 	  if (!u16x16_is_all_zero (r == zero))
+@@ -999,7 +1012,13 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  continue;
+ 	}
+ #endif
+-      if (main_is_l3 && etype[0] == et_ip4)
++      if (eapol_only && etype[0] != et_8021x)
++	{
++	  vlib_buffer_t *b = vlib_get_buffer (vm, buffer_indices[i]);
++	  b->error = node->errors[ETHERNET_ERROR_EAPOL_ONLY];
++	  next[0] = ETHERNET_INPUT_NEXT_DROP;
++	}
++      else if (main_is_l3 && etype[0] == et_ip4)
+ 	next[0] = next_ip4;
+       else if (main_is_l3 && etype[0] == et_ip6)
+ 	next[0] = next_ip6;
+@@ -1099,6 +1118,7 @@ eth_input_single_int (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 
+   int main_is_l3 = (subint0->flags & SUBINT_CONFIG_L2) == 0;
+   int int_is_l3 = ei->flags & ETHERNET_INTERFACE_FLAG_STATUS_L3;
++  int eapol_only = (ei->flags & ETHERNET_INTERFACE_FLAG_EAPOL_ONLY) != 0;
+ 
+   if (main_is_l3)
+     {
+@@ -1106,12 +1126,12 @@ eth_input_single_int (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  ((hi->l2_if_count != 0) && (hi->l3_if_count == 0)))
+ 	{			/* All L2 usage - DMAC check not needed */
+ 	  eth_input_process_frame (vm, node, hi, from, n_pkts,
+-				   /*is_l3 */ 1, ip4_cksum_ok, 0);
++				   /*is_l3 */ 1, ip4_cksum_ok, 0, eapol_only);
+ 	}
+       else
+ 	{			/* DMAC check needed for L3 */
+ 	  eth_input_process_frame (vm, node, hi, from, n_pkts,
+-				   /*is_l3 */ 1, ip4_cksum_ok, 1);
++				   /*is_l3 */ 1, ip4_cksum_ok, 1, eapol_only);
+ 	}
+       return;
+     }
+@@ -1120,12 +1140,12 @@ eth_input_single_int (vlib_main_t * vm, vlib_node_runtime_t * node,
+       if (hi->l3_if_count == 0)
+ 	{			/* All L2 usage - DMAC check not needed */
+ 	  eth_input_process_frame (vm, node, hi, from, n_pkts,
+-				   /*is_l3 */ 0, ip4_cksum_ok, 0);
++				   /*is_l3 */ 0, ip4_cksum_ok, 0, eapol_only);
+ 	}
+       else
+ 	{			/* DMAC check needed for L3 */
+ 	  eth_input_process_frame (vm, node, hi, from, n_pkts,
+-				   /*is_l3 */ 0, ip4_cksum_ok, 1);
++				   /*is_l3 */ 0, ip4_cksum_ok, 1, eapol_only);
+ 	}
+       return;
+     }
+@@ -1257,6 +1277,7 @@ ethernet_input_inline (vlib_main_t * vm,
+ 	  u32 old_sw_if_index0, new_sw_if_index0, len0, old_sw_if_index1,
+ 	    new_sw_if_index1, len1;
+ 	  vnet_hw_interface_t *hi0, *hi1;
++	  ethernet_interface_t *ei0, *ei1;
+ 	  main_intf_t *main_intf0, *main_intf1;
+ 	  vlan_intf_t *vlan_intf0, *vlan_intf1;
+ 	  qinq_intf_t *qinq_intf0, *qinq_intf1;
+@@ -1371,10 +1392,10 @@ ethernet_input_inline (vlib_main_t * vm,
+ 		skip_dmac_check01:
+ 		  vlib_buffer_advance (b0, sizeof (ethernet_header_t));
+ 		  determine_next_node (em, variant, 0, type0, b0,
+-				       &error0, &next0);
++				       &error0, &next0, ei->flags);
+ 		  vlib_buffer_advance (b1, sizeof (ethernet_header_t));
+ 		  determine_next_node (em, variant, 0, type1, b1,
+-				       &error1, &next1);
++				       &error1, &next1, ei->flags);
+ 		}
+ 	      goto ship_it01;
+ 	    }
+@@ -1497,10 +1518,14 @@ ethernet_input_inline (vlib_main_t * vm,
+ 	  if (variant == ETHERNET_INPUT_VARIANT_NOT_L2)
+ 	    is_l20 = is_l21 = 0;
+ 
++	  hi0 = vnet_get_sup_hw_interface (vnm, old_sw_if_index0);
++	  ei0 = pool_elt_at_index (em->interfaces, hi0->hw_instance);
++	  hi1 = vnet_get_sup_hw_interface (vnm, old_sw_if_index1);
++	  ei1 = pool_elt_at_index (em->interfaces, hi1->hw_instance);
+ 	  determine_next_node (em, variant, is_l20, type0, b0, &error0,
+-			       &next0);
++			       &next0, ei0->flags);
+ 	  determine_next_node (em, variant, is_l21, type1, b1, &error1,
+-			       &next1);
++			       &next1, ei1->flags);
+ 
+ 	ship_it01:
+ 	  b0->error = error_node->errors[error0];
+@@ -1522,6 +1547,7 @@ ethernet_input_inline (vlib_main_t * vm,
+ 	  u32 match_flags0;
+ 	  u32 old_sw_if_index0, new_sw_if_index0, len0;
+ 	  vnet_hw_interface_t *hi0;
++	  ethernet_interface_t *ei0;
+ 	  main_intf_t *main_intf0;
+ 	  vlan_intf_t *vlan_intf0;
+ 	  qinq_intf_t *qinq_intf0;
+@@ -1612,7 +1638,7 @@ ethernet_input_inline (vlib_main_t * vm,
+ 		skip_dmac_check0:
+ 		  vlib_buffer_advance (b0, sizeof (ethernet_header_t));
+ 		  determine_next_node (em, variant, 0, type0, b0,
+-				       &error0, &next0);
++				       &error0, &next0, ei->flags);
+ 		}
+ 	      goto ship_it0;
+ 	    }
+@@ -1694,8 +1720,10 @@ ethernet_input_inline (vlib_main_t * vm,
+ 	  if (variant == ETHERNET_INPUT_VARIANT_NOT_L2)
+ 	    is_l20 = 0;
+ 
++	  hi0 = vnet_get_sup_hw_interface (vnm, old_sw_if_index0);
++	  ei0 = pool_elt_at_index (em->interfaces, hi0->hw_instance);
+ 	  determine_next_node (em, variant, is_l20, type0, b0, &error0,
+-			       &next0);
++			       &next0, ei0->flags);
+ 
+ 	ship_it0:
+ 	  b0->error = error_node->errors[error0];
+-- 
+2.30.2
+

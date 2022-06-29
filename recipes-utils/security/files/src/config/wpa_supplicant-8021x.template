@@ -1,0 +1,25 @@
+ctrl_interface=/var/run/wpa_supplicant_${ifname}
+update_config=1
+ap_scan=1
+autoscan=exponential:1:1
+
+network={
+	ssid="terragraph"
+	pairwise=GCMP
+#	group=GTK_NOT_USED
+	group=GCMP
+	proto=WPA2
+	key_mgmt=WPA-EAP
+	eap=TLS
+	fragment_size=1004
+	identity="${radius_user_identity}"
+	# ca_cert: full path to CA certificate to verify server certificate
+	# if ca_cert and ca_path are not
+	#  included, server certificate will not be verified
+	# ca_path will be used to point to folder that mostly has multiple CA certs.
+	ca_cert="${ca_cert_path}"
+	# client_cert: full path to client certificate
+	client_cert="${client_cert_path}"
+	# private_key : client private key: Full file path to client private key file
+	private_key="${private_key_path}"
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Terragraph Stats Agent
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/sysconfig/tg_services
+EnvironmentFile=-/etc/default/tg_services
+Restart=always
+ExecStart=/bin/sh -c '\
+  if [ -z "$${AGENT_ROOTFS}" ] || [ ! -d "$${AGENT_ROOTFS}" ]; then \
+    echo "AGENT_ROOTFS not set or not found"; \
+    exit 1; \
+  fi; \
+  $${AGENT_ROOTFS}/etc/tg_systemd_config/stats_agent.start \
+'
+
+[Install]
+WantedBy=default.target

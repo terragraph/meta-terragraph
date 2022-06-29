@@ -1,0 +1,32 @@
+From d2417a060a627eb265c27a768b2477b6afc1d1b6 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 26 Dec 2017 14:28:08 -0500
+Subject: [PATCH] Add tweaks to LS1012ARDB device tree
+
+---
+ arch/arm64/boot/dts/freescale/fsl-ls1012a-rdb.dts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/freescale/fsl-ls1012a-rdb.dts b/arch/arm64/boot/dts/freescale/fsl-ls1012a-rdb.dts
+index f112ea68f2be..b3ec3b568867 100644
+--- a/arch/arm64/boot/dts/freescale/fsl-ls1012a-rdb.dts
++++ b/arch/arm64/boot/dts/freescale/fsl-ls1012a-rdb.dts
+@@ -61,6 +61,7 @@
+ 		fsl,mdio-mux-val = <0x0>;
+ 		phy-mode = "sgmii";
+ 		phy-handle = <&sgmii_phy>;
++		fsl,pfe-gemac-if-name = "nic0";
+ 	};
+ 
+ 	pfe_mac1: ethernet@1 {
+@@ -71,6 +72,7 @@
+ 		fsl,mdio-mux-val = <0x0>;
+ 		phy-mode = "rgmii-txid";
+ 		phy-handle = <&rgmii_phy>;
++		fsl,pfe-gemac-if-name = "nic1";
+ 	};
+ 	mdio@0 {
+ 		#address-cells = <1>;
+-- 
+2.17.1
+

@@ -1,0 +1,270 @@
+From 576869abf1a50c79a14bd3009cf1ab09be2e5c18 Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 16 Apr 2021 17:12:48 -0700
+Subject: [PATCH] tghqos: integrate TGHQoS in dpdk plugin
+
+Add files to CMakeLists.txt and integrate TGHQoS into dpdk plugin.
+---
+ src/plugins/dpdk/CMakeLists.txt  |  7 +++++++
+ src/plugins/dpdk/device/device.c | 33 +++++++++++++++++++++++++++-----
+ src/plugins/dpdk/device/dpdk.h   | 13 +++++++++++++
+ src/plugins/dpdk/device/format.c | 19 ++++++++++++++++++
+ src/plugins/dpdk/device/init.c   | 23 ++++++++++++++++++++++
+ src/plugins/dpdk/device/node.c   |  8 ++++++++
+ 6 files changed, 98 insertions(+), 5 deletions(-)
+
+diff --git a/src/plugins/dpdk/CMakeLists.txt b/src/plugins/dpdk/CMakeLists.txt
+index b2964dccd..3f7a29bb0 100644
+--- a/src/plugins/dpdk/CMakeLists.txt
++++ b/src/plugins/dpdk/CMakeLists.txt
+@@ -156,6 +156,13 @@ add_vpp_plugin(dpdk
+   ipsec/esp_encrypt.c
+   ipsec/ipsec.c
+   cryptodev/${DPDK_CRYPTODEV_SOURCE}.c
++  tghqos/sched/tghqos_red.c
++  tghqos/sched/tghqos_red.h
++  tghqos/sched/tghqos_sched.c
++  tghqos/sched/tghqos_sched.h
++  tghqos/tghqos_cli.c
++  tghqos/tghqos.c
++  tghqos/tghqos.h
+ 
+   MULTIARCH_SOURCES
+   buffer.c
+diff --git a/src/plugins/dpdk/device/device.c b/src/plugins/dpdk/device/device.c
+index 776f6d434..5359f8803 100644
+--- a/src/plugins/dpdk/device/device.c
++++ b/src/plugins/dpdk/device/device.c
+@@ -157,9 +157,11 @@ dpdk_validate_rte_mbuf (vlib_main_t * vm, vlib_buffer_t * b,
+ static_always_inline
+   u32 tx_burst_vector_internal (vlib_main_t * vm,
+ 				dpdk_device_t * xd,
+-				struct rte_mbuf **mb, u32 n_left)
++				struct rte_mbuf **mb, u32 n_left,
++				int *do_free)
+ {
+   dpdk_main_t *dm = &dpdk_main;
++  tghqos_main_t *tm = &tghqos_main;
+   dpdk_tx_queue_t *txq;
+   u32 n_retry;
+   int n_sent = 0;
+@@ -168,12 +170,32 @@ static_always_inline
+   n_retry = 16;
+   queue_id = vm->thread_index % xd->tx_q_used;
+   txq = vec_elt_at_index (xd->tx_queues, queue_id);
+-
++  *do_free = 1;
+   do
+     {
+       clib_spinlock_lock_if_init (&txq->lock);
+ 
+-      if (PREDICT_TRUE (xd->flags & DPDK_DEVICE_FLAG_PMD))
++      if (xd->flags & DPDK_DEVICE_FLAG_HQOS)
++	{
++	  tghqos_set_metadata (mb, n_left);
++	  if (tm->cpu_count == 0)
++	    {
++	      tghqos_port_lock (xd->port_id);
++	      n_sent = tghqos_port_enqueue (xd->port_id, mb, n_left);
++	      tghqos_port_unlock (xd->port_id);
++	      /* HQoS will either enqueue or do tail/RED drop on the enqueued
++	       * packets, and it will free them if the packets are dropped. Do
++	       * not try to retry enqueue, and do not try to free them after. */
++	      n_retry = 0;
++	      *do_free = 0;
++	    }
++	  else
++	    {
++	      n_sent = tghqos_port_thread_enqueue (xd->port_id, mb, n_left,
++						   vm->thread_index);
++	    }
++	}
++      else if (PREDICT_TRUE (xd->flags & DPDK_DEVICE_FLAG_PMD))
+ 	{
+ 	  /* no wrap, transmit in one burst */
+ 	  n_sent = rte_eth_tx_burst (xd->port_id, queue_id, mb, n_left);
+@@ -277,6 +299,7 @@ VNET_DEVICE_CLASS_TX_FN (dpdk_device_class) (vlib_main_t * vm,
+ 						  thread_index);
+   struct rte_mbuf **mb;
+   vlib_buffer_t *b[4];
++  int do_free;
+ 
+   ASSERT (n_packets <= VLIB_FRAME_SIZE);
+ 
+@@ -428,7 +451,7 @@ VNET_DEVICE_CLASS_TX_FN (dpdk_device_class) (vlib_main_t * vm,
+ 
+   /* transmit as many packets as possible */
+   tx_pkts = n_packets = mb - ptd->mbufs;
+-  n_left = tx_burst_vector_internal (vm, xd, ptd->mbufs, n_packets);
++  n_left = tx_burst_vector_internal (vm, xd, ptd->mbufs, n_packets, &do_free);
+ 
+   {
+     /* If there is no callback then drop any non-transmitted packets */
+@@ -447,7 +470,7 @@ VNET_DEVICE_CLASS_TX_FN (dpdk_device_class) (vlib_main_t * vm,
+ 	vlib_error_count (vm, node->node_index, DPDK_TX_FUNC_ERROR_PKT_DROP,
+ 			  n_left);
+ 
+-	while (n_left--)
++	while (do_free && n_left--)
+ 	  rte_pktmbuf_free (ptd->mbufs[n_packets - n_left - 1]);
+       }
+   }
+diff --git a/src/plugins/dpdk/device/dpdk.h b/src/plugins/dpdk/device/dpdk.h
+index 21f68b91e..2ef389e31 100644
+--- a/src/plugins/dpdk/device/dpdk.h
++++ b/src/plugins/dpdk/device/dpdk.h
+@@ -45,6 +45,8 @@
+ 
+ #include <vnet/devices/devices.h>
+ 
++#include "../tghqos/tghqos.h"
++
+ #if CLIB_DEBUG > 0
+ #define always_inline static inline
+ #else
+@@ -136,6 +138,7 @@ typedef uint16_t dpdk_portid_t;
+   _( 3, PMD_INIT_FAIL, "pmd-init-fail") \
+   _( 4, MAYBE_MULTISEG, "maybe-multiseg") \
+   _( 5, HAVE_SUBIF, "subif") \
++  _( 6, HQOS, "hqos") \
+   _( 9, TX_OFFLOAD, "tx-offload") \
+   _(10, INTEL_PHDR_CKSUM, "intel-phdr-cksum") \
+   _(11, RX_FLOW_OFFLOAD, "rx-flow-offload") \
+@@ -255,6 +258,12 @@ typedef struct
+   _ (num_tx_desc) \
+   _ (rss_fn)
+ 
++typedef struct dpdk_device_config_hqos_t
++{
++  u32 hqos_thread;
++  u32 hqos_thread_valid;
++} dpdk_device_config_hqos_t;
++
+ typedef struct
+ {
+   vlib_pci_addr_t pci_addr;
+@@ -269,6 +278,8 @@ typedef struct
+     foreach_dpdk_device_config_item
+ #undef _
+     clib_bitmap_t * workers;
++  u32 hqos_enabled;
++  dpdk_device_config_hqos_t hqos;
+   u8 tso;
+   u8 *devargs;
+   clib_bitmap_t *rss_queues;
+@@ -462,6 +473,8 @@ format_function_t format_dpdk_tx_offload_caps;
+ vnet_flow_dev_ops_function_t dpdk_flow_ops_fn;
+ 
+ clib_error_t *unformat_rss_fn (unformat_input_t * input, uword * rss_fn);
++clib_error_t *unformat_hqos (unformat_input_t * input,
++			     dpdk_device_config_hqos_t * hqos);
+ 
+ struct rte_pci_device *dpdk_get_pci_device (const struct rte_eth_dev_info
+ 					    *info);
+diff --git a/src/plugins/dpdk/device/format.c b/src/plugins/dpdk/device/format.c
+index c034ad55d..db04dc219 100644
+--- a/src/plugins/dpdk/device/format.c
++++ b/src/plugins/dpdk/device/format.c
+@@ -970,6 +970,25 @@ unformat_rss_fn (unformat_input_t * input, uword * rss_fn)
+   return 0;
+ }
+ 
++clib_error_t *
++unformat_hqos (unformat_input_t * input, dpdk_device_config_hqos_t * hqos)
++{
++  clib_error_t *error = 0;
++
++  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (input, "hqos-thread %u", &hqos->hqos_thread))
++	hqos->hqos_thread_valid = 1;
++      else
++	{
++	  error = clib_error_return (0, "unknown input `%U'",
++				     format_unformat_error, input);
++	  break;
++	}
++    }
++
++  return error;
++}
+ 
+ /*
+  * fd.io coding-style-patch-verification: ON
+diff --git a/src/plugins/dpdk/device/init.c b/src/plugins/dpdk/device/init.c
+index 6387e938f..21dcd2d8c 100644
+--- a/src/plugins/dpdk/device/init.c
++++ b/src/plugins/dpdk/device/init.c
+@@ -219,6 +219,8 @@ dpdk_lib_init (dpdk_main_t * dm)
+   u8 af_packet_instance_num = 0;
+   last_pci_addr.as_u32 = ~0;
+ 
++  tghqos_init (vm);
++
+   nports = rte_eth_dev_count_avail ();
+ 
+   if (nports < 1)
+@@ -772,6 +774,14 @@ dpdk_lib_init (dpdk_main_t * dm)
+ 
+       dpdk_device_setup (xd);
+ 
++      if (devconf->hqos_enabled)
++	{
++	  xd->flags |= DPDK_DEVICE_FLAG_HQOS;
++	  tghqos_port_init (xd->port_id, xd->hw_if_index,
++			    devconf->hqos.hqos_thread_valid,
++			    devconf->hqos.hqos_thread, xd->cpu_socket);
++	}
++
+       /* rss queues should be configured after dpdk_device_setup() */
+       if ((hi != NULL) && (devconf->rss_queues != NULL))
+         {
+@@ -1117,6 +1127,19 @@ dpdk_device_config (dpdk_config_main_t * conf, vlib_pci_addr_t pci_addr,
+ 	{
+ 	  devconf->tso = DPDK_DEVICE_TSO_OFF;
+ 	}
++      else
++	if (unformat
++	    (input, "hqos %U", unformat_vlib_cli_sub_input, &sub_input))
++	{
++	  devconf->hqos_enabled = 1;
++	  error = unformat_hqos (&sub_input, &devconf->hqos);
++	  if (error)
++	    break;
++	}
++      else if (unformat (input, "hqos"))
++	{
++	  devconf->hqos_enabled = 1;
++	}
+       else if (unformat (input, "devargs %s", &devconf->devargs))
+ 	;
+       else if (unformat (input, "rss-queues %U",
+diff --git a/src/plugins/dpdk/device/node.c b/src/plugins/dpdk/device/node.c
+index 9ebba442c..6e39d1363 100644
+--- a/src/plugins/dpdk/device/node.c
++++ b/src/plugins/dpdk/device/node.c
+@@ -466,6 +466,7 @@ VLIB_NODE_FN (dpdk_input_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 				vlib_frame_t * f)
+ {
+   dpdk_main_t *dm = &dpdk_main;
++  tghqos_main_t *tm = &tghqos_main;
+   dpdk_device_t *xd;
+   uword n_rx_packets = 0;
+   vnet_device_input_runtime_t *rt = (void *) node->runtime_data;
+@@ -481,6 +482,13 @@ VLIB_NODE_FN (dpdk_input_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
+       xd = vec_elt_at_index(dm->devices, dq->dev_instance);
+       n_rx_packets += dpdk_device_input (vm, dm, xd, node, thread_index,
+ 					 dq->queue_id);
++
++      /* If no separate lcore/thread for hqos, tx routine invoked
++       * from dpdk_input node */
++      if (tm->cpu_count == 0 && (xd->flags & DPDK_DEVICE_FLAG_HQOS))
++	{
++	  tghqos_port_tx_routine (xd->port_id);
++	}
+     }
+   /* *INDENT-ON* */
+   return n_rx_packets;
+-- 
+2.30.2
+

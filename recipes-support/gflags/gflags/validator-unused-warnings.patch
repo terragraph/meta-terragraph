@@ -1,0 +1,13 @@
+diff --git a/src/gflags.h.in b/src/gflags.h.in
+index 0324d39..a6a1ae5 100644
+--- a/src/gflags.h.in
++++ b/src/gflags.h.in
+@@ -135,7 +135,7 @@ extern GFLAGS_DLL_DECL bool RegisterFlagValidator(const std::string* flag, bool
+ 
+ // Convenience macro for the registration of a flag validator
+ #define DEFINE_validator(name, validator) \
+-    static const bool name##_validator_registered = \
++    static const bool name##_validator_registered __attribute__((unused)) = \
+             GFLAGS_NAMESPACE::RegisterFlagValidator(&FLAGS_##name, validator)
+ 
+ 

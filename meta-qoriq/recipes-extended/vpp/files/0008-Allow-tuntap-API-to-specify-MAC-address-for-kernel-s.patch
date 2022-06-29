@@ -1,0 +1,48 @@
+From a1505c7ee03eb838588239117eb76c0d87097ab8 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Thu, 5 Dec 2019 09:38:19 -0800
+Subject: [PATCH] Allow tuntap API to specify MAC address for kernel side
+
+---
+ src/vnet/unix/tapcli.c | 11 +++++++++++
+ src/vnet/unix/tuntap.h |  2 ++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/vnet/unix/tapcli.c b/src/vnet/unix/tapcli.c
+index ce9bd6055..aaad9eaaa 100644
+--- a/src/vnet/unix/tapcli.c
++++ b/src/vnet/unix/tapcli.c
+@@ -927,6 +927,17 @@ vnet_tap_connect (vlib_main_t * vm, vnet_tap_connect_args_t * ap)
+       goto error;
+     }
+ 
++  if (ap->intfc_hwaddr_arg != NULL)
++    {
++      ifr.ifr_hwaddr.sa_family = ARPHRD_ETHER;
++      memcpy(ifr.ifr_hwaddr.sa_data, ap->intfc_hwaddr_arg, ETH_ALEN);
++      if (ioctl (dev_net_tun_fd, SIOCSIFHWADDR, &ifr) < 0)
++	{
++	  rv = VNET_API_ERROR_SYSCALL_ERROR_7;
++	  goto error;
++	}
++    }
++
+   /* get flags, modify to bring up interface... */
+   if (ioctl (dev_tap_fd, SIOCGIFFLAGS, &ifr) < 0)
+     {
+diff --git a/src/vnet/unix/tuntap.h b/src/vnet/unix/tuntap.h
+index 46e7a606a..b612f64fd 100644
+--- a/src/vnet/unix/tuntap.h
++++ b/src/vnet/unix/tuntap.h
+@@ -51,6 +51,8 @@ typedef struct
+   u32 custom_dev_instance;
+   /** original sw_if_index (renumber) */
+   u32 orig_sw_if_index;
++  /** Kernel MAC address */
++  u8 *intfc_hwaddr_arg;
+ } vnet_tap_connect_args_t;
+ 
+ /** Connect a tap interface */
+-- 
+2.30.2
+

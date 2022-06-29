@@ -1,0 +1,25 @@
+From b73f3c4dd4699a48ace41b320ba7f029c9ee0cbb Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Fri, 11 Mar 2022 09:40:59 -0800
+Subject: [PATCH] Don't use thread local
+
+---
+ folly/detail/ThreadLocalDetail.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/folly/detail/ThreadLocalDetail.h b/folly/detail/ThreadLocalDetail.h
+index ed18dcc2e..d07f01400 100644
+--- a/folly/detail/ThreadLocalDetail.h
++++ b/folly/detail/ThreadLocalDetail.h
+@@ -293,7 +293,7 @@ struct StaticMetaBase {
+   //
+   // XXX: Ideally we would instead determine if emutls is in use at runtime as
+   // it is possible to configure glibc on Linux to use emutls regardless.
+-  static constexpr bool kUseThreadLocal = !kIsMobile && !kIsApple && !kMscVer;
++  static constexpr bool kUseThreadLocal = false;
+ 
+   // Represents an ID of a thread local object. Initially set to the maximum
+   // uint. This representation allows us to avoid a branch in accessing TLS data
+-- 
+2.30.2
+

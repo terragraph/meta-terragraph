@@ -1,0 +1,81 @@
+From 06a4ba55cef8ac3e0a48b83e5be7e82804a7c9c0 Mon Sep 17 00:00:00 2001
+From: ajshetty <ajshetty@devvm4937.frc0.facebook.com>
+Date: Thu, 17 Feb 2022 19:49:50 -0800
+Subject: [PATCH] fix vpp for 2R3C policers
+
+---
+ src/vnet/policer/xlate.c | 46 ++++++++++++++++++++++++++++------------
+ 1 file changed, 33 insertions(+), 13 deletions(-)
+
+diff --git a/src/vnet/policer/xlate.c b/src/vnet/policer/xlate.c
+index eb85e5583..9f8080a44 100644
+--- a/src/vnet/policer/xlate.c
++++ b/src/vnet/policer/xlate.c
+@@ -1120,31 +1120,51 @@ x86_pol_compute_hw_params (sse2_qos_pol_cfg_params_st * cfg,
+ 	}
+ 
+     }
+-  else if ((cfg->rfc == SSE2_QOS_POLICER_TYPE_2R3C_RFC_2698) ||
+-	   (cfg->rfc == SSE2_QOS_POLICER_TYPE_2R3C_RFC_4115))
++  else if (cfg->rfc == SSE2_QOS_POLICER_TYPE_2R3C_RFC_2698)
+     {
+-      // Two-rate policer
++      // Two-rate policer, treat EIR input as PIR
+ 
+-      if ((cfg->rb.kbps.cir_kbps == 0) || (cfg->rb.kbps.eir_kbps == 0)
+-	  || (cfg->rb.kbps.cb_bytes == 0) || (cfg->rb.kbps.eb_bytes == 0))
++      if ((cfg->rb.kbps.cir_kbps == 0) || (cfg->rb.kbps.eir_kbps == 0) ||
++	  (cfg->rb.kbps.eir_kbps < cfg->rb.kbps.cir_kbps) ||
++	  (cfg->rb.kbps.cb_bytes == 0) || (cfg->rb.kbps.eb_bytes == 0))
+ 	{
+ 	  SSE2_QOS_DEBUG_ERROR ("Config parameter validation failed.");
+ 	  return (-1);
+ 	}
+ 
+-      if (compute_policer_params (hz,
+-				  (u64) cfg->rb.kbps.cir_kbps *
+-				  BYTES_PER_KBIT,
+-				  (u64) (cfg->rb.kbps.eir_kbps + cfg->rb.kbps.cir_kbps) *
+-				  BYTES_PER_KBIT, &hw->current_limit,
+-				  &hw->extended_limit,
+-				  &hw->cir_tokens_per_period,
+-				  &hw->pir_tokens_per_period, &hw->scale))
++      if (compute_policer_params (
++		hz, (u64)cfg->rb.kbps.cir_kbps * BYTES_PER_KBIT,
++		(u64)(cfg->rb.kbps.eir_kbps) * BYTES_PER_KBIT,
++		&hw->current_limit, &hw->extended_limit,
++		&hw->cir_tokens_per_period, &hw->pir_tokens_per_period,
++		&hw->scale))
+ 	{
+ 	  SSE2_QOS_DEBUG_ERROR ("Policer parameter computation failed.");
+ 	  return (-1);
+ 	}
++    }
++  else if (cfg->rfc == SSE2_QOS_POLICER_TYPE_2R3C_RFC_4115)
++    {
++      // Two-rate policer, PIR=CIR+EIR
++
++      if ((cfg->rb.kbps.cir_kbps == 0) || (cfg->rb.kbps.eir_kbps == 0) ||
++	  (cfg->rb.kbps.cb_bytes == 0) || (cfg->rb.kbps.eb_bytes == 0))
++	{
++	  SSE2_QOS_DEBUG_ERROR ("Config parameter validation failed.");
++	  return (-1);
++	}
+ 
++      if (compute_policer_params (
++		hz, (u64)cfg->rb.kbps.cir_kbps * BYTES_PER_KBIT,
++		(u64)(cfg->rb.kbps.eir_kbps + cfg->rb.kbps.cir_kbps) *
++		  BYTES_PER_KBIT,
++		&hw->current_limit, &hw->extended_limit,
++		&hw->cir_tokens_per_period, &hw->pir_tokens_per_period,
++		&hw->scale))
++	{
++	  SSE2_QOS_DEBUG_ERROR ("Policer parameter computation failed.");
++	  return (-1);
++	}
+     }
+   else
+     {
+-- 
+2.30.2
+

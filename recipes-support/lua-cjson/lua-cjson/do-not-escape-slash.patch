@@ -1,0 +1,11 @@
+--- a/lua_cjson.c
++++ b/lua_cjson.c
+@@ -164,7 +164,7 @@
+     "\\u0018", "\\u0019", "\\u001a", "\\u001b",
+     "\\u001c", "\\u001d", "\\u001e", "\\u001f",
+     NULL, NULL, "\\\"", NULL, NULL, NULL, NULL, NULL,
+-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, "\\/",
++    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,

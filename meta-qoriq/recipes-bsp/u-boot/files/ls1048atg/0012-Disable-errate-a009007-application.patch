@@ -1,0 +1,31 @@
+From 81e2a7c4e6605a34925498f1cb3eb336f6ee21c9 Mon Sep 17 00:00:00 2001
+From: Anand Singh <anandsingh@fb.com>
+Date: Fri, 7 Jun 2019 13:32:15 -0700
+Subject: [PATCH 12/20] Disable errate a009007 application
+
+USB is disable in RCW, Hence avoid fixing USB a009007 errata as it
+leads board hanging up while bootup.
+---
+ arch/arm/cpu/armv8/fsl-layerscape/soc.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm/cpu/armv8/fsl-layerscape/soc.c b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+index 7bb60f0eb9..6aec1f41bc 100644
+--- a/arch/arm/cpu/armv8/fsl-layerscape/soc.c
++++ b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+@@ -164,10 +164,12 @@ static void erratum_a009007(void)
+ 	PROGRAM_USB_PHY_RX_OVRD_IN_HI(usb_phy);
+ #endif
+ #elif defined(CONFIG_ARCH_LS2080A) || defined(CONFIG_ARCH_LS1088A)
++#ifndef CONFIG_TARGET_LS1048ATG
+ 	void __iomem *dcsr = (void __iomem *)DCSR_BASE;
+ 
+ 	PROGRAM_USB_PHY_RX_OVRD_IN_HI(dcsr + DCSR_USB_PHY1);
+ 	PROGRAM_USB_PHY_RX_OVRD_IN_HI(dcsr + DCSR_USB_PHY2);
++#endif
+ #endif /* CONFIG_SYS_FSL_ERRATUM_A009007 */
+ }
+ 
+-- 
+2.17.1
+

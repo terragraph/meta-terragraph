@@ -1,0 +1,16 @@
+"module" is not a reserved name in Lua 5.2, so allow Thrift fields to be named
+"module".
+
+Upstream-Status: Pending
+
+--- a/compiler/cpp/src/thrift/generate/t_generator.cc
++++ b/compiler/cpp/src/thrift/generate/t_generator.cc
+@@ -84,7 +84,7 @@
+       "end", "enddeclare", "endfor", "endforeach", "endif", "endswitch", "endwhile", "ensure",
+       "except", "exec", "finally", "float", "for", "foreach", "from", "function", "global",
+       "goto", "if", "implements", "import", "in", "inline", "instanceof", "interface", "is",
+-      "lambda", "module", "native", "new", "next", "nil", "not", "or", "package", "pass",
++      "lambda", "native", "new", "next", "nil", "not", "or", "package", "pass",
+       "public", "print", "private", "protected", "raise", "redo", "rescue", "retry", "register",
+       "return", "self", "sizeof", "static", "super", "switch", "synchronized", "then", "this",
+       "throw", "transient", "try", "undef", "unless", "unsigned", "until", "use", "var",

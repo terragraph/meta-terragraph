@@ -1,0 +1,52 @@
+From 8c9d06fff789eff5e79374f630177ad541014b09 Mon Sep 17 00:00:00 2001
+From: Terragraph <tg-precommit@fb.com>
+Date: Sat, 21 Sep 2019 00:58:41 -0700
+Subject: [PATCH 1/2] Modify makefiles to compile only dpdk apps
+
+Modify ROOTDIRS to only compile the apps directory.  Modify install
+rule so it does not attempt to install the full dpdk.
+
+---
+ GNUmakefile          | 4 ++--
+ mk/rte.sdkinstall.mk | 4 ----
+ 2 files changed, 2 insertions(+), 6 deletions(-)
+
+diff --git a/GNUmakefile b/GNUmakefile
+index ae80720e9..ac74ed060 100644
+--- a/GNUmakefile
++++ b/GNUmakefile
+@@ -12,7 +12,7 @@ export RTE_SDK
+ # directory list
+ #
+ 
+-ROOTDIRS-y := buildtools lib kernel drivers app
+-ROOTDIRS-  := test
++ROOTDIRS-y := app
++ROOTDIRS-n := test buildtools lib kernel drivers app
+ 
+ include $(RTE_SDK)/mk/rte.sdkroot.mk
+diff --git a/mk/rte.sdkinstall.mk b/mk/rte.sdkinstall.mk
+index 2d34b4e5a..58e3dfea8 100644
+--- a/mk/rte.sdkinstall.mk
++++ b/mk/rte.sdkinstall.mk
+@@ -79,9 +79,6 @@ ifeq ($(DESTDIR)$(if $T,,+),)
+ else
+ 	@echo ================== Installing $(DESTDIR)$(prefix)/
+ 	$(Q)$(MAKE) O=$(RTE_OUTPUT) T= install-runtime
+-	$(Q)$(MAKE) O=$(RTE_OUTPUT) T= install-kmod
+-	$(Q)$(MAKE) O=$(RTE_OUTPUT) T= install-sdk
+-	$(Q)$(MAKE) O=$(RTE_OUTPUT) T= install-doc
+ 	@echo Installation in $(DESTDIR)$(prefix)/ complete
+ endif
+ 
+@@ -92,7 +89,6 @@ TAR_X_FLAGS=--strip-components=1 --keep-newer-files --no-same-owner --no-same-pe
+ 
+ install-runtime:
+ 	$(Q)$(call rte_mkdir, $(DESTDIR)$(libdir))
+-	$(Q)cp $(CP_FLAGS)    $O/lib/* $(DESTDIR)$(libdir)
+ 	$(Q)$(call rte_mkdir, $(DESTDIR)$(bindir))
+ 	$(Q)tar -cf -      -C $O --exclude 'app/*.map' \
+ 		--exclude app/dpdk-pmdinfogen \
+-- 
+2.17.1
+

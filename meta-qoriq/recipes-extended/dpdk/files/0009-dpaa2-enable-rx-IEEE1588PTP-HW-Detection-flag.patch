@@ -1,0 +1,27 @@
+From d0de6e64003d8ca094033994ea04ca74e90bd515 Mon Sep 17 00:00:00 2001
+From: Vahid Nazer <vnazer@fb.com>
+Date: Sat, 4 Jul 2020 13:02:59 -0700
+Subject: [PATCH] dpaa2 enable rx IEEE1588PTP HW Detection flag
+
+---
+ drivers/net/dpaa2/dpaa2_rxtx.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/net/dpaa2/dpaa2_rxtx.c b/drivers/net/dpaa2/dpaa2_rxtx.c
+index acbdc7139b..7449ba1c7d 100644
+--- a/drivers/net/dpaa2/dpaa2_rxtx.c
++++ b/drivers/net/dpaa2/dpaa2_rxtx.c
+@@ -158,10 +158,8 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
+ 			"(4)=0x%" PRIx64 "\t",
+ 			annotation->word3, annotation->word4);
+ 
+-#if defined(RTE_LIBRTE_IEEE1588)
+ 	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP))
+ 		mbuf->ol_flags |= PKT_RX_IEEE1588_PTP;
+-#endif
+ 
+ 	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT)) {
+ 		vlan_tci = rte_pktmbuf_mtod_offset(mbuf, uint16_t *,
+-- 
+2.30.2
+

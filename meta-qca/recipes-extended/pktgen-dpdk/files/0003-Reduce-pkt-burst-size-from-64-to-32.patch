@@ -1,0 +1,31 @@
+From 3571a386afe87e9228960f1dde1d7b0d9906687d Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Mon, 11 Oct 2021 22:14:43 -0700
+Subject: [PATCH] Reduce pkt burst size from 64 to 32
+
+We don't have enough memory to support pkt burst of 64. As
+noted in the comment, increasing this number consumes memory
+very fast, and at 64 pktgen will be unable to allocate enough
+memory at startup.
+TODO: Fix and restore to 64
+---
+ app/pktgen-constants.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/app/pktgen-constants.h b/app/pktgen-constants.h
+index 0abf347..d370c2e 100644
+--- a/app/pktgen-constants.h
++++ b/app/pktgen-constants.h
+@@ -16,7 +16,8 @@ extern "C" {
+ 
+ enum {
+ #if !defined(RTE_LIBRTE_VMXNET3_PMD) && !defined(RTE_NET_VMXNET3)
+-	DEFAULT_PKT_BURST       = 64,	/* Increasing this number consumes memory very fast */
++	// TODO: This was reduced from 64 due to memory issues/crashes. Fix and restore this to 64.
++	DEFAULT_PKT_BURST       = 32,	/* Increasing this number consumes memory very fast */
+ 	DEFAULT_RX_DESC         = (DEFAULT_PKT_BURST * 8 * 2),
+ 	DEFAULT_TX_DESC         = DEFAULT_RX_DESC * 2,
+ #else
+-- 
+2.30.2
+

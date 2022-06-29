@@ -1,0 +1,10 @@
+/**
+
+\mainpage Terragraph Driver Documentation
+
+This document contains the Terragraph host driver documentation, and the API documentation between the Terragraph
+platform driver and the vendor device driver.
+
+Intended audience for this document are terragraph and vendor driver developers.
+
+*/

@@ -1,0 +1,81 @@
+From d29218e6c06dde519d72c97590b262679082fc49 Mon Sep 17 00:00:00 2001
+From: attila balogh <attilabal@fb.com>
+Date: Wed, 1 Jun 2022 18:43:21 -0700
+Subject: [PATCH] properly respond to solicited forus ICMPv6 NS messages
+
+---
+ src/vnet/ip/icmp6.h      |  2 +-
+ src/vnet/ip6-nd/ip6_nd.c | 22 ++++++++++++++++------
+ 2 files changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/src/vnet/ip/icmp6.h b/src/vnet/ip/icmp6.h
+index 7a5eef5df..00a245c73 100644
+--- a/src/vnet/ip/icmp6.h
++++ b/src/vnet/ip/icmp6.h
+@@ -29,7 +29,7 @@
+   _ (ECHO_REPLIES_SENT, "echo replies sent")                            \
+   _ (NEIGHBOR_SOLICITATION_SOURCE_NOT_ON_LINK,                          \
+      "neighbor solicitations from source not on link")                  \
+-  _ (NEIGHBOR_SOLICITATION_SOURCE_UNKNOWN,                              \
++  _ (NEIGHBOR_SOLICITATION_TARGET_UNKNOWN,                              \
+      "neighbor solicitations for unknown targets")                      \
+   _ (NEIGHBOR_ADVERTISEMENTS_TX, "neighbor advertisements sent")        \
+   _ (NEIGHBOR_ADVERTISEMENTS_RX, "neighbor advertisements received")    \
+diff --git a/src/vnet/ip6-nd/ip6_nd.c b/src/vnet/ip6-nd/ip6_nd.c
+index 5ab3d67bb..1664b4c49 100644
+--- a/src/vnet/ip6-nd/ip6_nd.c
++++ b/src/vnet/ip6-nd/ip6_nd.c
+@@ -184,7 +184,7 @@ icmp6_neighbor_solicitation_or_advertisement (vlib_main_t * vm,
+ 
+ 	      if (~0 == fib_index)
+ 		{
+-		  error0 = ICMP6_ERROR_NEIGHBOR_SOLICITATION_SOURCE_UNKNOWN;
++		  error0 = ICMP6_ERROR_NEIGHBOR_SOLICITATION_TARGET_UNKNOWN;
+ 		}
+ 	      else
+ 		{
+@@ -205,7 +205,7 @@ icmp6_neighbor_solicitation_or_advertisement (vlib_main_t * vm,
+ 		    {
+ 		      /* The target address is not in the FIB */
+ 		      error0 =
+-			ICMP6_ERROR_NEIGHBOR_SOLICITATION_SOURCE_UNKNOWN;
++			ICMP6_ERROR_NEIGHBOR_SOLICITATION_TARGET_UNKNOWN;
+ 		    }
+ 		  else
+ 		    {
+@@ -217,18 +217,28 @@ icmp6_neighbor_solicitation_or_advertisement (vlib_main_t * vm,
+ 			   * that's good. */
+ 			}
+ 		      else
+-			if (fib_entry_is_sourced
+-			    (fei, FIB_SOURCE_IP6_ND_PROXY) ||
+-			    fib_entry_is_sourced (fei, FIB_SOURCE_IP6_ND))
++			if (FIB_ENTRY_FLAG_LOCAL &
++			    fib_entry_get_flags_for_source (fei,
++			    FIB_SOURCE_IP6_ND))
++			{
++				  /* this is one of our link local addresses,
++				   * that's also good */
++			}
++		      else
++			if (fib_entry_is_sourced (fei, FIB_SOURCE_IP6_ND_PROXY) )
+ 			{
+ 			  /* The address was added by IPv6 Proxy ND config.
+ 			   * We should only respond to these if the NS arrived on
+ 			   * the link that has a matching covering prefix */
++
++			   // TODO: The above comment isn't implemented and
++			   // likely would not work in all cases.
++			   // ND proxy is disabled anyway
+ 			}
+ 		      else
+ 			{
+ 			  error0 =
+-			    ICMP6_ERROR_NEIGHBOR_SOLICITATION_SOURCE_UNKNOWN;
++			    ICMP6_ERROR_NEIGHBOR_SOLICITATION_TARGET_UNKNOWN;
+ 			}
+ 		    }
+ 		}
+-- 
+2.30.2
+

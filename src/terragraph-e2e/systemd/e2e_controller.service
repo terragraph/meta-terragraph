@@ -1,0 +1,35 @@
+[Unit]
+Description=Terragraph E2E Controller
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/sysconfig/tg_services
+EnvironmentFile=-/etc/default/tg_services
+Restart=always
+RestartSec=2
+ExecStart=/bin/sh -c '\
+  if [ -z "$${E2E_ROOTFS}" ] || [ ! -d "$${E2E_ROOTFS}" ]; then \
+    echo "E2E_ROOTFS not set or not found"; \
+    exit 1; \
+  fi; \
+  ulimit -n 10240; \
+  $${E2E_ROOTFS}/etc/tg_systemd_config/e2e_controller.start \
+'
+ExecStopPost=/bin/sh -c '\
+  if [ "$$(pgrep -c e2e_controller)" -eq "1" ]; then \
+    PID=$$(pgrep e2e_controller); \
+    E2E_ROOTFS=$$(readlink /proc/$${PID}/cwd); \
+  else \
+    echo Unable to determine rootfs of running e2e_controller; \
+  fi; \
+  echo Using rootfs for stop operation: $${E2E_ROOTFS}; \
+  if [ -z "$${E2E_ROOTFS}" ] || [ ! -d "$${E2E_ROOTFS}" ]; then \
+    echo "E2E_ROOTFS not set or not found"; \
+    exit 1; \
+  fi; \
+  $${E2E_ROOTFS}/etc/tg_systemd_config/e2e_controller.stop $${E2E_ROOTFS}\
+'
+
+[Install]
+WantedBy=default.target

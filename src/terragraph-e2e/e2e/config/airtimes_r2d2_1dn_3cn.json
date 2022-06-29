@@ -1,0 +1,31 @@
+{
+  "linkAirtimes": [
+    {
+      "macAddress": "02:08:02:00:01:02",
+      "txIdeal": 3333,
+      "txMin": 150,
+      "txMax": 10000,
+      "rxIdeal": 3333,
+      "rxMin": 150,
+      "rxMax": 10000
+    },
+    {
+      "macAddress": "02:08:02:00:01:03",
+      "txIdeal": 3333,
+      "txMin": 150,
+      "txMax": 10000,
+      "rxIdeal": 3333,
+      "rxMin": 150,
+      "rxMax": 10000
+    },
+    {
+      "macAddress": "02:08:02:00:01:04",
+      "txIdeal": 3333,
+      "txMin": 150,
+      "txMax": 10000,
+      "rxIdeal": 3333,
+      "rxMin": 150,
+      "rxMax": 10000
+    }
+  ]
+}  

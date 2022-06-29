@@ -1,0 +1,50 @@
+From 25286fcd0cab8ca42d14e9fe62019ff396282d84 Mon Sep 17 00:00:00 2001
+From: Radu Bulie <radu-andrei.bulie@nxp.com>
+Date: Fri, 11 Dec 2020 01:51:27 +0200
+Subject: [PATCH 1/2] Add support for SIOCGMIIREG and SIOCSMIIREG
+
+The support is added onto the mac device which actually
+defines a dummy netdevice needed to configure the phydev.
+
+Signed-off-by: Radu Bulie <radu-andrei.bulie@nxp.com>
+---
+ drivers/staging/fsl-dpaa2/mac/mac.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/staging/fsl-dpaa2/mac/mac.c b/drivers/staging/fsl-dpaa2/mac/mac.c
+index eb2602e055a4..3d32b5da05c2 100644
+--- a/drivers/staging/fsl-dpaa2/mac/mac.c
++++ b/drivers/staging/fsl-dpaa2/mac/mac.c
+@@ -394,11 +394,29 @@ static int dpaa2_mac_get_sset_count(struct net_device *dev, int sset)
+ 	}
+ }
+ 
++int dpaa2_mac_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
++{
++	int ret = -EINVAL;
++
++
++	if (cmd == SIOCGMIIREG || cmd == SIOCSMIIREG) {
++		if (!dev->phydev)
++			ret = -EINVAL;
++		else {
++			ret = phy_mii_ioctl(dev->phydev, rq, cmd);
++		}
++	} else
++		ret = -EOPNOTSUPP;
++
++	return ret;
++}
++
+ static const struct net_device_ops dpaa2_mac_ndo_ops = {
+ 	.ndo_open		= &dpaa2_mac_open,
+ 	.ndo_stop		= &dpaa2_mac_stop,
+ 	.ndo_start_xmit		= &dpaa2_mac_drop_frame,
+ 	.ndo_get_stats64	= &dpaa2_mac_get_stats,
++	.ndo_do_ioctl		= &dpaa2_mac_ioctl,
+ };
+ 
+ static const struct ethtool_ops dpaa2_mac_ethtool_ops = {
+-- 
+2.24.1
+

@@ -1,0 +1,1398 @@
+From 46f2bf8ee447892ed2193479f497c5f140cd12cc Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Tue, 16 Feb 2021 15:22:08 -0800
+Subject: [PATCH] tghqos: cli for stats and configurations
+
+TGHQoS-specific CLI commands
+---
+ src/plugins/dpdk/tghqos/tghqos_cli.c | 1378 ++++++++++++++++++++++++++
+ 1 file changed, 1378 insertions(+)
+ create mode 100644 src/plugins/dpdk/tghqos/tghqos_cli.c
+
+diff --git a/src/plugins/dpdk/tghqos/tghqos_cli.c b/src/plugins/dpdk/tghqos/tghqos_cli.c
+new file mode 100644
+index 000000000..4571995dc
+--- /dev/null
++++ b/src/plugins/dpdk/tghqos/tghqos_cli.c
+@@ -0,0 +1,1378 @@
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to
++ * deal in the Software without restriction, including without limitation the
++ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
++ * sell copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#include "tghqos.h"
++
++/**
++ * @brief Print table used to map DSCP value to tc/queue/color.
++ */
++static void print_tc_table (vlib_main_t *vm, u32 *tctbl)
++{
++  u32 i = 0;
++  int l = 0;
++  const char traffic_colors[] = {'G', 'Y', 'R'};
++  const char *dscp_ranges[] = {
++      "     [ 0 ..   7]: ", "     [ 8 ..  15]: ", "     [16 ..  23]: ",
++      "     [24 ..  31]: ", "     [32 ..  39]: ", "     [40 ..  47]: ",
++      "     [48 ..  55]: ", "     [56 ..  63]: "};
++
++  vlib_cli_output (vm, " TC translation table: ([Mapped "
++                       "Value Range]: tc/queue/color tc/queue/color ...)");
++
++  for (i = 0; i < NUM_DSCP_VALUES; i = i + 8)
++    {
++      char buffer[1024];
++      l = 0;
++      l += sprintf (buffer + l, "%s", dscp_ranges[i / 8]);
++      l += sprintf (
++          buffer + l,
++          "%u/%u/%c %u/%u/%c %u/%u/%c %u/%u/%c %u/%u/%c %u/%u/%c %u/%u/%c "
++          "%u/%u/%c",
++          (tctbl[i] & 0x3C) >> 2,
++          tctbl[i] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i] >> 6) - 1], (tctbl[i + 1] & 0x3C) >> 2,
++          tctbl[i + 1] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 1] >> 6) - 1], (tctbl[i + 2] & 0x3C) >> 2,
++          tctbl[i + 2] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 2] >> 6) - 1], (tctbl[i + 3] & 0x3C) >> 2,
++          tctbl[i + 3] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 3] >> 6) - 1], (tctbl[i + 4] & 0x3C) >> 2,
++          tctbl[i + 4] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 4] >> 6) - 1], (tctbl[i + 5] & 0x3C) >> 2,
++          tctbl[i + 5] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 5] >> 6) - 1], (tctbl[i + 6] & 0x3C) >> 2,
++          tctbl[i + 6] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 6] >> 6) - 1], (tctbl[i + 7] & 0x3C) >> 2,
++          tctbl[i + 7] % TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS,
++          traffic_colors[(tctbl[i + 7] >> 6) - 1]);
++      vlib_cli_output (vm, "%s\n", buffer);
++    }
++}
++
++static clib_error_t *tghqos_show_if (vlib_main_t *vm, unformat_input_t *input,
++                                     vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  tghqos_main_t *tm = &tghqos_main;
++  tghqos_port_config_t *config;
++  clib_error_t *error = NULL;
++  u32 hw_if_index = (u32)~0;
++  u16 port_id;
++  u32 i;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  vlib_cli_output (vm,
++                   " Packet IPv6 DSCP field is used for tc, color, queue:");
++  vlib_cli_output (vm, "  IPv6 DSCP data position offset: %4u",
++                   TGHQOS_IPV6_DSCP_POS);
++  vlib_cli_output (vm, "  IPv6 DSCP data bitmask: 0x%016llx",
++                   TGHQOS_IPV6_DSCP_MASK);
++  vlib_cli_output (vm, " Stats are being cleared on read: %u",
++                   tm->config.clear_stats_on_read);
++  print_tc_table (vm, tm->config.tc_table);
++  vlib_cli_output (vm, " Rate = %u bytes/second", config->rate);
++  vlib_cli_output (vm, " Frame overhead = %u bytes", config->frame_overhead);
++  vlib_cli_output (vm, " Firmware transmit ring depth = %u segments",
++                   config->fw_tx_ring_depth);
++  vlib_cli_output (vm, " Dequeue burst size = %u segments", config->burst_deq);
++  vlib_cli_output (vm, " Enqueue burst size = %u segments", config->burst_enq);
++  vlib_cli_output (vm, " Number of pipes = %u", TGHQOS_SCHED_PIPES_PER_PORT);
++  vlib_cli_output (vm, " Number of traffic classes = %u",
++                   TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE);
++  vlib_cli_output (vm, " Number of queues per traffic class = %u",
++                   TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS);
++  vlib_cli_output (vm, " Packet queue sizes:");
++  for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
++    {
++      vlib_cli_output (vm, "   TC%u: Q0 = %u, Q1 = %u, Q2 = %u, Q3 = %u", i,
++                       config->queue_size[i][0], config->queue_size[i][1],
++                       config->queue_size[i][2], config->queue_size[i][3]);
++    }
++  vlib_cli_output (vm, " Weighted Random Early Detection (WRED):");
++  for (i = 0; i < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
++    {
++      vlib_cli_output (vm, "   TC%u min: G = %u, Y = %u, R = %u", i,
++                       config->red_params[i][TGHQOS_GREEN].min_th,
++                       config->red_params[i][TGHQOS_YELLOW].min_th,
++                       config->red_params[i][TGHQOS_RED].min_th);
++
++      vlib_cli_output (vm, "   TC%u max: G = %u, Y = %u, R = %u", i,
++                       config->red_params[i][TGHQOS_GREEN].max_th,
++                       config->red_params[i][TGHQOS_YELLOW].max_th,
++                       config->red_params[i][TGHQOS_RED].max_th);
++
++      vlib_cli_output (vm,
++                       "   TC%u inverted probability: G = %u, Y = %u, R = %u",
++                       i, config->red_params[i][TGHQOS_GREEN].maxp_inv,
++                       config->red_params[i][TGHQOS_YELLOW].maxp_inv,
++                       config->red_params[i][TGHQOS_RED].maxp_inv);
++
++      vlib_cli_output (vm, "   TC%u weight: G = %u, Y = %u, R = %u", i,
++                       config->red_params[i][TGHQOS_GREEN].wq_log2,
++                       config->red_params[i][TGHQOS_YELLOW].wq_log2,
++                       config->red_params[i][TGHQOS_RED].wq_log2);
++    }
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command is used to display details of an output interface's
++ * HQoS settings.
++ *
++ * @cliexpar
++ * Example of how to display HQoS settings for an interface:
++ * @cliexstart{tghqos show interface Wigig0/1/0/0}
++ * HQoS enabled for this interface: 1
++ *  Packet IPv6 DSCP field is used for tc, color, queue:
++ *   IPv6 DSCP data position offset:    8
++ *   IPv6 DSCP data bitmask: 0x0000000000000fc0
++ *  Stats are being cleared on read: 1
++ *  TC translation table: ([Mapped Value Range]: tc/queue/color tc/queue/color ...)
++ *      [ 0 ..   7]: 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y
++ *      [ 8 ..  15]: 3/0/Y 3/0/Y 3/0/G 3/0/Y 3/0/Y 3/0/Y 3/0/R 3/0/Y
++ *      [16 ..  23]: 3/0/Y 3/0/Y 2/0/G 3/0/Y 2/0/Y 3/0/Y 2/0/R 3/0/Y
++ *      [24 ..  31]: 3/0/Y 3/0/Y 1/0/G 3/0/Y 1/0/Y 3/0/Y 1/0/R 3/0/Y
++ *      [32 ..  39]: 3/0/Y 3/0/Y 0/0/G 3/0/Y 0/0/Y 3/0/Y 0/0/R 3/0/Y
++ *      [40 ..  47]: 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y
++ *      [48 ..  55]: 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y
++ *      [56 ..  63]: 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y 3/0/Y
++ *  Rate = 275000000 bytes/second
++ *  Frame overhead = 24 bytes
++ *  Firmware transmit ring depth = 4096 segments
++ *  Dequeue burst size = 32 segments
++ *  Number of pipes = 16
++ *  Number of traffic classes = 8
++ *  Number of queues per traffic class = 4
++ *  Packet queue sizes:
++ *    TC0: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
++ *    TC1: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
++ *    TC2: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
++ *    TC3: Q0 = 4096, Q1 = 4096, Q2 = 4096, Q3 = 4096
++ *    TC4: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
++ *    TC5: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
++ *    TC6: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
++ *    TC7: Q0 = 0, Q1 = 0, Q2 = 0, Q3 = 0
++ *   Weighted Random Early Detection (WRED):
++ *   TC0 min: G = 3072, Y = 2048, R = 0
++ *    TC0 max: G = 4096, Y = 3072, R = 0
++ *    TC0 inverted probability: G = 10, Y = 10, R = 10
++ *    TC0 weight: G = 9, Y = 9, R = 9
++ *    TC1 min: G = 3072, Y = 2048, R = 0
++ *    TC1 max: G = 4096, Y = 3072, R = 0
++ *    TC1 inverted probability: G = 10, Y = 10, R = 10
++ *    TC1 weight: G = 9, Y = 9, R = 9
++ *    TC2 min: G = 3072, Y = 2048, R = 0
++ *    TC2 max: G = 4096, Y = 3072, R = 0
++ *    TC2 inverted probability: G = 10, Y = 10, R = 10
++ *    TC2 weight: G = 9, Y = 9, R = 9
++ *    TC3 min: G = 3072, Y = 2048, R = 0
++ *    TC3 max: G = 4096, Y = 3072, R = 0
++ *    TC3 inverted probability: G = 10, Y = 10, R = 10
++ *    TC3 weight: G = 9, Y = 9, R = 9
++ *    TC4 min: G = 0, Y = 0, R = 0
++ *    TC4 max: G = 0, Y = 0, R = 0
++ *    TC4 inverted probability: G = 0, Y = 0, R = 0
++ *    TC4 weight: G = 0, Y = 0, R = 0
++ *    TC5 min: G = 0, Y = 0, R = 0
++ *    TC5 max: G = 0, Y = 0, R = 0
++ *    TC5 inverted probability: G = 0, Y = 0, R = 0
++ *    TC5 weight: G = 0, Y = 0, R = 0
++ *    TC6 min: G = 0, Y = 0, R = 0
++ *    TC6 max: G = 0, Y = 0, R = 0
++ *    TC6 inverted probability: G = 0, Y = 0, R = 0
++ *    TC6 weight: G = 0, Y = 0, R = 0
++ *    TC7 min: G = 0, Y = 0, R = 0
++ *    TC7 max: G = 0, Y = 0, R = 0
++ *    TC7 inverted probability: G = 0, Y = 0, R = 0
++ *    TC7 weight: G = 0, Y = 0, R = 0
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_show_if, static) = {
++    .path = "tghqos show interface",
++    .short_help = "tghqos show interface <interface>",
++    .function = tghqos_show_if,
++};
++
++static clib_error_t *tghqos_show_if_counters (vlib_main_t *vm,
++                                              unformat_input_t *input,
++                                              vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  tghqos_main_t *tm = &tghqos_main;
++  tghqos_sched_port_t *port;
++  clib_error_t *error = NULL;
++  u32 hw_if_index = (u32)~0;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  /* TODO: different formatting? */
++  vlib_cli_output (vm, "bad_metadata_drop: %u",
++                   port->counters.bad_metadata_drop);
++  vlib_cli_output (vm, "incomplete_dequeue: %u",
++                   port->counters.incomplete_dequeue);
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command is used to display various counters for an output interface.
++ *
++ * @cliexpar
++ * Example of how to display counters for an interface:
++ * @cliexstart{tghqos show interface counters Wigig0/1/0/0}
++ *  bad_metadata_drop: 0
++ *  incomplete_dequeue: 0
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_show_if_counters, static) = {
++    .path = "tghqos show interface counters",
++    .short_help = "tghqos show interface counters <interface>",
++    .function = tghqos_show_if_counters,
++};
++
++static clib_error_t *tghqos_show_stats (vlib_main_t *vm,
++                                        unformat_input_t *input,
++                                        vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  u32 pipe = (u32)~0;
++  u32 tc = (u32)~0;
++  u32 tc_q = (u32)~0;
++  u16 port_id;
++  tghqos_sched_port_t *port;
++  tghqos_sched_stats_t stats;
++  u32 qlen = (u32)~0, qsize = (u32)~0;
++  int i;
++  const char *color_strings[] = {
++      "Green Packets: ", "Yellow Packets: ", "Red Packets: "};
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_hw_interface,
++                    tm->vnet_main, &hw_if_index))
++        ;
++      else if (unformat (line_input, "pipe %d", &pipe))
++        ;
++      else if (unformat (line_input, "tc %d", &tc))
++        ;
++      else if (unformat (line_input, "tc_q %d", &tc_q))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++
++  if (pipe == ~0)
++    {
++      tghqos_sched_port_read_stats (port, &stats,
++                                    tm->config.clear_stats_on_read);
++      vlib_cli_output (
++          vm, "HQoS stats for %U (port %d):", format_vnet_hw_if_index_name,
++          tm->vnet_main, hw_if_index, port_id);
++    }
++  else if (tc == ~0)
++    {
++      if (pipe >= TGHQOS_SCHED_PIPES_PER_PORT)
++        {
++          error = clib_error_return (0, "invalid pipe");
++          goto done;
++        }
++      tghqos_sched_pipe_read_stats (&port->pipes[pipe], &stats,
++                                    tm->config.clear_stats_on_read);
++      vlib_cli_output (vm, "HQoS stats for %U (port %d), pipe %d:",
++                       format_vnet_hw_if_index_name, tm->vnet_main,
++                       hw_if_index, port_id, pipe);
++    }
++  else if (tc_q == ~0)
++    {
++      if (tc >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++        {
++          error = clib_error_return (0, "invalid traffic class");
++          goto done;
++        }
++      tghqos_sched_traffic_class_read_stats (
++          &port->pipes[pipe].tcs[tc], &stats, tm->config.clear_stats_on_read);
++      vlib_cli_output (vm, "HQoS stats for %U (port %d), pipe %d, tc %d:",
++                       format_vnet_hw_if_index_name, tm->vnet_main,
++                       hw_if_index, port_id, pipe, tc);
++    }
++  else
++    {
++      if (tc_q >= TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS)
++        {
++          error = clib_error_return (0, "invalid queue");
++          goto done;
++        }
++      tghqos_sched_queue_read_stats (&port->pipes[pipe].tcs[tc].queues[tc_q],
++                                     &stats, &qlen, &qsize,
++                                     tm->config.clear_stats_on_read);
++      vlib_cli_output (vm, "HQoS stats for port %d, pipe %d, tc %d:, tc_q %d:",
++                       port_id, pipe, tc, tc_q);
++    }
++
++  vlib_cli_output (vm, "%=24s%=16s", "Stats Parameter", "Value");
++  vlib_cli_output (vm, "%=24s%=16d", "Packets:", stats.n_pkts);
++  vlib_cli_output (vm, "%=24s%=16d", "Packets dropped:", stats.n_pkts_dropped);
++  vlib_cli_output (vm, "%=24s%=16d", "Packets dropped (RED):",
++                   stats.n_pkts_red_dropped);
++  if (qlen != ~0)
++    vlib_cli_output (vm, "%=24s%=16d", "Packets in queue:", qlen);
++  if (qsize != ~0)
++    vlib_cli_output (vm, "%=24s%=16d", "Packet queue size:", qsize);
++
++  vlib_cli_output (vm, "%=24s%=16d", "Bytes:", stats.n_bytes);
++  vlib_cli_output (vm, "%=24s%=16d", "Bytes dropped:", stats.n_bytes_dropped);
++
++  for (i = 0; i < TGHQOS_COLORS; i++)
++    {
++      vlib_cli_output (vm, (char *)color_strings[i]);
++      vlib_cli_output (vm, "%=24s%=16d", "Enqueued:", stats.n_pkts_color[i]);
++      vlib_cli_output (vm, "%=24s%=16d/%=16d", "Dropped / RED Dropped:",
++                       stats.n_pkts_color_dropped[i][0],
++                       stats.n_pkts_color_dropped[i][1]);
++    }
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command is used to display statistics associated with HQoS. Statistics
++ * can be displayed at any of the hierarchical levels, depending on how many
++ * input parameters are used.
++ *
++ * @cliexpar
++ * Example of how to display statistics of a specific HQoS queue:
++ * @cliexstart{tghqos show stats Wigig0/1/0/0 pipe 0 tc 3 tc_q 1}
++ *  HQoS stats for port 5, pipe 0, tc 3:, tc_q 1:
++ *       Stats Parameter          Value
++ *          Packets:                0
++ *      Packets dropped:            0
++ *   Packets dropped (RED):         0
++ *      Packets in queue:           0
++ *     Packet queue size:         4096
++ *           Bytes:                 0
++ *       Bytes dropped:             0
++ *  Green Packets:
++ *          Enqueued:               0
++ *   Dropped / RED Dropped:         0       /        0
++ *  Yellow Packets:
++ *          Enqueued:               0
++ *   Dropped / RED Dropped:         0       /        0
++ *  Red Packets:
++ *          Enqueued:               0
++ *   Dropped / RED Dropped:         0       /        0
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_show_stats, static) = {
++    .path = "tghqos show stats",
++    .short_help = "tghqos show stats <interface> pipe [pipe_id] tc [tc_id] "
++                  "tc_q [queue_id]",
++    .function = tghqos_show_stats,
++};
++
++static clib_error_t *tghqos_show_queue_stats (vlib_main_t *vm,
++                                              unformat_input_t *input,
++                                              vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  u32 pipe = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_sched_pipe_stats_extra_t *stats;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_hw_interface,
++                    tm->vnet_main, &hw_if_index))
++        ;
++      else if (unformat (line_input, "pipe %d", &pipe))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (pipe >= TGHQOS_SCHED_PIPES_PER_PORT)
++    {
++      error = clib_error_return (0, "invalid pipe");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  stats = &port->pipes[pipe].stats;
++
++  vlib_cli_output (vm, "nw_bytes: %u\n", stats->nw_bytes);
++  vlib_cli_output (vm, "nr_bytes: %u\n", stats->nr_bytes);
++  vlib_cli_output (vm, "n_bytes_droppped: %u\n", stats->n_bytes_dropped);
++  vlib_cli_output (vm, "bytes_pending: %u\n", tghqos_port_bytes_pending(port_id, pipe));
++  vlib_cli_output (vm, "bytes_arrived: %u\n", tghqos_port_bytes_arrived(port_id, pipe));
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command is used to display statistics associated with queue stats,
++ * which are used by firmware for point to multi-point time division scheduling.
++ * TODO: rename this for clarity?
++ *
++ * @cliexpar
++ * Example of how to display statistics of a specific HQoS queue:
++ * @cliexstart{tghqos show queue-stats Wigig0/1/0/0 pipe 0}
++ *  nw_bytes: 1878589202
++ *  nr_bytes: 1878589202
++ *  n_bytes_droppped: 0
++ *  bytes_pending: 0
++ *  bytes_arrived: 1878589202
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_show_queue_stats, static) = {
++    .path = "tghqos show queue-stats",
++    .short_help = "tghqos show queue-stats <interface> pipe <pipe_id>",
++    .function = tghqos_show_queue_stats,
++};
++
++static clib_error_t *tghqos_set_tctbl (vlib_main_t *vm,
++                                       unformat_input_t *input,
++                                       vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  tghqos_main_t *tm = &tghqos_main;
++  tghqos_config_t *config;
++  clib_error_t *error = NULL;
++  u32 tc = (u32)~0;
++  u32 queue = (u32)~0;
++  u32 entry = (u32)~0;
++  u32 color = (u32)~0;
++  u8 *color_str;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "entry %d", &entry))
++        ;
++      else if (unformat (line_input, "tc %d", &tc))
++        ;
++      else if (unformat (line_input, "queue %d", &queue))
++        ;
++      else if (unformat (line_input, "color %s", &color_str))
++        {
++          /* translate to DSCP color values */
++          if (color_str[0] == 'G')
++            color = 1;
++          else if (color_str[0] == 'Y')
++            color = 2;
++          else if (color_str[0] == 'R')
++            color = 3;
++          vec_free (color_str);
++        }
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (entry >= NUM_DSCP_VALUES)
++    {
++      error = clib_error_return (0, "invalid entry");
++      goto done;
++    }
++  if (tc >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++    {
++      error = clib_error_return (0, "invalid traffic class");
++      goto done;
++    }
++  if (queue >= TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS)
++    {
++      error = clib_error_return (0, "invalid traffic class queue");
++      goto done;
++    }
++  if (color >= (TGHQOS_COLORS + 1))
++    {
++      error = clib_error_return (0, "invalid color");
++      goto done;
++    }
++
++  config = &tm->config;
++  config->tc_table[entry] =
++      ((color & 0x3) << 6) + ((tc & 0xf) << 2) + (queue & 2);
++
++  vlib_cli_output (
++      vm, "Successfully configured tctbl entry with given parameters");
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command is used to set the traffic class translation table. The traffic
++ * class translation table is used to map 64 values (0-63) to one of eight
++ * traffic classes, the three HQoS colors 'G', 'Y', and 'R', and one of four
++ * HQoS input queues. Use the '<em>show tghqos interface</em>' command to
++ * display the traffic class translation table.
++ *
++ * This command has the following parameters:
++ *
++ * - <b>entry <map_val></b> - Mapped value (0-63) to assign traffic class, color, and queue to.
++ *
++ * - <b>tc <tc></b> - Traffic class (0-7) to be used by the provided mapped value.
++ *
++ * - <b>color <queue_id></b> - HQoS color 'G', 'Y', or 'R' to be used by the provided mapped value.
++ *
++ * - <b>queue <queue_id></b> - HQoS input queue (0-3) to be used by the provided mapped value.
++ *
++ * @cliexpar
++ * Example of how to modify the traffic class translation table:
++ * @cliexstart{tghqos set tctbl entry 16 tc 2 queue 2 color Y}
++ *  Successfully configured tctbl entry with given parameters
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_tctbl, static) = {
++    .path = "tghqos set tctbl",
++    .short_help = "tghqos set tctbl entry <map_val> tc <tc> color <color> "
++                  "queue <queue_id> ",
++    .function = tghqos_set_tctbl,
++};
++
++static clib_error_t *tghqos_set_clear_stats_on_read (vlib_main_t *vm,
++                                                     unformat_input_t *input,
++                                                     vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  tghqos_main_t *tm = &tghqos_main;
++  tghqos_config_t *config;
++  clib_error_t *error = NULL;
++  u32 enable_clear_stats_on_read = (u32)~0;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "disable"))
++        enable_clear_stats_on_read = 0;
++      else if (unformat (line_input, "enable"))
++        enable_clear_stats_on_read = 1;
++    }
++
++  if (enable_clear_stats_on_read == (u32)~0)
++    {
++      error =
++          clib_error_return (0, "Please specify either enable or disable...");
++      goto done;
++    }
++
++  config = &tm->config;
++  config->clear_stats_on_read = enable_clear_stats_on_read;
++
++  vlib_cli_output (vm, "TGHQoS stats will %sbe cleared on every read",
++                   enable_clear_stats_on_read ? "" : "NOT ");
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command is used to enable or disable clearing of statistics on every
++ * read. The default is for stats to be cleared.
++ *
++ * @cliexpar
++ * Example of how to disable clearing of stats:
++ * @cliexstart{tghqos clear-stats disable}
++ *  TGHQoS stats will NOT be cleared on every read
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_clear_stats_on_read, static) = {
++    .path = "tghqos clear-stats",
++    .short_help = "tghqos clear-stats enable|disable",
++    .function = tghqos_set_clear_stats_on_read,
++};
++
++static clib_error_t *tghqos_set_if_rate (vlib_main_t *vm,
++                                         unformat_input_t *input,
++                                         vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 rate = (u32)~0;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%d", &rate);
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (rate == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify a rate");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  tghqos_sched_port_rate_config (port, rate);
++  config->rate = rate;
++
++  vlib_cli_output (vm, "Interface %U rate: %u", format_vnet_hw_if_index_name,
++                   tm->vnet_main, hw_if_index, config->rate);
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command configures the output interface throughput rate in bytes per
++ * second. The value is used for timing in the RED dropper. The default value
++ * is 275000000.
++ *
++ * @cliexpar
++ * Example of how to set interface rate:
++ * @cliexstart{tghqos set interface rate Wigig0/1/0/0 270000000}
++ *  Interface Wigig0/1/0/0 rate: 270000000
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_rate, static) = {
++    .path = "tghqos set interface rate",
++    .short_help = "tghqos set interface rate <interface> <rate>",
++    .function = tghqos_set_if_rate,
++};
++
++static clib_error_t *tghqos_set_if_frame_overhead (vlib_main_t *vm,
++                                                   unformat_input_t *input,
++                                                   vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 frame_overhead = (u32)~0;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%d", &frame_overhead);
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (frame_overhead == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify a frame overhead");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  port->frame_overhead = config->frame_overhead = frame_overhead;
++
++  vlib_cli_output (vm, "Interface %U frame_overhead: %u",
++                   format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index,
++                   port->frame_overhead);
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command configures the output interface frame overhead in bytes. The
++ * value is used for timing in the RED dropper. The default value is 24.
++ *
++ * @cliexpar
++ * Example of how to set frame overhead:
++ * @cliexstart{tghqos set interface frame-overhead Wigig0/1/0/0 20}
++ *  Interface Wigig0/1/0/0 frame_overhead: 20
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_frame_overhead, static) = {
++    .path = "tghqos set interface frame-overhead",
++    .short_help =
++        "tghqos set interface frame-overhead <interface> <frame_overhead>",
++    .function = tghqos_set_if_frame_overhead,
++};
++
++static clib_error_t *tghqos_set_if_tx_ring_depth (vlib_main_t *vm,
++                                                  unformat_input_t *input,
++                                                  vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  u16 port_id;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 pipe = ~0;
++  u32 max_depth = ~0;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_hw_interface,
++                    tm->vnet_main, &hw_if_index))
++        ;
++      else if (unformat (line_input, "pipe %d", &pipe))
++        ;
++      else if (unformat (line_input, "max_depth %d", &max_depth))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  if (pipe == ~0)
++    {
++      error = clib_error_return (0, "please specify pipe index!!");
++      goto done;
++    }
++  if (max_depth == ~0)
++    {
++      error =
++          clib_error_return (0, "please specify transmit ring max depth!!");
++      goto done;
++    }
++  if (max_depth > port->hw_tx_pipe_size[pipe])
++    {
++      error = clib_error_return (0, "invalid max depth, hw tx pipe size is %u",
++                                 port->hw_tx_pipe_size[pipe]);
++      goto done;
++    }
++
++  /* Adjust max depth size and save config */
++  port->min_tx_pipe_credit[pipe] = port->hw_tx_pipe_size[pipe] - max_depth;
++  config->fw_tx_ring_depth = max_depth;
++
++  vlib_cli_output (
++      vm, "%U pipe %u max_depth %d (hw_tx_size %u min_tx_credit %u)\n",
++      format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index, pipe,
++      (int)port->hw_tx_pipe_size[pipe] - (int)port->min_tx_pipe_credit[pipe],
++      port->hw_tx_pipe_size[pipe], port->min_tx_pipe_credit[pipe]);
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command configures the max depth of the tx ring for an output
++ * interface's pipe, in number of segments. The value restricts the number of
++ * packets that can be enqueued to a device pipe per transmit routine call. The
++ * default value is 4096.
++ *
++ * @cliexpar
++ * Example of how to set tx ring depth:
++ * @cliexstart{tghqos set interface tx-ring-depth Wigig0/1/0/0 pipe 0 max_depth 256}
++ *  Wigig0/1/0/0 pipe 0 max_depth 256 (hw_tx_size 4096 min_tx_credit 3840)
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_tx_ring_depth, static) = {
++    .path = "tghqos set interface tx-ring-depth",
++    .short_help =
++        "tghqos set interface tx-ring-depth <interface> pipe <pipe_id> "
++        "max_depth <depth>",
++    .function = tghqos_set_if_tx_ring_depth,
++};
++
++static clib_error_t *tghqos_set_if_burst_deq (vlib_main_t *vm,
++                                              unformat_input_t *input,
++                                              vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 deq_len = (u32)~0;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%d", &deq_len);
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (deq_len == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify a burst dequeue length");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  port->burst_deq = config->burst_deq = deq_len;
++
++  vlib_cli_output (vm, "Interface %U burst dequeue length: %d",
++                   format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index,
++                   port->burst_deq);
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command configures the output interface's burst dequeue length. The
++ * value restricts the number of segments that can be dequeued from HQoS
++ * per pipe per transmit routine call. The default value is 32.
++ *
++ * @cliexpar
++ * Example of how to set interface burst dequeue:
++ * @cliexstart{tghqos set interface burst_deq Wigig0/1/0/0 48}
++ *  Interface Wigig0/1/0/0 burst dequeue length: 48
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_burst_deq, static) = {
++    .path = "tghqos set interface burst_deq",
++    .short_help = "tghqos set interface burst_deq <interface> <deq_len>",
++    .function = tghqos_set_if_burst_deq,
++};
++
++static clib_error_t *tghqos_set_if_burst_enq (vlib_main_t *vm,
++                                              unformat_input_t *input,
++                                              vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 enq_len = (u32)~0;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%U", unformat_vnet_hw_interface, tm->vnet_main,
++                &hw_if_index);
++    }
++
++  if (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      unformat (line_input, "%d", &enq_len);
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (enq_len == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify a burst enqueue length");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  config = vec_elt_at_index (tm->port_configs, port_id);
++
++  port->burst_enq = config->burst_enq = enq_len;
++
++  vlib_cli_output (vm, "Interface %U burst enqueue length: %d",
++                   format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index,
++                   port->burst_enq);
++
++done:
++  unformat_free (line_input);
++  return error;
++}
++
++/*
++ * This command configures the output interface's burst enqueue length. The
++ * value restricts the number of segments that can be dequeued from the software
++ * queues to enqueue into HQoS enqueue when HQoS threads are enabled The default
++ * value is 32.
++ *
++ * @cliexpar
++ * Example of how to set interface burst enqueue:
++ * @cliexstart{tghqos set interface burst_enq Wigig0/1/0/0 48}
++ *  Interface Wigig0/1/0/0 burst enqueue length: 48
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_burst_enq, static) = {
++    .path = "tghqos set interface burst_enq",
++    .short_help = "tghqos set interface burst_enq <interface> <enq_len>",
++    .function = tghqos_set_if_burst_enq,
++};
++
++static clib_error_t *tghqos_set_if_queue_size (vlib_main_t *vm,
++                                               unformat_input_t *input,
++                                               vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 hw_if_index = (u32)~0;
++  u32 pipe = (u32)~0;
++  u32 tc = (u32)~0;
++  u32 tc_q = (u32)~0;
++  u32 queue_size = (u32)~0;
++  u16 port_id;
++  tghqos_sched_port_t *port;
++  tghqos_sched_queue_t *queue;
++  u32 i;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_hw_interface,
++                    tm->vnet_main, &hw_if_index))
++        ;
++      else if (unformat (line_input, "pipe %d", &pipe))
++        ;
++      else if (unformat (line_input, "tc %d", &tc))
++        ;
++      else if (unformat (line_input, "tc_q %d", &tc_q))
++        ;
++      else if (unformat (line_input, "size %d", &queue_size))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (pipe >= TGHQOS_SCHED_PIPES_PER_PORT)
++    {
++      error = clib_error_return (0, "invalid pipe");
++      goto done;
++    }
++  if (tc >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++    {
++      error = clib_error_return (0, "invalid traffic class");
++      goto done;
++    }
++  if (tc_q >= TGHQOS_SCHED_QUEUES_PER_TRAFFIC_CLASS)
++    {
++      error = clib_error_return (0, "invalid queue");
++      goto done;
++    }
++  if (queue_size > TGHQOS_SCHED_MAX_QUEUE_SIZE || queue_size == 0 ||
++      (queue_size & (queue_size - 1)))
++    {
++      error = clib_error_return (
++          0, "invalid queue size; must be a power of 2 with max of %u",
++          TGHQOS_SCHED_MAX_QUEUE_SIZE);
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++  queue = &port->pipes[pipe].tcs[tc].queues[tc_q];
++
++  rte_spinlock_lock (&port->lock);
++  for (i = (queue->deq & (queue->size - 1));
++       i < (queue->enq & (queue->size - 1)); i++)
++    {
++      rte_pktmbuf_free (queue->mbufs[i]);
++    }
++  queue->size = queue_size;
++  queue->deq = 0;
++  queue->enq = 0;
++  rte_spinlock_unlock (&port->lock);
++
++  vlib_cli_output (vm, "Successfully set specified queue to size of %u",
++                   queue_size);
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command configures the queue size of a selected queue. Note that this
++ * should really only be used for debugging, it is better to set the queue size
++ * via the config or by changing the compiled defaults.
++ *
++ * @cliexpar
++ * Example of how to set queue size:
++ * @cliexstart{tghqos set interface queue-size Wigig0/1/0/0 pipe 0 tc 1 tc_q 0 size 2048}
++ *  Successfully set specified queue to size of 2048
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_queue_size, static) = {
++    .path = "tghqos set interface queue-size",
++    .short_help = "tghqos set interface queue-size <interface> pipe <pipe_id> "
++                  "tc <tc_id> tc_q <queue_id> size <queue_size>",
++    .function = tghqos_set_if_queue_size,
++};
++
++static clib_error_t *tghqos_set_if_wred (vlib_main_t *vm,
++                                         unformat_input_t *input,
++                                         vlib_cli_command_t *cmd)
++{
++  unformat_input_t _line_input, *line_input = &_line_input;
++  tghqos_main_t *tm = &tghqos_main;
++  tghqos_sched_port_t *port;
++  tghqos_port_config_t *config;
++  u32 hw_if_index = (u32)~0;
++  clib_error_t *error = NULL;
++  u32 tc_id = (u32)~0, color = (u32)~0, min_th = (u32)~0, max_th = (u32)~0,
++      maxp_inv = (u32)~0, wq_log2 = (u32)~0;
++  u8 *color_str;
++  u16 port_id;
++
++  if (!unformat_user (input, unformat_line_input, line_input))
++    return 0;
++
++  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
++    {
++      if (unformat (line_input, "%U", unformat_vnet_hw_interface,
++                    tm->vnet_main, &hw_if_index))
++        ;
++      else if (unformat (line_input, "tc %d", &tc_id))
++        ;
++      else if (unformat (line_input, "color %s", &color_str))
++        {
++          /* translate to tghqos color values */
++          if (color_str[0] == 'G')
++            color = 0;
++          else if (color_str[0] == 'Y')
++            color = 1;
++          else if (color_str[0] == 'R')
++            color = 2;
++          vec_free (color_str);
++        }
++      else if (unformat (line_input, "min_th %d", &min_th))
++        ;
++      else if (unformat (line_input, "max_th %d", &max_th))
++        ;
++      else if (unformat (line_input, "maxp_inv %d", &maxp_inv))
++        ;
++      else if (unformat (line_input, "wq_log2 %d", &wq_log2))
++        ;
++      else
++        {
++          error = clib_error_return (0, "parse error: '%U'",
++                                     format_unformat_error, line_input);
++          goto done;
++        }
++    }
++
++  if (hw_if_index == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify interface name!!");
++      goto done;
++    }
++
++  if (vec_len (tm->hw_if_index_to_port_id) <= hw_if_index ||
++      ((port_id = tm->hw_if_index_to_port_id[hw_if_index]) == (u16)~0))
++    {
++      vlib_cli_output (vm, "HQoS not configured for this interface");
++      goto done;
++    }
++
++  if (tc_id >= TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE)
++    {
++      error = clib_error_return (0, "invalid traffic class");
++      goto done;
++    }
++  if (color >= TGHQOS_COLORS)
++    {
++      error = clib_error_return (0, "invalid color");
++      goto done;
++    }
++
++  if (min_th == (u32)~0 || max_th == (u32)~0 || maxp_inv == (u32)~0 ||
++      wq_log2 == (u32)~0)
++    {
++      error = clib_error_return (0, "please specify all parameter values "
++                                    "(min_th, max_th, maxp_inv, wq_log2");
++      goto done;
++    }
++
++  port = vec_elt_at_index (tm->ports, port_id);
++
++  /* Try to configure RED algorithm */
++  if (tghqos_red_config_init (&port->red_config[tc_id][color], wq_log2, min_th,
++                              max_th, maxp_inv))
++    {
++      error = clib_error_return (
++          0, "failed to configure RED with these parameters");
++      goto done;
++    }
++
++  /* Save configured parameters */
++  config = vec_elt_at_index (tm->port_configs, port_id);
++  config->red_params[tc_id][color].min_th = min_th;
++  config->red_params[tc_id][color].max_th = max_th;
++  config->red_params[tc_id][color].maxp_inv = maxp_inv;
++  config->red_params[tc_id][color].wq_log2 = wq_log2;
++
++  vlib_cli_output (
++      vm, "Interface %U successfully configured RED with given parameters",
++      format_vnet_hw_if_index_name, tm->vnet_main, hw_if_index);
++
++done:
++  unformat_free (line_input);
++
++  return error;
++}
++
++/*
++ * This command configures the WRED algorithm parameters of an interface for
++ * a particular traffic class and color.
++ *
++ * @cliexpar
++ * Example of how to set WRED parameters:
++ * @cliexstart{tghqos set interface wred Wigig0/1/0/0 tc 0 color Y min_th 2048 max_th 4096 maxp_inv 5 wq_log2 9}
++ *  Interface Wigig0/1/0/0 successfully configured RED with given parameters
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_set_if_wred, static) = {
++    .path = "tghqos set interface wred",
++    .short_help =
++        "tghqos set interface wred <interface> tc <tc_id> color <color> "
++        "min_th <min> max_th <max> maxp_inv <val> wq_log2 <val>",
++    .function = tghqos_set_if_wred,
++};
+-- 
+2.30.2
+

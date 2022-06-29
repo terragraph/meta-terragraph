@@ -1,0 +1,10 @@
+--- x/examples/logrotate.cron.orig	2016-06-23 11:53:10.334088000 -0700
++++ y/examples/logrotate.cron	2016-06-23 11:53:17.636976000 -0700
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+
+-/usr/sbin/logrotate /etc/logrotate.conf
++mkdir -p /data/log; touch /data/log/logs.tar.gz; /bin/nice -n19 /usr/bin/ionice -c3 -t /usr/sbin/logrotate /etc/logrotate.conf
+ EXITVALUE=$?
+ if [ $EXITVALUE != 0 ]; then
+     /usr/bin/logger -t logrotate "ALERT exited abnormally with [$EXITVALUE]"

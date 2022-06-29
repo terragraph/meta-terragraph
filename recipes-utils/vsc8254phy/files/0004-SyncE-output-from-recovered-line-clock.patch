@@ -1,0 +1,65 @@
+From 25c8ff77cce357902e0560e66a88621bbfd69533 Mon Sep 17 00:00:00 2001
+From: Brian Dunn <dunn@fb.com>
+Date: Wed, 17 Feb 2021 09:28:10 -0800
+Subject: [PATCH] SyncE output from recovered line clock
+
+---
+ phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c | 35 ++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c b/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
+index f8f22f6..b2027f5 100644
+--- a/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
++++ b/phy_demo_appl/appl/vtss_appl_10g_phy_malibu.c
+@@ -362,7 +362,7 @@ BOOL  vtss_appl_malibu_spi_io_test(const vtss_inst_t   inst, const vtss_port_no_
+ 
+ BOOL  vtss_appl_malibu_synce_cntrl(vtss_inst_t   inst, vtss_port_no_t   port_no)
+ {
+-#if 1
++#if 0
+     if (port_no == VTSS_PORT_NO_START) {
+       vtss_phy_10g_srefclk_mode_t     srefclk;
+ 
+@@ -483,6 +483,39 @@ BOOL  vtss_appl_malibu_synce_cntrl(vtss_inst_t   inst, vtss_port_no_t   port_no)
+ 	printf("Malibu Error setting CKOUT configuration for port %d \n", port_no);
+       }
+     }
++#else
++    // Code above configures SREFCLK --> SCKOUT and LINE0 --> CKOUT
++    // Instead, configure LINE{0,1} --> SCKOUT based on port_no provided
++
++    // Configure SCKOUT
++    vtss_phy_10g_sckout_conf_t sckout;
++    memset(&sckout, 0, sizeof(vtss_phy_10g_sckout_conf_t));
++    printf("SCKOUT configuration: port:%d\n", port_no);
++    sckout.mode = VTSS_PHY_10G_SYNC_DISABLE;
++    sckout.src = VTSS_CKOUT_SQUELCH_SRC_LOS_LINE0 + port_no;
++    sckout.freq = VTSS_PHY_10G_SCKOUT_156_25;
++    sckout.squelch_inv = FALSE;
++    sckout.enable = TRUE;
++    if(vtss_phy_10g_sckout_conf_set(inst, port_no, &sckout) != VTSS_RC_OK) {
++      T_E("vtss_phy_10g_sckout_set, port %d", port_no);
++      printf("Malibu Error setting SCKOUT configuration \n");
++    }
++    printf("Done!\n");
++
++    // Configure lane sync for line recovered clock to SCKOUT
++    vtss_phy_10g_lane_sync_conf_t lane_sync;
++    memset(&lane_sync, 0, sizeof(vtss_phy_10g_lane_sync_conf_t));
++    printf("Lane sync configuration: port %u line recovered clock --> SCKOUT\n", port_no);
++    lane_sync.enable = TRUE;
++    lane_sync.rx_macro = VTSS_PHY_10G_RX_MACRO_LINE;
++    lane_sync.tx_macro = VTSS_PHY_10G_TX_MACRO_SCKOUT;
++    lane_sync.rx_ch = 0; // Determined by port_no's channel
++    lane_sync.tx_ch = 0;
++    if (vtss_phy_10g_lane_sync_set(inst, port_no, &lane_sync) != VTSS_RC_OK) {
++      T_E("vtss_phy_10g_lane_sync_set, port %d", port_no);
++      printf("Malibu Error setting lane sync configuration for port %d \n", port_no);
++    }
++    printf("Done!\n\n");
+ #endif
+ }
+ 
+-- 
+2.24.1
+

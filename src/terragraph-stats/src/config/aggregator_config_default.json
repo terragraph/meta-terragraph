@@ -1,0 +1,18 @@
+{
+  "flags": {
+    "v": "3"
+  },
+  "dataEndpoints": {
+    "nms": {
+      "host": "http://bqs:8086/",
+      "statsWriterSuffix": "stats_writer",
+      "statsEnabled": true,
+      "eventsWriterSuffix": "events_writer",
+      "eventsEnabled": true,
+      "logsWriterSuffix": "logs_writer",
+      "logsEnabled": true,
+      "highFreqStatsWriterSuffix": "stats_writer",
+      "highFreqStatsEnabled": true
+    }
+  }
+}

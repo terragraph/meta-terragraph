@@ -1,0 +1,32 @@
+{
+   "laNodeParams":{
+      "mcsLqmQ8":[
+         10000,
+         1563,
+         1562,
+         1869,
+         2253,
+         10000,
+         2381,
+         2688,
+         3072,
+         3328,
+         3994,
+         4442,
+         4954,
+         10000,
+         10000,
+         10000,
+         10000
+      ]
+   },
+   "laParams":{
+      "laMcs":35,
+      "laMaxMcs":12,
+      "laMinMcs":2,
+      "laMargindBQ2":6,
+      "laConvergenceFactordBperSFQ8":256,
+      "nackWeightFactor":200,
+      "debug":0
+   }
+}

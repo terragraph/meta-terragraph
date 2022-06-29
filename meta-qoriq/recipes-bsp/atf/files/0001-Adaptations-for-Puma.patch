@@ -1,0 +1,210 @@
+From 23689c48e8f7e0f0c1584e160f05b650e7116900 Mon Sep 17 00:00:00 2001
+From: Alex Landau <alandau@fb.com>
+Date: Tue, 29 Oct 2019 20:31:44 -0700
+Subject: [PATCH] Adaptations for Puma
+
+- DDR init
+- Various addresses
+---
+ plat/nxp/soc-ls1088/ls1088apuma/ddr_init.c     | 151 +++++++++++++++++-
+ plat/nxp/soc-ls1088/ls1088apuma/platform_def.h |  10 +-
+ 2 files changed, 156 insertions(+), 5 deletions(-)
+
+diff --git a/plat/nxp/soc-ls1088/ls1088apuma/ddr_init.c b/plat/nxp/soc-ls1088/ls1088apuma/ddr_init.c
+index 42aaf4cd..269bb5d7 100644
+--- a/plat/nxp/soc-ls1088/ls1088apuma/ddr_init.c
++++ b/plat/nxp/soc-ls1088/ls1088apuma/ddr_init.c
+@@ -21,7 +21,154 @@
+ #include <errata.h>
+ 
+ #ifdef CONFIG_STATIC_DDR
+-#error No static value defined
++
++#define VALUE_OF(x) x
++
++#define DDRmc1_CS0_BNDS                 VALUE_OF(0xFF)
++#define DDRmc1_CS1_BNDS         VALUE_OF(0x0100013F)
++#define DDRmc1_CS0_CONFIG       VALUE_OF(0x80010412)
++#define DDRmc1_CS1_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS0_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS1_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS2_BNDS         VALUE_OF(0x0140017F)
++#define DDRmc1_CS3_BNDS         VALUE_OF(0x018001BF)
++#define DDRmc1_CS2_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS3_CONFIG       VALUE_OF(0x0202)
++#define DDRmc1_CS2_CONFIG_2     VALUE_OF(0x00)
++#define DDRmc1_CS3_CONFIG_2     VALUE_OF(0x00)
++
++#define DDRmc1_TIMING_CFG_3         VALUE_OF(0x02161100)
++#define DDRmc1_TIMING_CFG_0         VALUE_OF(0x80770010)
++#define DDRmc1_TIMING_CFG_1         VALUE_OF(0xF8FC8265)
++#define DDRmc1_TIMING_CFG_2         VALUE_OF(0x005951A0)
++#define DDRmc1_SDRAM_CFG                        VALUE_OF(0x65200000)
++#define DDRmc1_SDRAM_CFG2       VALUE_OF(0x00401050)
++#define DDRmc1_MODE_1           VALUE_OF(0x01010631)
++#define DDRmc1_MODE_2           VALUE_OF(0x00100000)
++#define DDRmc1_MODE_3           VALUE_OF(0x00)
++#define DDRmc1_MODE_4           VALUE_OF(0x00)
++#define DDRmc1_MODE_5           VALUE_OF(0x00)
++#define DDRmc1_MODE_6           VALUE_OF(0x00)
++#define DDRmc1_MODE_7           VALUE_OF(0x00)
++#define DDRmc1_MODE_8           VALUE_OF(0x00)
++
++#define DDRmc1_MODE_CONTROL     VALUE_OF(0x00)
++#define DDRmc1_INTERVAL         VALUE_OF(0x1FFE07FF)
++#define DDRmc1_MEM_INIT_VALUE   VALUE_OF(0xDEADBEEF)
++#define DDRmc1_CLK_CTRL         VALUE_OF(0x02800000)
++#define DDRmc1_INIT_ADDR        VALUE_OF(0x00)
++#define DDRmc1_INIT_EXT_ADDR    VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_4         VALUE_OF(0x00220002)
++#define DDRmc1_TIMING_CFG_5         VALUE_OF(0x06401400)
++#define DDRmc1_ZQ_CNTL          VALUE_OF(0x8A090705)
++#define DDRmc1_WRLVL_CNTL       VALUE_OF(0x86750608)
++#define DDRmc1_WRLVL_CNTL_2     VALUE_OF(0x08080807)
++#define DDRmc1_WRLVL_CNTL_3     VALUE_OF(0x07060608)
++#define DDRmc1_RCW_1            VALUE_OF(0x00)
++#define DDRmc1_RCW_2            VALUE_OF(0x00)
++#define DDRmc1_CDR_1            VALUE_OF(0x80040000)
++#define DDRmc1_CDR_2            VALUE_OF(0xA181)
++#define DDRmc1_SDRAM_CFG_3              VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_6             VALUE_OF(0x00)
++#define DDRmc1_TIMING_CFG_7             VALUE_OF(0x20000000)
++#define DDRmc1_TIMING_CFG_8             VALUE_OF(0x05226A00)
++#define DDRmc1_DESKEW_CNTL              VALUE_OF(0x00)
++#define DDRmc1_DQ_MAP0                  VALUE_OF(0x56C12D30)
++#define DDRmc1_DQ_MAP1                  VALUE_OF(0xD95D95D8)
++#define DDRmc1_DQ_MAP2                  VALUE_OF(0x57643558)
++#define DDRmc1_DQ_MAP3                  VALUE_OF(0xD55D8000)
++#define DDRmc1_RCW_3            VALUE_OF(0x00)
++#define DDRmc1_RCW_4            VALUE_OF(0x00)
++#define DDRmc1_RCW_5            VALUE_OF(0x00)
++#define DDRmc1_RCW_6            VALUE_OF(0x00)
++#define DDRmc1_MODE_9           VALUE_OF(0x0500)
++#define DDRmc1_MODE_10          VALUE_OF(0x08800000)
++#define DDRmc1_MODE_11          VALUE_OF(0x00)
++#define DDRmc1_MODE_12           VALUE_OF(0x00)
++#define DDRmc1_MODE_13           VALUE_OF(0x00)
++#define DDRmc1_MODE_14           VALUE_OF(0x00)
++#define DDRmc1_MODE_15           VALUE_OF(0x00)
++#define DDRmc1_MODE_16           VALUE_OF(0x00)
++#define DDRmc1_ERR_DISABLE      VALUE_OF(0x00)
++#define DDRmc1_ERR_INT_EN               VALUE_OF(0x1D)
++#define DDRmc1_ERR_SBE                  VALUE_OF(0x00010000)
++
++static const struct ddr_cfg_regs ddr_regs = {
++	.cs[0].bnds = DDRmc1_CS0_BNDS,
++	.cs[1].bnds = DDRmc1_CS1_BNDS,
++	.cs[0].config = DDRmc1_CS0_CONFIG,
++	.cs[1].config = DDRmc1_CS1_CONFIG,
++	.cs[0].config_2 = DDRmc1_CS0_CONFIG_2,
++	.cs[1].config_2 =  DDRmc1_CS1_CONFIG_2,
++	.cs[2].bnds = DDRmc1_CS2_BNDS,
++	.cs[3].bnds = DDRmc1_CS3_BNDS,
++	.cs[2].config = DDRmc1_CS2_CONFIG,
++	.cs[3].config = DDRmc1_CS3_CONFIG,
++	.cs[2].config_2 =  DDRmc1_CS2_CONFIG_2,
++	.cs[3].config_2 =  DDRmc1_CS3_CONFIG_2,
++	.timing_cfg[0] = DDRmc1_TIMING_CFG_0,
++	.timing_cfg[1] = DDRmc1_TIMING_CFG_1,
++	.timing_cfg[2] = DDRmc1_TIMING_CFG_2,
++	.timing_cfg[3] = DDRmc1_TIMING_CFG_3,
++	.timing_cfg[4] = DDRmc1_TIMING_CFG_4,
++	.timing_cfg[5] = DDRmc1_TIMING_CFG_5,
++	.timing_cfg[6] = DDRmc1_TIMING_CFG_6,
++	.timing_cfg[7] = DDRmc1_TIMING_CFG_7,
++	.timing_cfg[8] = DDRmc1_TIMING_CFG_8,
++	.sdram_cfg[0] = DDRmc1_SDRAM_CFG,
++	.sdram_cfg[1] = DDRmc1_SDRAM_CFG2,
++	.sdram_cfg[2] = DDRmc1_SDRAM_CFG_3,
++	.sdram_mode[0] = DDRmc1_MODE_1,
++	.sdram_mode[1] = DDRmc1_MODE_2,
++	.sdram_mode[2] = DDRmc1_MODE_3,
++	.sdram_mode[3] = DDRmc1_MODE_4,
++	.sdram_mode[4] = DDRmc1_MODE_5,
++	.sdram_mode[5] = DDRmc1_MODE_6,
++	.sdram_mode[6] = DDRmc1_MODE_7,
++	.sdram_mode[7] = DDRmc1_MODE_8,
++	.sdram_mode[8] = DDRmc1_MODE_9,
++	.sdram_mode[9] = DDRmc1_MODE_10,
++	.sdram_mode[10] = DDRmc1_MODE_11,
++	.sdram_mode[11] = DDRmc1_MODE_12,
++	.sdram_mode[12] = DDRmc1_MODE_13,
++	.sdram_mode[13] = DDRmc1_MODE_14,
++	.sdram_mode[14] = DDRmc1_MODE_15,
++	.sdram_mode[15] = DDRmc1_MODE_16,
++	.md_cntl = DDRmc1_MODE_CONTROL,
++	.interval = DDRmc1_INTERVAL,
++	.data_init = DDRmc1_MEM_INIT_VALUE,
++	.clk_cntl = DDRmc1_CLK_CTRL,
++	.init_addr = DDRmc1_INIT_ADDR,
++	.init_ext_addr = DDRmc1_INIT_EXT_ADDR,
++	.zq_cntl = DDRmc1_ZQ_CNTL,
++	.wrlvl_cntl[0] = DDRmc1_WRLVL_CNTL,
++	.wrlvl_cntl[1] = DDRmc1_WRLVL_CNTL_2,
++	.wrlvl_cntl[2] = DDRmc1_WRLVL_CNTL_3,
++	.sdram_rcw[0] = DDRmc1_RCW_1,
++	.sdram_rcw[1] = DDRmc1_RCW_2,
++	.sdram_rcw[2] = DDRmc1_RCW_3,
++	.sdram_rcw[3] = DDRmc1_RCW_4,
++	.sdram_rcw[4] = DDRmc1_RCW_5,
++	.sdram_rcw[5] = DDRmc1_RCW_6,
++	.dq_map[0] =  DDRmc1_DQ_MAP0,
++	.dq_map[1] =  DDRmc1_DQ_MAP1,
++	.dq_map[2] =  DDRmc1_DQ_MAP2,
++	.dq_map[3] =  DDRmc1_DQ_MAP3,
++	/* .deskew_cntl = DDRmc1_DESKEW_CNTL, TODO */
++	.cdr[0] = DDRmc1_CDR_1,
++	.cdr[1] = DDRmc1_CDR_2,
++	.err_disable = DDRmc1_ERR_DISABLE,
++	.err_int_en = DDRmc1_ERR_INT_EN,
++	/* .err_sbe = DDRmc1_ERR_SBE TODO */
++};
++
++long long board_static_ddr(struct ddr_info *priv)
++{
++	memcpy(&priv->ddr_reg, &ddr_regs, sizeof(struct ddr_cfg_regs));
++
++	/* 4GB of memory installed */
++	return 4096L * 1024 * 1024;
++}
+ #endif
+ 
+ static const struct rc_timing rce[] = {
+diff --git a/plat/nxp/soc-ls1088/ls1088apuma/platform_def.h b/plat/nxp/soc-ls1088/ls1088apuma/platform_def.h
+index 70a50b00..6f0c17ef 100644
+--- a/plat/nxp/soc-ls1088/ls1088apuma/platform_def.h
++++ b/plat/nxp/soc-ls1088/ls1088apuma/platform_def.h
+@@ -36,14 +36,16 @@
+ #define NXP_DDRCLK_FREQ		100000000
+ 
+ /* UART related definition */
+-#define NXP_CONSOLE_ADDR	NXP_UART_ADDR
++#define NXP_CONSOLE_ADDR	NXP_UART1_ADDR
+ #define NXP_CONSOLE_BAUDRATE	115200
+ 
+ #define NXP_SPD_EEPROM0		0x51
+ 
+-#define DDRC_NUM_DIMM		2	
++#define DDRC_NUM_DIMM		2
+ #define CONFIG_DDR_ECC_EN
+ 
++#define CONFIG_STATIC_DDR
++#define DDRC_NUM_CS 4
+ #define PLAT_DEF_DRAM0_SIZE	0x80000000	/*  2G */
+ 
+ /* Board specific - size of QSPI Flash on board */
+@@ -147,7 +149,7 @@
+ #define FUSE_SZ			0x80000
+ #endif
+ 
+-#define PLAT_FIP_OFFSET		0x100000
++#define PLAT_FIP_OFFSET		0x1a6000
+ #define PLAT_FIP_MAX_SIZE	0x400000
+ 
+ /* Check if this size can be determined from array size */
+@@ -186,4 +188,4 @@
+ 			GIC_INTR_CFG_LEVEL)
+ 
+ 
+-#endif 
++#endif

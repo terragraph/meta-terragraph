@@ -1,0 +1,134 @@
+From 6dda437333cc1841febf1780bf1694447a514e68 Mon Sep 17 00:00:00 2001
+From: Linzhe Li <linzheli@fb.com>
+Date: Fri, 16 Jul 2021 12:38:56 -0700
+Subject: [PATCH] SRv6 QoS - Preserve inner IP DSCP value for outer IP header
+
+To preserve the same QoS in SRv6 tunnel, copy type of service (IPv4) or
+traffic class (IPv6) from inner IP header to outer IPv6 header.
+---
+ src/vnet/srv6/sr_policy_rewrite.c | 67 ++++++++++++++++++++++++++++++-
+ 1 file changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/src/vnet/srv6/sr_policy_rewrite.c b/src/vnet/srv6/sr_policy_rewrite.c
+index 3e8a4e4a9..a01a4403f 100644
+--- a/src/vnet/srv6/sr_policy_rewrite.c
++++ b/src/vnet/srv6/sr_policy_rewrite.c
+@@ -1799,6 +1799,56 @@ mac_to_u64 (u8 * m)
+   return (*((u64 *) m) & 0xffffffffffff);
+ }
+ 
++static_always_inline void *
++get_inner_ip_header (ethernet_header_t * en, u16 * type)
++{
++  u32 hdr_offset = sizeof (ethernet_header_t);
++
++  if (ethernet_frame_is_tagged (clib_net_to_host_u16 (en->type)))
++    {
++      ethernet_vlan_header_t *vl;
++
++      hdr_offset += sizeof (ethernet_vlan_header_t);
++
++      // Double tagged (QinQ) packet
++      vl = (void *) (en + 1);
++      if (clib_net_to_host_u16 (vl->type) == ETHERNET_TYPE_VLAN)
++        {
++          hdr_offset += sizeof (ethernet_vlan_header_t);
++          vl = vl + 1;
++        }
++      *type = clib_net_to_host_u16 (vl->type);
++    }
++  else
++    *type = clib_net_to_host_u16 (en->type);
++
++  return (void *) en + hdr_offset;
++}
++
++static_always_inline u8
++get_inner_ip_dscp (ethernet_header_t * en)
++{
++  void *iph;
++  u16 type;
++  u8 dscp;
++
++  iph = get_inner_ip_header (en, &type);
++  if (type == ETHERNET_TYPE_IP4)
++    {
++      ip4_header_t *iph4 = (ip4_header_t *) iph;
++      dscp = iph4->tos;
++    }
++  else if (type == ETHERNET_TYPE_IP6)
++    {
++      ip6_header_t *iph6 = (ip6_header_t *) iph;
++      dscp = ip6_traffic_class_network_order (iph6);
++    }
++  else
++    dscp = 0;
++
++  return dscp;
++}
++
+ always_inline u32
+ l2_flow_hash (vlib_buffer_t * b0)
+ {
+@@ -1861,6 +1911,7 @@ sr_policy_rewrite_encaps_l2 (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  ip6_sr_header_t *sr0, *sr1, *sr2, *sr3;
+ 	  ip6_sr_policy_t *sp0, *sp1, *sp2, *sp3;
+ 	  ip6_sr_sl_t *sl0, *sl1, *sl2, *sl3;
++	  u8 dscp0, dscp1, dscp2, dscp3;
+ 
+ 	  /* Prefetch next iteration. */
+ 	  {
+@@ -1984,6 +2035,11 @@ sr_policy_rewrite_encaps_l2 (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  en2 = vlib_buffer_get_current (b2);
+ 	  en3 = vlib_buffer_get_current (b3);
+ 
++	  dscp0 = get_inner_ip_dscp (en0);
++	  dscp1 = get_inner_ip_dscp (en1);
++	  dscp2 = get_inner_ip_dscp (en2);
++	  dscp3 = get_inner_ip_dscp (en3);
++
+ 	  clib_memcpy_fast (((u8 *) en0) - vec_len (sl0->rewrite),
+ 			    sl0->rewrite, vec_len (sl0->rewrite));
+ 	  clib_memcpy_fast (((u8 *) en1) - vec_len (sl1->rewrite),
+@@ -2044,8 +2100,10 @@ sr_policy_rewrite_encaps_l2 (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  else
+ 	    ip3->protocol = IP_PROTOCOL_IP6_ETHERNET;
+ 
+-	  /* Which Traffic class and flow label do I set ? */
+-	  //ip0->ip_version_traffic_class_and_flow_label = clib_host_to_net_u32(0|((6&0xF)<<28)|((ip0_encap->tos&0xFF)<<20));
++	  ip6_set_traffic_class_network_order (ip0, dscp0);
++	  ip6_set_traffic_class_network_order (ip1, dscp1);
++	  ip6_set_traffic_class_network_order (ip2, dscp2);
++	  ip6_set_traffic_class_network_order (ip3, dscp3);
+ 
+ 	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
+ 	    {
+@@ -2107,6 +2165,7 @@ sr_policy_rewrite_encaps_l2 (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  ip6_sr_policy_t *sp0;
+ 	  ip6_sr_sl_t *sl0;
+ 	  u32 next0 = SR_POLICY_REWRITE_NEXT_IP6_LOOKUP;
++	  u8 dscp0;
+ 
+ 	  bi0 = from[0];
+ 	  to_next[0] = bi0;
+@@ -2140,6 +2199,8 @@ sr_policy_rewrite_encaps_l2 (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 
+ 	  en0 = vlib_buffer_get_current (b0);
+ 
++	  dscp0 = get_inner_ip_dscp (en0);
++
+ 	  clib_memcpy_fast (((u8 *) en0) - vec_len (sl0->rewrite),
+ 			    sl0->rewrite, vec_len (sl0->rewrite));
+ 
+@@ -2158,6 +2219,8 @@ sr_policy_rewrite_encaps_l2 (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	  else
+ 	    ip0->protocol = IP_PROTOCOL_IP6_ETHERNET;
+ 
++	  ip6_set_traffic_class_network_order (ip0, dscp0);
++
+ 	  if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE) &&
+ 	      PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED))
+ 	    {
+-- 
+2.30.2
+

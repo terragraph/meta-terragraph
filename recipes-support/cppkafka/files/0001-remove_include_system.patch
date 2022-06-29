@@ -1,0 +1,12 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 5d31078..1865f9e 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -27,7 +27,6 @@ set(SOURCES
+ )
+ 
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include/cppkafka)
+-include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${RDKAFKA_INCLUDE_DIR})
+ 
+ add_library(cppkafka ${CPPKAFKA_LIBRARY_TYPE} ${SOURCES})
+ set_target_properties(cppkafka PROPERTIES VERSION ${CPPKAFKA_VERSION}

@@ -1,0 +1,122 @@
+From 1c4fd8c475a801609d7d35edea095f1d7ce22376 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Wed, 15 Apr 2020 13:54:25 -0700
+Subject: [PATCH] Add RTE Transmit Feedback API
+
+---
+ lib/librte_ethdev/rte_ethdev.h      | 54 +++++++++++++++++++++++++++++
+ lib/librte_ethdev/rte_ethdev_core.h |  6 ++++
+ lib/librte_ethdev/version.map       |  1 +
+ 3 files changed, 61 insertions(+)
+
+diff --git a/lib/librte_ethdev/rte_ethdev.h b/lib/librte_ethdev/rte_ethdev.h
+index 12e487c4b0..4f8102f4d7 100644
+--- a/lib/librte_ethdev/rte_ethdev.h
++++ b/lib/librte_ethdev/rte_ethdev.h
+@@ -1434,6 +1434,10 @@ struct rte_eth_conf {
+ #define RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP 0x00000001
+ /** Device supports Tx queue setup after device started. */
+ #define RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP 0x00000002
++/** Device supports Tx queue Tx feedback API. */
++#define RTE_ETH_DEV_CAPA_RUNTIME_TX_FEEDBACK      0x00000004
++/** Tx queue Tx feedback is provided on per rte_mbuf segment basis. */
++#define RTE_ETH_DEV_CAPA_RUNTIME_TX_FEEDBACK_SEG  0x00000008
+ /**@}*/
+ 
+ /*
+@@ -5168,6 +5172,56 @@ rte_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
+ 	return (*dev->tx_pkt_burst)(dev->data->tx_queues[queue_id], tx_pkts, nb_pkts);
+ }
+ 
++/**
++ * Get real time Tx feedback on a transmit queue of an Ethernet device.
++ *
++ * This function may be used so as to propagate backpressure into the
++ * network stack sitting on top of the RTE device.
++ *
++ * It is assumed that one given Tx queue may support multiple unit of credits,
++ * or multiple Traffic Flows.
++ * This is because Tx queues may include prioritizations for various Traffic Flows
++ * or Traffic Classes. As well, not every Ethernet device implements its TX queues
++ * as single RTE rings that represent one continuous stream of packets.
++ *
++ * @param port_id
++ *   The port identifier of the Ethernet device.
++ * @param queue_id
++ *   The index of the transmit queue through which output packets must be
++ *   sent.
++ *   The value must be in the range [0, nb_tx_queue - 1] previously supplied
++ *   to rte_eth_dev_configure().
++ * @param avail
++ *   pointer to per flow data: driver to provide either number of packets,
++ *   or number of rte_mbuf segment that can be enqueued for this Tx Flow.
++ *   See RTE_ETH_DEV_CAPA_RUNTIME_TX_FEEDBACK_SEG flag.
++ * @param pending
++ *   pointer to per flow data: driver to provides number of bytes pending
++ *   for this Tx Flow.
++ * @param num_flows
++ *   The number of traffic flows on which Tx feedback is requested.
++ *   This corresponds to the size of the "avail" and "pending" arrays
++ *   passed to the driver.
++ * @return
++ *   Total number of segments that can be enqueued across all Tx Flows on
++ *   success, negative on error.
++ */
++__rte_experimental
++static inline int
++rte_eth_get_tx_feedback(uint16_t port_id, uint16_t queue_id,
++		uint32_t *avail, uint32_t *pending, uint32_t num_flows)
++{
++	int rc = -ENOTSUP;
++#ifdef RTE_LIBRTE_ETHDEV_DEBUG
++	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
++#endif
++	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
++	if (dev->tx_get_feedback)
++		rc = (*dev->tx_get_feedback)(dev->data->tx_queues[queue_id], avail,
++			pending, num_flows);
++	return rc;
++}
++
+ /**
+  * Process a burst of output packets on a transmit queue of an Ethernet device.
+  *
+diff --git a/lib/librte_ethdev/rte_ethdev_core.h b/lib/librte_ethdev/rte_ethdev_core.h
+index 918a34ed1f..2a46d55ef8 100644
+--- a/lib/librte_ethdev/rte_ethdev_core.h
++++ b/lib/librte_ethdev/rte_ethdev_core.h
+@@ -41,6 +41,11 @@ typedef uint16_t (*eth_tx_prep_t)(void *txq,
+ 				   uint16_t nb_pkts);
+ /**< @internal Prepare output packets on a transmit queue of an Ethernet device. */
+ 
++typedef int (*eth_tx_feedback_t)(void *txq,
++			  uint32_t *avail,
++			  uint32_t *pending,
++			  uint32_t nb_flows);
++/**< @internal Get transmit feedback on a transmit queue from an Ethernet device. */
+ 
+ typedef uint32_t (*eth_rx_queue_count_t)(struct rte_eth_dev *dev,
+ 					 uint16_t rx_queue_id);
+@@ -84,6 +89,7 @@ struct rte_eth_dev {
+ 	eth_rx_burst_t rx_pkt_burst; /**< Pointer to PMD receive function. */
+ 	eth_tx_burst_t tx_pkt_burst; /**< Pointer to PMD transmit function. */
+ 	eth_tx_prep_t tx_pkt_prepare; /**< Pointer to PMD transmit prepare function. */
++	eth_tx_feedback_t tx_get_feedback; /**< Pointer to PMD transmit prepare function. */
+ 
+ 	eth_rx_queue_count_t       rx_queue_count; /**< Get the number of used RX descriptors. */
+ 	eth_rx_descriptor_done_t   rx_descriptor_done;   /**< Check rxd DD bit. */
+diff --git a/lib/librte_ethdev/version.map b/lib/librte_ethdev/version.map
+index 61e3de027a..7c4118a8df 100644
+--- a/lib/librte_ethdev/version.map
++++ b/lib/librte_ethdev/version.map
+@@ -242,6 +242,7 @@ EXPERIMENTAL {
+ 	rte_flow_tunnel_item_release;
+ 
+ 	rte_eth_xstats_config;
++	rte_eth_get_tx_feedback;
+ };
+ 
+ INTERNAL {
+-- 
+2.30.2
+

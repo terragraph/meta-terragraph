@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if firmware logging is enabled
+if [ -z "$FW_LOGGING_ENABLED" ] || [ "$FW_LOGGING_ENABLED" -ne "1" ]; then
+  echo "Firmware logging is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+# wait until host_manager_11ad is running and ready to receive commands
+while ! /usr/bin/shell_11ad host get_version > /dev/null; do
+  echo "Waiting for host_manager_11ad"
+  sleep ${DELAY}
+done
+
+/usr/bin/start_host_manager_fw_log.sh

@@ -1,0 +1,3 @@
+#!/bin/sh
+mkdir -p /var/log/coop
+exec svlogd /var/log/coop

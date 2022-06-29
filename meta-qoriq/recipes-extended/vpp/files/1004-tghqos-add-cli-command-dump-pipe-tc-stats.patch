@@ -1,0 +1,130 @@
+From 0ba6a368941188f22a4ece520ca96ec3a6c49ecc Mon Sep 17 00:00:00 2001
+From: joydang <joydang@devvm179.vll0.facebook.com>
+Date: Fri, 9 Jul 2021 10:29:40 -0700
+Subject: [PATCH] tghqos add cli command dump pipe tc stats
+
+---
+ src/plugins/dpdk/tghqos/sched/tghqos_sched.h |  2 +
+ src/plugins/dpdk/tghqos/tghqos.c             |  3 +
+ src/plugins/dpdk/tghqos/tghqos_cli.c         | 78 ++++++++++++++++++++
+ 3 files changed, 83 insertions(+)
+
+diff --git a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+index 76fcd772c..7543a799d 100644
+--- a/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
++++ b/src/plugins/dpdk/tghqos/sched/tghqos_sched.h
+@@ -171,6 +171,8 @@ typedef struct
+                   * tx routine from hqos into the driver */
+   u32 burst_enq; /* Dequeue this many segments at once from swq when using
+                   * hqos threads */
++  u8 is_initialized; /* Flag to be set only when port is initialized */
++  u8 *device_name; /* Name of the device */
+ 
+   /* The minimum number of credits that must be available in the tx ring
+    * before a packet can be pushed, used to reduce the number of packets
+diff --git a/src/plugins/dpdk/tghqos/tghqos.c b/src/plugins/dpdk/tghqos/tghqos.c
+index f4b953c1a..9f67b967c 100644
+--- a/src/plugins/dpdk/tghqos/tghqos.c
++++ b/src/plugins/dpdk/tghqos/tghqos.c
+@@ -436,6 +436,9 @@ clib_error_t *tghqos_port_init (u16 dpdk_port_id, u32 hw_if_index,
+       vec_validate (thread_data->pkts_deq, port->burst_deq - 1);
+     }
+ 
++  port->is_initialized = 1;
++  port->device_name = vnet_get_hw_interface(tm->vnet_main, hw_if_index)->name;
++
+   return 0;
+ }
+ 
+diff --git a/src/plugins/dpdk/tghqos/tghqos_cli.c b/src/plugins/dpdk/tghqos/tghqos_cli.c
+index 3b3ccb06e..efd47d851 100644
+--- a/src/plugins/dpdk/tghqos/tghqos_cli.c
++++ b/src/plugins/dpdk/tghqos/tghqos_cli.c
+@@ -459,6 +459,84 @@ VLIB_CLI_COMMAND (cmd_tghqos_show_stats, static) = {
+     .function = tghqos_show_stats,
+ };
+ 
++static clib_error_t *tghqos_show_all_stats (vlib_main_t *vm,
++                                        unformat_input_t *input,
++                                        vlib_cli_command_t *cmd)
++{
++  clib_error_t *error = NULL;
++  tghqos_main_t *tm = &tghqos_main;
++  u32 pipe = (u32)~0;
++  u32 tc = (u32)~0;
++  tghqos_sched_port_t *port;
++  tghqos_sched_stats_t stats;
++  const char *stats_strings[] = {
++      "packets", "packets_dropped", "bytes", "bytes_dropped"};
++  u32 idx;
++
++  // Header for all-stats output
++  vlib_cli_output (vm, "device_name,pipe,tc,%s,%s,%s,%s", stats_strings[0],
++                                                          stats_strings[1],
++                                                          stats_strings[2],
++                                                          stats_strings[3]);
++
++  int len = vec_len (tm->ports);
++
++  // Iterate through all ports
++  for (idx = 0; idx < len; idx++) {
++    port = vec_elt_at_index (tm->ports, idx);
++    // Check that the port is initialized
++    if (!port->is_initialized) {
++      continue;
++    }
++    // Iterate through all combinations of pipe and tc for the interface
++    for (pipe = 0; pipe < TGHQOS_SCHED_PIPES_PER_PORT; pipe++)
++      {
++        for (tc = 0; tc < TGHQOS_SCHED_TRAFFIC_CLASSES_PER_PIPE; tc++)
++          {
++            tghqos_sched_traffic_class_read_stats (
++                &port->pipes[pipe].tcs[tc], &stats, tm->config.clear_stats_on_read);
++            vlib_cli_output (vm, "%v,%d,%d,%d,%d,%d,%d",
++                                  port->device_name, pipe, tc,
++                                  stats.n_pkts,
++                                  stats.n_pkts_dropped,
++                                  stats.n_bytes,
++                                  stats.n_bytes_dropped);
++          }
++      }
++  }
++
++  return error;
++}
++
++/*
++ * This command is used to display all pipe and tc statistics for the
++ * specified interface.
++ *
++ * @cliexpar
++ * Example of how to display statistics of all online Wigig interfaces:
++ * @cliexstart{tghqos show all-stats}
++ *  device_name,pipe,tc,packets,packets_dropped,bytes,bytes_dropped
++ *  Wigig0/1/0/0,0,0,0,0,0,0
++ *  Wigig0/1/0/0,0,1,0,0,0,0
++ *  Wigig0/1/0/0,0,2,0,0,0,0
++ *  Wigig0/1/0/0,0,3,0,0,0,0
++ *  Wigig0/1/0/0,1,0,0,0,0,0
++ *  Wigig0/1/0/0,1,1,0,0,0,0
++ *  Wigig0/1/0/0,1,2,0,0,0,0
++ *  Wigig0/1/0/0,1,3,0,0,0,0
++ *  Wigig0/1/0/0,2,0,0,0,0,0
++ *  Wigig0/1/0/0,2,1,0,0,0,0
++ *  Wigig0/1/0/0,2,2,0,0,0,0
++ *  Wigig0/1/0/0,2,3,0,0,0,0
++ *  ...
++ * @cliexend
++ */
++VLIB_CLI_COMMAND (cmd_tghqos_show_all_stats, static) = {
++    .path = "tghqos show all-stats",
++    .short_help = "tghqos show all-stats",
++    .function = tghqos_show_all_stats,
++};
++
+ static clib_error_t *tghqos_show_queue_stats (vlib_main_t *vm,
+                                               unformat_input_t *input,
+                                               vlib_cli_command_t *cmd)
+-- 
+2.30.2
+

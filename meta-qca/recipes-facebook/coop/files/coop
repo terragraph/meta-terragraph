@@ -1,0 +1,92 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Temporary script to redo VPP configuration when the global prefix changes.
+#
+# C onfiguration
+# O peration
+#   and
+# O ganization
+# P rocess
+
+COOP_D_DIR="/data/etc/coop.d"
+LINUX_LOOP_INT="lo"
+VPP_LOOP_INT="loop0"
+LOOP_INTERVAL_S="5"
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "USAGE: $0"
+    exit 0
+fi
+
+_date() {
+    date +"%Y-%m-%dT%H:%M:%S%z"
+}
+
+# On prefix changes, call arbitary `coop.d` scripts to apply custom configuration to VPP
+# (e.g. address wired interfaces)
+_run_coop_d_scripts() {
+    if [ ! -d "${COOP_D_DIR}" ]; then
+        return
+    fi
+
+    for script in "${COOP_D_DIR}"/*.sh; do
+        if [ -x "${script}" ]; then
+            echo "[$(_date)] coop is executing: ${script}"
+            "${script}"
+        fi
+    done
+}
+
+# Program the VPP loopback prefixes if linux loopback prefix changes due to Open/R,
+# CPA or DPA. Linux and VPP loopback prefixes' leading hextets should be the same
+# (final hextets are understood as ::1 for lo and ::2 for VPP). If there is a mismatch,
+# the new prefix is programmed into VPP through vpp_chaperone.
+_loopback_vpp_prefix_check() {
+    vpp_ipv6_raw=$(vppctl show int addr ${VPP_LOOP_INT} 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        echo "[$(_date)] VPP is down?"
+        return
+    fi
+    vpp_ipv6=$(echo "${vpp_ipv6_raw}" | \
+        awk '/L3/ {print substr($2,0,index($2,"/")-1)}' | rev | cut -d ':' -f3- | rev)
+
+    if [ "${linux_ipv6}" != "${vpp_ipv6}" ]; then
+        echo "[$(_date)] New '${LINUX_LOOP_INT}' prefix '${linux_ipv6}' mismatch with VPP '${VPP_LOOP_INT}' prefix: '${vpp_ipv6}'."
+        echo "[$(_date)] Starting vpp_chaperone to program VPP loopback prefix..."
+        /usr/sbin/run_vpp_chaperone_and_monitor.sh
+
+        _run_coop_d_scripts
+    else
+        echo "[$(_date)] '${LINUX_LOOP_INT}' global prefix is unchanged ('${linux_ipv6}')"
+    fi
+}
+
+_main() {
+    # shellcheck disable=SC2078
+    while [ : ]; do
+        # load tg config environment to get CPE* information
+        # shellcheck disable=1091
+        . /usr/sbin/config_get_env.sh
+
+        # Run CPE interface operations (state changes, prefix advertisement)
+        /usr/sbin/cpe_operations
+
+        # Run VPP prefix check
+        if [ "$DPDK_ENABLED" -eq "1" ]; then
+            linux_ipv6=$(ip -6 addr show dev ${LINUX_LOOP_INT} | \
+                awk '/inet6.+global/ {print substr($2,0,index($2,"/")-1); exit}' | rev | cut -d ':' -f3- | rev)
+
+            _loopback_vpp_prefix_check
+        fi
+
+        # Keep looping...
+        sleep "${LOOP_INTERVAL_S}"
+    done
+}
+
+_main

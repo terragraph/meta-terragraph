@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Wed, 6 Oct 2021 16:51:21 +0000
+Subject: [PATCH] Add Comment to Private Members of cpp2 Thrift Structs
+
+---
+ thrift/compiler/generate/t_mstch_cpp2_generator.cc         | 7 +++++++
+ .../templates/cpp2/module_types_h/declare_members.mustache | 2 +-
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/thrift/compiler/generate/t_mstch_cpp2_generator.cc b/thrift/compiler/generate/t_mstch_cpp2_generator.cc
+index 47ef39e18..79b54ef5f 100644
+--- a/thrift/compiler/generate/t_mstch_cpp2_generator.cc
++++ b/thrift/compiler/generate/t_mstch_cpp2_generator.cc
+@@ -611,6 +611,7 @@ class mstch_cpp2_field : public mstch_field {
+             {"field:fatal_required_qualifier",
+              &mstch_cpp2_field::fatal_required_qualifier},
+             {"field:visibility", &mstch_cpp2_field::visibility},
++            {"field:isPrivate?", &mstch_cpp2_field::isPrivate},
+             {"field:metadata_name", &mstch_cpp2_field::metadata_name},
+             {"field:lazy?", &mstch_cpp2_field::lazy},
+             {"field:lazy_ref?", &mstch_cpp2_field::lazy_ref},
+@@ -785,6 +786,12 @@ class mstch_cpp2_field : public mstch_field {
+     return field_->get_name() + "_" + suffix;
+   }
+
++  mstch::node isPrivate() {
++    bool isPrivate = field_->get_req() == t_field::e_req::optional &&
++        !cpp2::is_lazy_ref(field_);
++    return isPrivate;
++  }
++
+  private:
+   bool is_private() const {
+     auto req = field_->get_req();
+diff --git a/thrift/compiler/generate/templates/cpp2/module_types_h/declare_members.mustache b/thrift/compiler/generate/templates/cpp2/module_types_h/declare_members.mustache
+index 3deb85a36..c1d7b0320 100644
+--- a/thrift/compiler/generate/templates/cpp2/module_types_h/declare_members.mustache
++++ b/thrift/compiler/generate/templates/cpp2/module_types_h/declare_members.mustache
+@@ -16,7 +16,7 @@
+
+ %><%#struct:fields_in_layout_order%><%#field:type%>
+  <%field:visibility%>:
+-  <%#field:lazy?%>mutable <%/field:lazy?%><%field:cpp_storage_type%> <%field:cpp_storage_name%>;
++  <%#field:lazy?%>mutable <%/field:lazy?%><%field:cpp_storage_type%> <%field:cpp_storage_name%>; <%#field:isPrivate?%> // Access with <%field:cpp_storage_name%>_ref()<%/field:isPrivate?%>
+ <%/field:type%><%/struct:fields_in_layout_order%>
+ <%#struct:isset_fields?%>
+  private:
+--
+2.30.2

@@ -1,0 +1,66 @@
+#!/bin/bash
+
+platform="$1"
+
+# shellcheck disable=SC2128
+if [ -n "$BASH_SOURCE" ]; then
+    THIS_SCRIPT=$BASH_SOURCE
+elif [ -n "$ZSH_NAME" ]; then
+    THIS_SCRIPT=$0
+else
+    THIS_SCRIPT="$(pwd)/tg-init-build-env"
+fi
+
+if [ -z "$ZSH_NAME" ] && [ "$0" = "$THIS_SCRIPT" ]; then
+    # shellcheck disable=SC2145
+    echo "Error: This script needs to be sourced. Please run as '. $THIS_SCRIPT $@'"
+    return 1
+fi
+ABS_OEROOT="$(dirname "$(realpath "$THIS_SCRIPT")")"
+unset THIS_SCRIPT
+
+# Make sure yocto has been synced first.
+if [ ! -e "${ABS_OEROOT}/yocto/poky/oe-init-build-env" ]; then
+    echo "Error: yocto/poky is not populated yet."
+    echo "Use \`sync_yocto.sh\` to sync the yocto repositories before building."
+    return 1
+fi
+
+# Double check to see if yocto needs a resync
+REVPOKY=$(cd "${ABS_OEROOT}/yocto/poky" && git rev-parse HEAD)
+REVMOE=$(cd "${ABS_OEROOT}/yocto/meta-openembedded" && git rev-parse HEAD)
+. ${ABS_OEROOT}/utils/sync_yocto_utils.sh
+if [ "${POKY_COMMIT}" != "${REVPOKY}" ] || [ "${OE_COMMIT}" != "${REVMOE}" ]; then
+    echo "yocto/poky or yocto/meta-openembedded are out of date."
+    echo "Use \`sync_yocto.sh.\` to resync them."
+    echo "A clean build is also recommended."
+    return 1
+fi
+
+# Make sure specific BSP is set
+if [ -z "$1" ]; then
+    echo "A specific BSP must be provided:"
+    echo "e.g.:"
+    echo "    . tg-init-build-env meta-x86"
+    return 1
+fi
+if [ -d "${ABS_OEROOT}/$1" ]; then
+    TEMPLATECONF="${ABS_OEROOT}/$1/conf"
+elif [ -d "${ABS_OEROOT}/meta-$1" ]; then
+    TEMPLATECONF="${ABS_OEROOT}/meta-$1/conf"
+else
+    echo "Neither ${ABS_OEROOT}/$1 nor ${ABS_OEROOT}/meta-$1 exists"
+    return 1
+fi
+    
+if [ -d "facebook/workaround-bin" ]; then
+    PATH="$(realpath facebook/workaround-bin):$PATH"
+fi
+
+export TEMPLATECONF
+shift 1
+
+echo "Init build environment for platform '${platform}'"
+unset platform
+# shellcheck disable=SC2068
+. "${ABS_OEROOT}/yocto/poky/oe-init-build-env" $@

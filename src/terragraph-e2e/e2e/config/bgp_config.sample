@@ -1,0 +1,16 @@
+{
+  "localAsn": 64201,
+  "neighbors": {
+    "0": {
+      "asn": 65111,
+      "ipv6": "2001::1"
+      "maximumPrefixes": 128,
+    },
+    "1": {
+      "asn": 65112,
+      "ipv6": "2001::2"
+      "maximumPrefixes": 42,
+    }
+  },
+  "keepalive": 30
+}

@@ -1,0 +1,13 @@
+Common targets are:
+    terragraph-image
+
+To exclude Python from builds, run bitbake with the following arguments:
+    -R ../conf/no-python.conf
+
+To remove unused features from Open/R and reduce binary size, run bitbake with
+the following arguments:
+    -R ../conf/optimized-openr.conf
+
+To disable TG pre-M80 backwards compatibility (preferred), run bitbake with the
+following arguments:
+    -R ../conf/openr-no-backwards-compat.conf

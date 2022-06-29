@@ -1,0 +1,103 @@
+From 97f5aa00bf79ac84d942a889740d40710d19c5fa Mon Sep 17 00:00:00 2001
+From: Michael van der Westhuizen <rmikey@fb.com>
+Date: Mon, 1 Aug 2016 09:22:27 +0100
+Subject: [PATCH] Reimplement adding MemAvailable for 3.14+ and fixing nptl for
+ 3+
+
+Forward ports 775262ae6ff5996fa98fcda8031efb263ecebc9e ("added
+MemAvailable for 3.14+, fixed nptl for 3+") by Michael Nugent
+<mnugent.fb.com>.
+---
+ include/sigar.h            |  3 ++-
+ src/os/linux/linux_sigar.c | 18 +++++++++++++++---
+ src/os/linux/sigar_os.h    |  2 ++
+ 3 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/include/sigar.h b/include/sigar.h
+index 2245d46..27978a7 100644
+--- a/include/sigar.h
++++ b/include/sigar.h
+@@ -144,7 +144,8 @@ typedef struct {
+         used, 
+         free,
+         actual_used,
+-        actual_free;
++        actual_free,
++        available;
+     double used_percent;
+     double free_percent;
+ } sigar_mem_t;
+diff --git a/src/os/linux/linux_sigar.c b/src/os/linux/linux_sigar.c
+index a3fd230..075b011 100644
+--- a/src/os/linux/linux_sigar.c
++++ b/src/os/linux/linux_sigar.c
+@@ -155,7 +155,7 @@ static int sigar_boot_time_get(sigar_t *sigar)
+ int sigar_os_open(sigar_t **sigar)
+ {
+     int i, status;
+-    int kernel_rev, has_nptl;
++    int kernel_major, kernel_rev, has_nptl;
+     struct stat sb;
+     struct utsname name;
+ 
+@@ -200,9 +200,11 @@ int sigar_os_open(sigar_t **sigar)
+     (*sigar)->proc_net = getenv("SIGAR_PROC_NET");
+ 
+     uname(&name);
+-    /* 2.X.y.z -> just need X (unless there is ever a kernel version 3!) */
++    (*sigar)->name = name;
++    /* A.X.y.z -> 3+ now exists, needs A.X */
++    kernel_major = atoi(&name.release[0]);
+     kernel_rev = atoi(&name.release[2]);
+-    if (kernel_rev >= 6) {
++    if ((kernel_major == 2 && kernel_rev >= 6) || kernel_major >= 3) {
+         has_nptl = 1;
+     }
+     else {
+@@ -324,6 +326,7 @@ int sigar_mem_get(sigar_t *sigar, sigar_mem_t *mem)
+ {
+     sigar_uint64_t buffers, cached, kern;
+     char buffer[BUFSIZ];
++    int kernel_major, kernel_rev;
+ 
+     int status = sigar_file2str(PROC_MEMINFO,
+                                 buffer, sizeof(buffer));
+@@ -343,6 +346,15 @@ int sigar_mem_get(sigar_t *sigar, sigar_mem_t *mem)
+     mem->actual_free = mem->free + kern;
+     mem->actual_used = mem->used - kern;
+ 
++    kernel_major = atoi(&(sigar->name).release[0]);
++    kernel_rev = atoi(&(sigar->name).release[2]);
++
++    if ((kernel_major == 3 && kernel_rev >= 14) || kernel_major >= 4) {
++        mem->available = sigar_meminfo(buffer, MEMINFO_PARAM("MemAvailable"));
++    } else {
++        mem->available = mem->actual_free;
++    }
++
+     sigar_mem_calc_ram(sigar, mem);
+ 
+     if (get_ram(sigar, mem) != SIGAR_OK) {
+diff --git a/src/os/linux/sigar_os.h b/src/os/linux/sigar_os.h
+index 29a2ba3..01ec557 100644
+--- a/src/os/linux/sigar_os.h
++++ b/src/os/linux/sigar_os.h
+@@ -28,6 +28,7 @@
+ #include <netinet/in.h>
+ #include <sys/types.h>
+ #include <sys/socket.h>
++#include <sys/utsname.h>
+ #include <arpa/inet.h>
+ 
+ typedef struct {
+@@ -67,6 +68,7 @@ struct sigar_t {
+     char *proc_net;
+     /* Native POSIX Thread Library 2.6+ kernel */
+     int has_nptl;
++    struct utsname name;
+ };
+ 
+ #define HAVE_STRERROR_R
+-- 
+2.8.0-rc2
+

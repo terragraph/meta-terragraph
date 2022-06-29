@@ -1,0 +1,69 @@
+From 63f10ee520d0576a3f2c110c446481c7e8acc6eb Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Fri, 10 Sep 2021 18:42:31 -0700
+Subject: [PATCH] Find wigig pipe id dynfield
+
+---
+ app/pktgen-main.c |  8 ++++++++
+ lib/common/mbuf.h | 19 +++++++++++++++++++
+ 2 files changed, 27 insertions(+)
+
+diff --git a/app/pktgen-main.c b/app/pktgen-main.c
+index b8dcf02..e063e64 100644
+--- a/app/pktgen-main.c
++++ b/app/pktgen-main.c
+@@ -40,6 +40,8 @@ static const struct rte_mbuf_dynfield pktgen_dynfield_desc = {
+ 	.align = __alignof__(union pktgen_data),
+ };
+ 
++int wigig_link_id_dynfield_offset = -1;
++
+ #ifdef GUI
+ int pktgen_gui_main(int argc, char *argv[]);
+ #endif
+@@ -481,6 +483,12 @@ main(int argc, char **argv)
+ 	if (pktgen_cli_create())
+ 		return -1;
+ 
++	/* Terragraph: find wigig dynfield for link id */
++	wigig_link_id_dynfield_offset =
++		rte_mbuf_dynfield_lookup (WIGIG_LINK_ID_DYNFIELD_NAME, NULL);
++	if (wigig_link_id_dynfield_offset < 0)
++		rte_exit(EXIT_FAILURE, "Cannot find wigig link id mbuf field\n");
++
+ #ifdef LUA_ENABLED
+ 	lua_newlib_add(pktgen_lua_openlib, 0);
+ 
+diff --git a/lib/common/mbuf.h b/lib/common/mbuf.h
+index 8629613..9eba5b7 100644
+--- a/lib/common/mbuf.h
++++ b/lib/common/mbuf.h
+@@ -44,6 +44,25 @@ pktgen_data_field(struct rte_mbuf *m)
+ 		union pktgen_data *);
+ }
+ 
++/**
++ * Terragraph wil6210 PMD uses this dynfield for link id
++ */
++#define WIGIG_LINK_ID_DYNFIELD_NAME "wil6210_dynfield_link_id"
++
++extern int wigig_link_id_dynfield_offset;
++
++static inline uint16_t
++wigig_mbuf_link_id_get(const struct rte_mbuf *mbuf)
++{
++	return *RTE_MBUF_DYNFIELD(mbuf, wigig_link_id_dynfield_offset, uint16_t *);
++}
++
++static inline void
++wigig_mbuf_link_id_set(const struct rte_mbuf *mbuf, uint16_t link)
++{
++	*RTE_MBUF_DYNFIELD(mbuf, wigig_link_id_dynfield_offset, uint16_t *) = link;
++}
++
+ static inline void
+ pktmbuf_reset(struct rte_mbuf *m)
+ {
+-- 
+2.30.2
+

@@ -1,0 +1,33 @@
+# Reference: http://w1.fi/cgit/hostap/plain/hostapd/hostapd.conf
+# Empty lines and lines starting with # are ignored
+
+##### hostapd configuration file ##############################################
+interface=${ifname}
+driver=${driver}
+logger_stdout_level=7
+ctrl_interface=/var/run/hostapd_${ifname}
+
+##### IEEE 802.11 related configuration #######################################
+ssid=terragraph
+hw_mode=ad
+channel=2
+auth_algs=3
+
+##### IEEE 802.1X-2004 related configuration ##################################
+ieee8021x=1
+
+##### WPA/IEEE 802.11i configuration ##########################################
+wpa=2
+wpa_psk_file=/var/run/hostapd.wpa_psk
+wpa_key_mgmt=WPA-EAP
+wpa_pairwise=GCMP
+rsn_pairwise=GCMP
+wpa_group_rekey=-1
+
+##### Integrated EAP server ###################################################
+fragment_size=1004
+
+##### RADIUS client configuration #############################################
+nas_identifier=${ifname}-${macaddr}
+auth_server_addr=${radius_server_ip}
+auth_server_port=${radius_server_port}

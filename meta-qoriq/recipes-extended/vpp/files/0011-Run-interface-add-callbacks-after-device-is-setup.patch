@@ -1,0 +1,147 @@
+From 98bc6590abc793499215b4d43a4200b40c0b85ef Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 18 Feb 2020 07:19:10 -0800
+Subject: [PATCH] Run interface add callbacks after device is setup
+
+Split vnet_register_interface into two parts - one to allocate and
+initialize interface structures and one to call appropriate add
+callback notifications. Refactor old function as successive calls of
+the two new ones for compatibility. Refactor ethernet_register to use
+two new functions - this way interested parties get to learn about
+new hardware interfaces after MAC addresses were assigned to them,
+not before.
+---
+ src/vnet/ethernet/interface.c | 10 +++++++-
+ src/vnet/interface.c          | 48 +++++++++++++++++++++++++++--------
+ src/vnet/interface_funcs.h    | 14 +++++++++-
+ 3 files changed, 60 insertions(+), 12 deletions(-)
+
+diff --git a/src/vnet/ethernet/interface.c b/src/vnet/ethernet/interface.c
+index b5c48193b..c68ba3b4c 100644
+--- a/src/vnet/ethernet/interface.c
++++ b/src/vnet/ethernet/interface.c
+@@ -361,7 +361,7 @@ ethernet_register_interface (vnet_main_t * vnm,
+   pool_get (em->interfaces, ei);
+   ei->flag_change = flag_change;
+ 
+-  hw_if_index = vnet_register_interface
++  hw_if_index = vnet_register_interface_no_callbacks
+     (vnm,
+      dev_class_index, dev_instance,
+      ethernet_hw_interface_class.index, ei - em->interfaces);
+@@ -381,6 +381,14 @@ ethernet_register_interface (vnet_main_t * vnm,
+ 
+   ethernet_set_mac (hi, ei, address);
+ 
++  /*
++   * Announce new interface before setting MTU so that MTU change callbacks
++   * are invoked after interface is known.
++   */
++  vnet_register_interface_announce(vnm, hi->sw_if_index);
++  /* Standard default ethernet MTU. */
++  vnet_sw_interface_set_mtu (vnm, hi->sw_if_index, 9000);
++
+   if (error)
+     {
+       pool_put (em->interfaces, ei);
+diff --git a/src/vnet/interface.c b/src/vnet/interface.c
+index 8416c356b..81264d38f 100644
+--- a/src/vnet/interface.c
++++ b/src/vnet/interface.c
+@@ -789,12 +789,12 @@ setup_output_node (vlib_main_t * vm,
+   n->unformat_buffer = hw_class->unformat_header;
+ }
+ 
+-/* Register an interface instance. */
++/* Register an interface instance invoking no add callbacks. */
+ u32
+-vnet_register_interface (vnet_main_t * vnm,
+-			 u32 dev_class_index,
+-			 u32 dev_instance,
+-			 u32 hw_class_index, u32 hw_instance)
++vnet_register_interface_no_callbacks (vnet_main_t * vnm,
++				      u32 dev_class_index,
++				      u32 dev_instance,
++				      u32 hw_class_index, u32 hw_instance)
+ {
+   vnet_interface_main_t *im = &vnm->interface_main;
+   vnet_hw_interface_t *hw;
+@@ -996,17 +996,45 @@ vnet_register_interface (vnet_main_t * vnm,
+   setup_tx_node (vm, hw->tx_node_index, dev_class);
+ 
+ no_output_nodes:
+-  /* Call all up/down callbacks with zero flags when interface is created. */
+-  vnet_sw_interface_set_flags_helper (vnm, hw->sw_if_index, /* flags */ 0,
+-				      VNET_INTERFACE_SET_FLAGS_HELPER_IS_CREATE);
+-  vnet_hw_interface_set_flags_helper (vnm, hw_index, /* flags */ 0,
+-				      VNET_INTERFACE_SET_FLAGS_HELPER_IS_CREATE);
+   vec_free (tx_node_name);
+   vec_free (output_node_name);
+ 
+   return hw_index;
+ }
+ 
++void
++vnet_register_interface_announce (vnet_main_t * vnm,
++				  u32 sw_if_index)
++{
++  vnet_sw_interface_t *sw = vnet_get_sw_interface (vnm, sw_if_index);
++
++  /* Call all up/down callbacks with zero flags when interface is created. */
++  vnet_sw_interface_set_flags_helper (vnm, sw_if_index, /* flags */ 0,
++				      VNET_INTERFACE_SET_FLAGS_HELPER_IS_CREATE);
++  vnet_hw_interface_set_flags_helper (vnm, sw->hw_if_index, /* flags */ 0,
++				      VNET_INTERFACE_SET_FLAGS_HELPER_IS_CREATE);
++}
++
++u32
++vnet_register_interface (vnet_main_t * vnm,
++			 u32 dev_class_index,
++			 u32 dev_instance,
++			 u32 hw_class_index, u32 hw_instance)
++{
++  vnet_hw_interface_t *hw;
++  u32 hw_if_index;
++
++  hw_if_index = vnet_register_interface_no_callbacks (vnm, dev_class_index,
++						      dev_instance,
++						      hw_class_index,
++						      hw_instance);
++
++  hw = vnet_get_hw_interface (vnm, hw_if_index);
++  vnet_register_interface_announce(vnm, hw->sw_if_index);
++
++  return hw_if_index;
++}
++
+ void
+ vnet_delete_hw_interface (vnet_main_t * vnm, u32 hw_if_index)
+ {
+diff --git a/src/vnet/interface_funcs.h b/src/vnet/interface_funcs.h
+index 120d92cb1..a02ddd9e7 100644
+--- a/src/vnet/interface_funcs.h
++++ b/src/vnet/interface_funcs.h
+@@ -217,7 +217,19 @@ typedef walk_rc_t (*vnet_hw_interface_walk_t) (vnet_main_t * vnm,
+ void vnet_hw_interface_walk (vnet_main_t * vnm,
+ 			     vnet_hw_interface_walk_t fn, void *ctx);
+ 
+-/* Register a hardware interface instance. */
++/* Register hardware interface instance, without invoking the add callback */
++u32 vnet_register_interface_no_callbacks (vnet_main_t * vnm,
++					  u32 dev_class_index,
++					  u32 dev_instance,
++					  u32 hw_class_index, u32 hw_instance);
++/* Invoke callbacks after hardware instance has been set up */
++void vnet_register_interface_announce(vnet_main_t * vnm,
++				      u32 sw_if_index);
++
++/*
++ * Register a hardware interface instance. Same as above two invoked to back to
++ * back
++ */
+ u32 vnet_register_interface (vnet_main_t * vnm,
+ 			     u32 dev_class_index,
+ 			     u32 dev_instance,
+-- 
+2.30.2
+

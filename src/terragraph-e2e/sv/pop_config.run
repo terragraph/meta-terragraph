@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+if [ -z "$OPENR_USE_FIB_NSS" ] || [ "$OPENR_USE_FIB_NSS" -ne "1" ]; then
+  . /usr/sbin/config_pop.sh 2>&1 | ts "[%Y-%m-%dT%T%z]"
+fi

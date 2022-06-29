@@ -1,0 +1,35 @@
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,32 @@
++# Default installation prefix
++PREFIX ?= /usr/local
++
++# System's libraries directory (where binary libraries are installed)
++LUAVER ?= `pkg-config --modversion lua | cut -d'.' -f1,2`
++LUA_LIBDIR = $(PREFIX)/lib/lua/$(LUAVER)
++
++# Lua includes directory
++LUA_INC = `pkg-config --cflags lua`
++
++# OS dependent
++LIB_OPTION= -shared ${LDFLAGS} #for Linux
++
++# Compilation directives
++WARN= -O2 -Wall -fPIC -W -Waggregate-return -Wcast-align -Wmissing-prototypes -Wnested-externs -Wshadow -Wwrite-strings
++CFLAGS += $(WARN) $(INCS) ${LUA_INC}
++
++SRCS= lbitlib.c
++OBJS= lbitlib.o
++INCS+= -Ic-api
++
++lib: bit32.so
++
++bit32.so: $(OBJS)
++	$(CC) $(LIB_OPTION) ${LDFLAGS} -o bit32.so $(OBJS)
++
++install:
++	mkdir -p $(DESTDIR)$(LUA_LIBDIR)
++	cp bit32.so $(DESTDIR)$(LUA_LIBDIR)
++
++clean:
++	rm -f bit32.so $(OBJS)

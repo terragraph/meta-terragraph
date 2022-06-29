@@ -1,0 +1,32 @@
+From f450af57ac68bbb038367733b461822af0d68176 Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Thu, 7 May 2020 19:02:04 -0700
+Subject: [PATCH] Setting Link Speed Control on Pericom bridge causes detection flakiness
+
+Link speed negotiation may take longer at times, and not complete before the link is brought up.
+The imx6 driver does wait for this flag to settle before completing setup (see
+imx6_pcie_wait_for_speed_change), but not the designware driver.   For the
+moment, just disable speed control.
+
+
+---
+ drivers/pci/dwc/pcie-designware-host.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/pci/dwc/pcie-designware-host.c b/drivers/pci/dwc/pcie-designware-host.c
+index baa6d5d6616f..6f92ce5a33e8 100644
+--- a/drivers/pci/dwc/pcie-designware-host.c
++++ b/drivers/pci/dwc/pcie-designware-host.c
+@@ -652,7 +652,9 @@ void dw_pcie_setup_rc(struct pcie_port *pp)
+ 	/* Better disable write permission right after the update */
+ 	dw_pcie_dbi_ro_wr_dis(pci);
+ 
++#if 0
+ 	dw_pcie_rd_own_conf(pp, PCIE_LINK_WIDTH_SPEED_CONTROL, 4, &val);
+ 	val |= PORT_LOGIC_SPEED_CHANGE;
+ 	dw_pcie_wr_own_conf(pp, PCIE_LINK_WIDTH_SPEED_CONTROL, 4, val);
++#endif
+ }
+-- 
+2.24.1
+

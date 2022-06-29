@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/slip_route
+exec svlogd /var/log/slip_route

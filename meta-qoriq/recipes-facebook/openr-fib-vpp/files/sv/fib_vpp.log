@@ -1,0 +1,3 @@
+#!/bin/sh
+mkdir -p /var/log/fib_vpp
+exec svlogd /var/log/fib_vpp

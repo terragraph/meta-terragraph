@@ -1,0 +1,41 @@
+From 3e86e4268617e62329f815f796ffb6471f69358c Mon Sep 17 00:00:00 2001
+From: Bob Copeland <bobcopeland@fb.com>
+Date: Mon, 8 Jul 2019 13:11:54 -0700
+Subject: [PATCH] optionally include wil6210 pmd in dpdk
+
+Add a cmake variable that, when set, slurps up the whole
+librte_pmd_wil6210.a into the VPP dpdk plugin.  Said library is
+expected to be installed into (e.g.) /usr/lib separately.
+---
+ src/plugins/dpdk/CMakeLists.txt | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/plugins/dpdk/CMakeLists.txt b/src/plugins/dpdk/CMakeLists.txt
+index ba0ab7d75..57523457f 100644
+--- a/src/plugins/dpdk/CMakeLists.txt
++++ b/src/plugins/dpdk/CMakeLists.txt
+@@ -76,6 +76,21 @@ else()
+   string_append(DPDK_LINK_FLAGS "-Wl,--whole-archive,${DPDK_LIB},--no-whole-archive")
+ endif()
+ 
++if(DPDK_RTE_LIBRTE_WIL6210_PMD)
++  string_append(DPDK_LINK_FLAGS "-Wl,--whole-archive,-lrte_pmd_wil6210,--no-whole-archive")
++  vpp_plugin_find_library(dpdk NL3_LIB "libnl-3.so")
++  vpp_plugin_find_library(dpdk NLGENL3_LIB "libnl-genl-3.so")
++  vpp_plugin_find_library(dpdk NLNF3_LIB "libnl-nf-3.so")
++  vpp_plugin_find_library(dpdk NLROUTE3_LIB "libnl-route-3.so")
++  string_append(DPDK_LINK_FLAGS "-Wl,-Bdynamic,${NL3_LIB},${NLGENL3_LIB},${NLNF3_LIB},${NLROUTE3_LIB}")
++
++  find_path(LIBNL3-HEADERS libnl3/netlink/netlink.h)
++  include_directories(${LIBNL3-HEADERS}/nl3)
++  message(STATUS "DPDK includes wil6210 PMD")
++endif()
++
++message(WARNING "DPDK_LINK_FLAGS ${DPDK_LINK_FLAGS}")
++
+ ##############################################################################
+ # libnuma
+ ##############################################################################
+-- 
+2.30.2
+

@@ -1,0 +1,241 @@
+From f765c786841117031e513cc6ac6ea2b5872d65da Mon Sep 17 00:00:00 2001
+From: Ilango Purushothaman <ipurush@fb.com>
+Date: Mon, 7 Dec 2020 07:39:10 -0800
+Subject: [PATCH] SRv6 policy support for VLANs and sub interfaces.
+
+Added SRv6 policy support for SW sub-interfaces to support VLANs.
+Added a "redirect L2" next node to re-direct L2 frames from
+ethernet-input.
+
+Previously, all L2 frames from a HW interface were steered to sr-encaps
+directly, before ethernet-input.
+
+Now, ethernet-input is traversed first to look-up sub-interface/VLAN
+(if any) and the L2 frame is steered to the SRv6 policy attached
+to the SW interface.
+---
+ src/vnet/ethernet/ethernet.h |  9 ++++++++
+ src/vnet/ethernet/node.c     | 45 ++++++++++++++++++++++++++++++++----
+ src/vnet/srv6/sr.h           |  1 +
+ src/vnet/srv6/sr_steering.c  | 40 ++++++++++++++------------------
+ 4 files changed, 68 insertions(+), 27 deletions(-)
+
+diff --git a/src/vnet/ethernet/ethernet.h b/src/vnet/ethernet/ethernet.h
+index a83b0f392..5a2a39511 100644
+--- a/src/vnet/ethernet/ethernet.h
++++ b/src/vnet/ethernet/ethernet.h
+@@ -296,6 +296,10 @@ typedef struct ethernet_main_t_
+   /* next node index for L2 interfaces */
+   u32 l2_next;
+ 
++  /* bitmap and next node index for L2 redirect */
++  uword *redirect_l2_by_sw_if;
++  u32 redirect_l2_next;
++
+   /* flag and next node index for L3 redirect */
+   u32 redirect_l3;
+   u32 redirect_l3_next;
+@@ -375,6 +379,11 @@ void ethernet_register_l2_input (vlib_main_t * vm, u32 node_index);
+ /* Register given node index to take redirected L3 traffic, and enable L3 redirect */
+ void ethernet_register_l3_redirect (vlib_main_t * vm, u32 node_index);
+ 
++/* Register given node index to take redirected L2 frames, and enable L2 redirect by
++ * sw interface index.
++ */
++void ethernet_register_l2_redirect (vlib_main_t * vm, u32 node_index, u32 sw_if_index, u32 enable);
++
+ /* Formats ethernet address X:X:X:X:X:X */
+ u8 *format_mac_address (u8 * s, va_list * args);
+ u8 *format_ethernet_address (u8 * s, va_list * args);
+diff --git a/src/vnet/ethernet/node.c b/src/vnet/ethernet/node.c
+index efe7290d1..c07ad625d 100644
+--- a/src/vnet/ethernet/node.c
++++ b/src/vnet/ethernet/node.c
+@@ -568,21 +568,25 @@ eth_input_tag_lookup (vlib_main_t * vm, vnet_main_t * vnm,
+       l->mask = (l->n_tags == 2) ?
+ 	clib_net_to_host_u64 (0xffffffffffffffff) :
+ 	clib_net_to_host_u64 (0xffffffff00000000);
++	u32 redirect_l2 = clib_bitmap_get (em->redirect_l2_by_sw_if, l->sw_if_index);
+ 
+       if (matched && l->sw_if_index == ~0)
+ 	l->err = ETHERNET_ERROR_DOWN;
+ 
+       l->len = sizeof (ethernet_header_t) +
+ 	l->n_tags * sizeof (ethernet_vlan_header_t);
++      // Preserve L2 header for L2 redirect node
+       if (main_is_l3)
+-	l->adv = is_l2 ? -(int) sizeof (ethernet_header_t) :
+-	  l->n_tags * sizeof (ethernet_vlan_header_t);
++        l->adv = (is_l2 || redirect_l2) ? -(int) sizeof (ethernet_header_t) :
++          l->n_tags * sizeof (ethernet_vlan_header_t);
+       else
+-	l->adv = is_l2 ? 0 : l->len;
++	l->adv = (is_l2 || redirect_l2) ? 0 : l->len;
+ 
+       if (PREDICT_FALSE (l->err != ETHERNET_ERROR_NONE))
+ 	l->next = ETHERNET_INPUT_NEXT_DROP;
+-      else if (is_l2)
++      else if (redirect_l2) {
++	      l->next = em->redirect_l2_next;
++      } else if (is_l2)
+ 	l->next = em->l2_next;
+       else if (l->type == ETHERNET_TYPE_IP4)
+ 	l->next = em->l3_next.input_next_ip4;
+@@ -2282,6 +2286,8 @@ ethernet_input_init (vlib_main_t * vm, ethernet_main_t * em)
+   pool_get (em->vlan_pool, invalid_vlan_table);	// first id = 0
+   // The first qinq pool will always be reserved for an invalid table
+   pool_get (em->qinq_pool, invalid_qinq_table);	// first id = 0
++
++  clib_bitmap_zero(em->redirect_l2_by_sw_if);
+ }
+ 
+ void
+@@ -2369,6 +2375,37 @@ ethernet_register_l3_redirect (vlib_main_t * vm, u32 node_index)
+ 
+   ASSERT (i == em->redirect_l3_next);
+ }
++
++// Register a next node for L2 redirect, and enable L2 redirect per sw_if_index
++void
++ethernet_register_l2_redirect (vlib_main_t * vm, u32 node_index, u32 sw_if_index, u32 enable)
++{
++  ethernet_main_t *em = &ethernet_main;
++  u32 i;
++
++  if (enable && clib_bitmap_is_zero(em->redirect_l2_by_sw_if)) {
++
++    em->redirect_l2_next = vlib_node_add_next (vm,
++                ethernet_input_node.index,
++                node_index);
++
++    /*
++    * Even if we never use these arcs, we have to align the next indices...
++    */
++    i = vlib_node_add_next (vm, ethernet_input_type_node.index, node_index);
++
++    ASSERT (i == em->redirect_l2_next);
++
++    i = vlib_node_add_next (vm, ethernet_input_not_l2_node.index, node_index);
++
++    ASSERT (i == em->redirect_l2_next);
++  }
++
++  em->redirect_l2_by_sw_if =  clib_bitmap_set (em->redirect_l2_by_sw_if,
++        sw_if_index, enable);
++  vlib_cli_output(vm, "L2 redirect %s for SW IF %u", enable ? "enabled" : "disabled", sw_if_index);
++}
++
+ #endif
+ 
+ /*
+diff --git a/src/vnet/srv6/sr.h b/src/vnet/srv6/sr.h
+index 7452b95b3..500f25e9d 100644
+--- a/src/vnet/srv6/sr.h
++++ b/src/vnet/srv6/sr.h
+@@ -313,6 +313,7 @@ extern ip6_sr_main_t sr_main;
+ 
+ extern vlib_node_registration_t sr_policy_rewrite_encaps_node;
+ extern vlib_node_registration_t sr_policy_rewrite_insert_node;
++extern vlib_node_registration_t sr_policy_rewrite_encaps_l2_node;
+ extern vlib_node_registration_t sr_localsid_node;
+ extern vlib_node_registration_t sr_localsid_d_node;
+ 
+diff --git a/src/vnet/srv6/sr_steering.c b/src/vnet/srv6/sr_steering.c
+index 9db13900f..b9ae581e1 100644
+--- a/src/vnet/srv6/sr_steering.c
++++ b/src/vnet/srv6/sr_steering.c
+@@ -71,6 +71,8 @@ sr_steering_policy (int is_del, ip6_address_t * bsid, u32 sr_policy_index,
+ 
+   clib_memset (&key, 0, sizeof (sr_steering_key_t));
+ 
++  vnet_sw_interface_t *sw = vnet_get_sw_interface (sm->vnet_main, sw_if_index);
++
+   /* Compute the steer policy key */
+   if (traffic_type == SR_STEER_IPV4 || traffic_type == SR_STEER_IPV6)
+     {
+@@ -88,11 +90,9 @@ sr_steering_policy (int is_del, ip6_address_t * bsid, u32 sr_policy_index,
+ 			      sw_if_index))
+ 	return -3;
+ 
+-      vnet_sw_interface_t *sw =
+-	vnet_get_sw_interface (sm->vnet_main, sw_if_index);
+-      if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
+-	return -3;
+-    }
++      if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE && sw->type != VNET_SW_INTERFACE_TYPE_SUB)
++          return -3;
++      }
+   else
+     return -1;
+ 
+@@ -134,23 +134,18 @@ sr_steering_policy (int is_del, ip6_address_t * bsid, u32 sr_policy_index,
+ 	    }
+ 	  else if (steer_pl->classify.traffic_type == SR_STEER_L2)
+ 	    {
+-	      /* Remove HW redirection */
+-	      int ret = vnet_feature_enable_disable ("device-input",
+-						     "sr-pl-rewrite-encaps-l2",
+-						     sw_if_index, 0, 0, 0);
+-
+-	      if (ret != 0)
+-		return -1;
+-
+ 	      sm->sw_iface_sr_policies[sw_if_index] = ~(u32) 0;
+ 
+-	      /* Remove promiscous mode from interface */
++	      /* Remove promiscous mode from main HW interface */
+ 	      vnet_main_t *vnm = vnet_get_main ();
+ 	      vnet_hw_interface_t *hi =
+ 		vnet_get_sup_hw_interface (vnm, sw_if_index);
+ 	      /* Make sure it is main interface */
+ 	      if (hi->sw_if_index == sw_if_index)
+ 		ethernet_set_flags (vnm, hi->hw_if_index, 0);
++	      /* Remove L2 redirection */
++	      ethernet_register_l2_redirect (sm->vlib_main,
++	        sr_policy_rewrite_encaps_l2_node.index, sw_if_index, 0);
+ 	    }
+ 
+ 	  /* Delete SR steering policy entry */
+@@ -280,17 +275,13 @@ sr_steering_policy (int is_del, ip6_address_t * bsid, u32 sr_policy_index,
+       if (!sr_policy->is_encap)
+ 	goto cleanup_error_encap;
+ 
+-      if (vnet_feature_enable_disable
+-	  ("device-input", "sr-pl-rewrite-encaps-l2", sw_if_index, 1, 0, 0))
+-	goto cleanup_error_redirection;
+-
+-      /* Set promiscous mode on interface */
++      /* Enable L2 redirection to SRv6 after ethernet-input */
++      ethernet_register_l2_redirect (sm->vlib_main,
++        sr_policy_rewrite_encaps_l2_node.index, sw_if_index, 1);
++      /* Set promiscous mode on main HW interface */
+       vnet_main_t *vnm = vnet_get_main ();
+       vnet_hw_interface_t *hi = vnet_get_sup_hw_interface (vnm, sw_if_index);
+-      /* Make sure it is main interface */
+-      if (hi->sw_if_index == sw_if_index)
+-	ethernet_set_flags (vnm, hi->hw_if_index,
+-			    ETHERNET_INTERFACE_FLAG_ACCEPT_ALL);
++      ethernet_set_flags (vnm, hi->hw_if_index, ETHERNET_INTERFACE_FLAG_ACCEPT_ALL);
+     }
+   else if (traffic_type == SR_STEER_IPV4)
+     if (!sr_policy->is_encap)
+@@ -433,6 +424,8 @@ sr_steer_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
+ 			sr_policy_index, fib_table, &prefix, dst_mask_width,
+ 			sw_if_index, traffic_type);
+ 
++  vlib_cli_output (vm, "Added SRv6 steering policy on sw index %u", sw_if_index);
++
+   switch (rv)
+     {
+     case 0:
+@@ -546,6 +539,7 @@ sr_steering_init (vlib_main_t * vm)
+   sm->sw_iface_sr_policies = 0;
+ 
+   sm->vnet_main = vnet_get_main ();
++  sm->vlib_main = vm;
+ 
+   return 0;
+ }
+-- 
+2.30.2
+

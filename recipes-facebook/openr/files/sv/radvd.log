@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/radvd
+exec svlogd /var/log/radvd

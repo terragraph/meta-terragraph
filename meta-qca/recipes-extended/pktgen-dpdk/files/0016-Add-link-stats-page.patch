@@ -1,0 +1,171 @@
+From fa72348dae44aebd7736d13618c9612eb9832963 Mon Sep 17 00:00:00 2001
+From: MatthewWEdwards <matthewedwards@fb.com>
+Date: Thu, 19 Nov 2020 09:39:10 -0800
+Subject: [PATCH] Add link stats page
+
+---
+ app/cli-functions.c |  3 ++-
+ app/pktgen-cmds.c   |  3 +++
+ app/pktgen-links.h  |  2 ++
+ app/pktgen-rate.c   | 54 +++++++++++++++++++++++++++++++++++++++++++++
+ app/pktgen.c        |  2 ++
+ app/pktgen.h        |  6 +++--
+ 6 files changed, 67 insertions(+), 3 deletions(-)
+
+diff --git a/app/cli-functions.c b/app/cli-functions.c
+index 26c8c42..4bfa165 100644
+--- a/app/cli-functions.c
++++ b/app/cli-functions.c
+@@ -1677,7 +1677,7 @@ misc_cmd(int argc, char **argv)
+ 
+ static struct cli_map page_map[] = {
+ 	{ 10, "page %d" },
+-	{ 11, "page %|main|range|config|cfg|pcap|cpu|next|sequence|seq|rnd|log|latency|stats|xstats|rate|rate-pacing" },
++	{ 11, "page %|main|range|config|cfg|pcap|cpu|next|sequence|seq|rnd|log|latency|stats|xstats|rate|rate-pacing|link|links" },
+ 	{ -1, NULL }
+ };
+ 
+@@ -1699,6 +1699,7 @@ static const char *page_help[] = {
+ 	"page stats                         - Display physical ports stats for all ports",
+ 	"page xstats                        - Display port XSTATS values",
+ 	"page rate                          - Display Rate Pacing values",
++	"page link                          - Display Link values",
+ 	CLI_HELP_PAUSE,
+ 	NULL
+ };
+diff --git a/app/pktgen-cmds.c b/app/pktgen-cmds.c
+index b370a13..95577fd 100644
+--- a/app/pktgen-cmds.c
++++ b/app/pktgen-cmds.c
+@@ -4037,6 +4037,9 @@ pktgen_set_page(char *str)
+     } else if (_cp("rate-pacing") || _cp("rate")) {
+         pktgen.flags &= ~PAGE_MASK_BITS;
+         pktgen.flags |= RATE_PAGE_FLAG;
++    } else if (_cp("links") || _cp("link")) {
++        pktgen.flags &= ~PAGE_MASK_BITS;
++        pktgen.flags |= LINK_PAGE_FLAG;
+     } else {
+         uint16_t start_port;
+         if (_cp("main"))
+diff --git a/app/pktgen-links.h b/app/pktgen-links.h
+index 0d95387..7da38fb 100644
+--- a/app/pktgen-links.h
++++ b/app/pktgen-links.h
+@@ -31,6 +31,8 @@ void pktgen_update_links(port_info_t *info);
+ 
+ void pktgen_set_link_weight(port_info_t *info, uint16_t link, uint16_t weight);
+ 
++void pktgen_page_link(void);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/app/pktgen-rate.c b/app/pktgen-rate.c
+index 31e5ac3..cdc32ef 100644
+--- a/app/pktgen-rate.c
++++ b/app/pktgen-rate.c
+@@ -11,6 +11,7 @@
+ #include "lua_config.h"
+ 
+ #include "pktgen-cmds.h"
++#include "pktgen-links.h"
+ #include "pktgen-display.h"
+ 
+ #include "pktgen.h"
+@@ -461,3 +462,56 @@ pktgen_page_rate(void)
+ 	scrn_printf(row++, col, "%*s", COLUMN_WIDTH_3, buff);
+ 	scrn_eol();
+ }
++
++/**
++ *
++ * pktgen_page_link - Display the link traffic weighting.
++ *
++ * DESCRIPTION
++ * Display the link weighting for all ports.
++ *
++ * RETURNS: N/A
++ *
++ * SEE ALSO:
++ */
++
++void
++pktgen_page_link(void)
++{
++	port_info_t *info;
++	unsigned int pid, col, row;
++	unsigned sp;
++	char buff[32];
++	int display_cnt;
++	uint64_t avg_lat, ticks;
++
++	sp = pktgen.starting_port;
++	display_cnt = 0;
++	for (pid = 0; pid < pktgen.nb_ports_per_page; pid++) {
++		if (get_map(pktgen.l2p, pid + sp, RTE_MAX_LCORE) == 0)
++			continue;
++
++		info = &pktgen.info[pid + sp];
++
++		/* Display the disable string when port is not enabled. */
++		col = (COLUMN_WIDTH_1 * pid) + COLUMN_WIDTH_0;
++		row = PORT_STATE_ROW;
++
++		pktgen_display_set_color("stats.port.status");
++
++		for (uint8_t link = 0; link < TG_LINKS_PER_PORT; link++) {
++			bool link_status = (info->links << link) & 1;
++			char * color = link_status ? "stats.port.status" : "stats.links";
++			pktgen_display_set_color(color);
++			snprintf(buff, sizeof(buff), "L%d %s: Weight = %d",
++				link, link_status ? "On" : "Off", info->link_weights[link]);
++			scrn_printf(row, col, "%*s", COLUMN_WIDTH_1, buff);
++			row++;
++		}
++
++		pktgen_display_set_color(NULL);
++
++		display_cnt++;
++		col = (COLUMN_WIDTH_1 * display_cnt) + COLUMN_WIDTH_0;
++	}
++}
+diff --git a/app/pktgen.c b/app/pktgen.c
+index c99f47c..ccdd88c 100644
+--- a/app/pktgen.c
++++ b/app/pktgen.c
+@@ -1676,6 +1676,8 @@ _page_display(void)
+ 		pktgen_page_xstats(pktgen.portNum);
+ 	else if (pktgen.flags & RATE_PAGE_FLAG)
+ 		pktgen_page_rate();
++	else if (pktgen.flags & LINK_PAGE_FLAG)
++		pktgen_page_link();
+ 	else
+ 		pktgen_page_stats();
+ }
+diff --git a/app/pktgen.h b/app/pktgen.h
+index c4cda42..558b151 100644
+--- a/app/pktgen.h
++++ b/app/pktgen.h
+@@ -363,7 +363,8 @@ enum {						/* Pktgen flags bits */
+ 	STATS_PAGE_FLAG         = (1 << 24),	/**< Display the physical port stats */
+ 	XSTATS_PAGE_FLAG        = (1 << 25),	/**< Display the physical port stats */
+ 	RATE_PAGE_FLAG          = (1 << 26),	/**< Display the Rate Pacing stats */
+-	TG_SLOWPATH_FLAG        = (1 << 27),
++	LINK_PAGE_FLAG          = (1 << 27),	/**< Display the Link Weighting stats */
++	TG_SLOWPATH_FLAG        = (1 << 28),
+ 
+ 	UPDATE_DISPLAY_FLAG     = (1 << 31)
+ };
+@@ -382,7 +383,8 @@ enum {						/* Pktgen flags bits */
+ 			 PCAP_PAGE_FLAG | CPU_PAGE_FLAG | \
+ 			 RND_BITFIELD_PAGE_FLAG | \
+ 			 LOG_PAGE_FLAG | LATENCY_PAGE_FLAG | \
+-			 XSTATS_PAGE_FLAG | STATS_PAGE_FLAG | RATE_PAGE_FLAG)
++			 XSTATS_PAGE_FLAG | STATS_PAGE_FLAG | RATE_PAGE_FLAG | \
++			 LINK_PAGE_FLAG )
+ 
+ extern pktgen_t pktgen;
+ 
+-- 
+2.30.2
+

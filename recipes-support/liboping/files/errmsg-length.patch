@@ -1,0 +1,11 @@
+--- a/src/liboping.c	2018-11-17 07:37:55.077825930 -0800
++++ b/src/liboping.c	2018-11-17 07:30:50.298532881 -0800
+@@ -149,7 +149,7 @@
+ 	char                    set_mark;
+ 	int                     mark;
+ 
+-	char                     errmsg[PING_ERRMSG_LEN];
++	char                     errmsg[PING_ERRMSG_LEN+20];
+ 
+ 	pinghost_t              *head;
+ 	pinghost_t              *table[PING_TABLE_LEN];

@@ -1,0 +1,33 @@
+From 07da89158be9f96ece5d20b515871ebeadcd8a02 Mon Sep 17 00:00:00 2001
+From: Alex Landau <alandau@fb.com>
+Date: Tue, 7 Apr 2020 20:03:21 -0700
+Subject: [PATCH] Bugfix: Don't overwrite bootcmd env var with garbage
+
+---
+ arch/arm/cpu/armv8/fsl-layerscape/soc.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm/cpu/armv8/fsl-layerscape/soc.c b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+index f4e0571db2..8bd7f1381a 100644
+--- a/arch/arm/cpu/armv8/fsl-layerscape/soc.c
++++ b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+@@ -735,6 +735,8 @@ int fsl_setenv_bootcmd(void)
+ 	enum boot_src src = get_boot_src();
+ 	char bootcmd_str[MAX_BOOTCMD_SIZE];
+ 
++	bootcmd_str[0] = '\0';
++
+ 	switch (src) {
+ #ifdef IFC_NOR_BOOTCOMMAND
+ 	case BOOT_SOURCE_IFC_NOR:
+@@ -783,6 +785,10 @@ int fsl_setenv_bootcmd(void)
+ 		break;
+ 	}
+ 
++	if (*bootcmd_str == '\0') {
++		return 0;
++	}
++
+ 	ret = env_set("bootcmd", bootcmd_str);
+ 	if (ret) {
+ 		printf("Failed to set bootcmd: ret = %d\n", ret);

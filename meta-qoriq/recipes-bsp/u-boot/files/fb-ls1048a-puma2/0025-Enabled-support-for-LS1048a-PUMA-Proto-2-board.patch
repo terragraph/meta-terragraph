@@ -1,0 +1,340 @@
+From c4604f0a884010db1fe5ae20faa4b96b0febcb05 Mon Sep 17 00:00:00 2001
+From: Sreedev Sreedev <ssreedev@fb.com>
+Date: Fri, 22 Nov 2019 07:58:22 -0800
+Subject: [PATCH 25/25] Enabled support for LS1048a PUMA Proto 2 board
+
+---
+ arch/arm/Kconfig                              | 15 ++++++++++++
+ arch/arm/cpu/armv8/Kconfig                    |  1 +
+ arch/arm/cpu/armv8/fsl-layerscape/soc.c       |  3 ++-
+ arch/arm/dts/Makefile                         |  1 +
+ arch/arm/dts/fb-ls1048a-puma-proto2.dts       |  2 +-
+ board/freescale/common/sys_eeprom_fdt.c       |  5 ++++
+ board/freescale/fb_ls1048a_puma2/Kconfig      |  6 ++---
+ board/freescale/fb_ls1048a_puma2/MAINTAINERS  |  6 +++++
+ board/freescale/fb_ls1048a_puma2/Makefile     |  4 ++--
+ .../fb_ls1048a_puma2/eth_fb_ls1048a_puma2.c   | 23 +++++++++++++++----
+ .../fb_ls1048a_puma2/fb_ls1048a_puma2.c       |  2 +-
+ configs/fb-ls1048a-puma2_qspi_defconfig       |  4 ++--
+ drivers/i2c/i2c_core.c                        | 10 +++++++-
+ include/configs/fb_ls1048a_puma2.h            | 15 ++++++++----
+ 14 files changed, 77 insertions(+), 20 deletions(-)
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 0b14555153..893cfde344 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -1175,6 +1175,20 @@ config TARGET_FB_LS1048A_PUMA
+ 	  client node for Terragraph network using QorIQ LS1048A
+ 	  Layerscape Architecture processor.
+ 
++config TARGET_FB_LS1048A_PUMA2
++	bool "Support fb-ls1048a-puma proto2"
++	select ARCH_LS1088A
++	select ARM64
++	select ARMV8_MULTIENTRY
++	select ARCH_MISC_INIT
++	select BOARD_LATE_INIT
++	select SUPPORT_SPL
++	help
++	  Support for FB LS1048A PUMA Proto 2 platform.
++	  The LS1048A PUMA board is a cost-optimized
++	  client node for Terragraph network using QorIQ LS1048A
++	  Layerscape Architecture processor.
++
+ config TARGET_LS1021AQDS
+ 	bool "Support ls1021aqds"
+ 	select ARCH_LS1021A
+@@ -1525,6 +1539,7 @@ source "board/freescale/ls2080ardb/Kconfig"
+ source "board/freescale/ls1088a/Kconfig"
+ source "board/freescale/ls1048a/Kconfig"
+ source "board/freescale/fb_ls1048a_puma/Kconfig"
++source "board/freescale/fb_ls1048a_puma2/Kconfig"
+ source "board/freescale/ls1021aqds/Kconfig"
+ source "board/freescale/ls1043aqds/Kconfig"
+ source "board/freescale/ls1021atwr/Kconfig"
+diff --git a/arch/arm/cpu/armv8/Kconfig b/arch/arm/cpu/armv8/Kconfig
+index d8548c1f98..0487800ed7 100644
+--- a/arch/arm/cpu/armv8/Kconfig
++++ b/arch/arm/cpu/armv8/Kconfig
+@@ -102,6 +102,7 @@ config PSCI_RESET
+ 		   !TARGET_LS1088ARDB && !TARGET_LS1088AQDS && \
+ 		   !TARGET_LS1012ARDB && !TARGET_LS1012AFRDM && \
+ 		   !TARGET_LS1048ATG && !TARGET_FB_LS1048A_PUMA && \
++		   !TARGET_FB_LS1048A_PUMA2 && \
+ 		   !TARGET_LS1012A2G5RDB && !TARGET_LS1012AQDS && \
+ 		   !TARGET_LS1012AFRWY && \
+ 		   !TARGET_LS1043ARDB && !TARGET_LS1043AQDS && \
+diff --git a/arch/arm/cpu/armv8/fsl-layerscape/soc.c b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+index 924e39c7ca..f4e0571db2 100644
+--- a/arch/arm/cpu/armv8/fsl-layerscape/soc.c
++++ b/arch/arm/cpu/armv8/fsl-layerscape/soc.c
+@@ -164,7 +164,8 @@ static void erratum_a009007(void)
+ 	PROGRAM_USB_PHY_RX_OVRD_IN_HI(usb_phy);
+ #endif
+ #elif defined(CONFIG_ARCH_LS2080A) || defined(CONFIG_ARCH_LS1088A)
+-#if  defined(CONFIG_TARGET_LS1048ATG) || defined(CONFIG_TARGET_FB_LS1048A_PUMA)
++#if  defined(CONFIG_TARGET_LS1048ATG) || defined(CONFIG_TARGET_FB_LS1048A_PUMA) || \
++  defined(CONFIG_TARGET_FB_LS1048A_PUMA2)
+ #else
+ 	void __iomem *dcsr = (void __iomem *)DCSR_BASE;
+ 
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index 98d59c1ad3..029b0f6f54 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -228,6 +228,7 @@ dtb-$(CONFIG_FSL_LSCH3) += fsl-ls2080a-qds.dtb \
+ 	fsl-ls1088a-rdb.dtb \
+ 	fsl-ls1048a-tg.dtb \
+ 	fb-ls1048a-puma.dtb \
++	fb-ls1048a-puma-proto2.dtb \
+ 	fsl-ls1088a-qds.dtb \
+ 	fsl-lx2160a-rdb.dtb \
+ 	fsl-lx2160a-qds.dtb
+diff --git a/arch/arm/dts/fb-ls1048a-puma-proto2.dts b/arch/arm/dts/fb-ls1048a-puma-proto2.dts
+index a8ebcd0da7..a84ed51f17 100644
+--- a/arch/arm/dts/fb-ls1048a-puma-proto2.dts
++++ b/arch/arm/dts/fb-ls1048a-puma-proto2.dts
+@@ -11,7 +11,7 @@
+ #include "fsl-ls1088a.dtsi"
+ 
+ / {
+-	model = "NXP TG Board LS1048A (PUMA)";
++	model = "NXP TG Board LS1048A (PUMA Proto 2)";
+ 	compatible = "fsl,ls1088a-rdb", "fsl,ls1088a";
+ 	aliases {
+ 		spi0 = &qspi;
+diff --git a/board/freescale/common/sys_eeprom_fdt.c b/board/freescale/common/sys_eeprom_fdt.c
+index 55c71709f8..bd5d886037 100644
+--- a/board/freescale/common/sys_eeprom_fdt.c
++++ b/board/freescale/common/sys_eeprom_fdt.c
+@@ -6,6 +6,11 @@
+ #include <i2c.h>
+ #include <linux/ctype.h>
+ 
++#ifdef CONFIG_TARGET_FB_LS1048A_PUMA2
++#undef MAX_NUM_PORTS
++#define MAX_NUM_PORTS	6
++#endif
++
+ #ifndef MAX_NUM_PORTS
+ #define MAX_NUM_PORTS	2
+ #endif
+diff --git a/board/freescale/fb_ls1048a_puma2/Kconfig b/board/freescale/fb_ls1048a_puma2/Kconfig
+index 68dcfb5522..d3cffd6c61 100644
+--- a/board/freescale/fb_ls1048a_puma2/Kconfig
++++ b/board/freescale/fb_ls1048a_puma2/Kconfig
+@@ -1,7 +1,7 @@
+-if TARGET_FB_LS1048A_PUMA
++if TARGET_FB_LS1048A_PUMA2
+ 
+ config SYS_BOARD
+-	default "fb_ls1048a_puma"
++	default "fb_ls1048a_puma2"
+ 
+ config SYS_VENDOR
+ 	default "freescale"
+@@ -10,7 +10,7 @@ config SYS_SOC
+ 	default "fsl-layerscape"
+ 
+ config SYS_CONFIG_NAME
+-	default "fb_ls1048a_puma"
++	default "fb_ls1048a_puma2"
+ 
+ if FSL_LS_PPA
+ config SYS_LS_PPA_FW_ADDR
+diff --git a/board/freescale/fb_ls1048a_puma2/MAINTAINERS b/board/freescale/fb_ls1048a_puma2/MAINTAINERS
+index 24f163b8f7..81c7ee9043 100644
+--- a/board/freescale/fb_ls1048a_puma2/MAINTAINERS
++++ b/board/freescale/fb_ls1048a_puma2/MAINTAINERS
+@@ -4,6 +4,12 @@ F:	board/freescale/fb_ls1048a_puma/
+ F:	include/configs/fb_ls1048a_puma.h
+ F:	configs/fb-ls1048a-puma_qspi_defconfig
+ 
++FB_LS1048A_PUMA2 BOARD
++S:	Maintained
++F:	board/freescale/fb_ls1048a_puma2/
++F:	include/configs/fb_ls1048a_puma2.h
++F:	configs/fb-ls1048a-puma2_qspi_defconfig
++
+ LS1088AQDS BOARD
+ M:	Prabhakar Kushwaha <prabhakar.kushwaha@nxp.com>
+ M:	Ashish Kumar <Ashish.Kumar@nxp.com>
+diff --git a/board/freescale/fb_ls1048a_puma2/Makefile b/board/freescale/fb_ls1048a_puma2/Makefile
+index 8d5f62d79c..b4644bcd14 100644
+--- a/board/freescale/fb_ls1048a_puma2/Makefile
++++ b/board/freescale/fb_ls1048a_puma2/Makefile
+@@ -2,8 +2,8 @@
+ #
+ # Copyright 2017 NXP
+ 
+-obj-y += fb_ls1048a_puma.o
++obj-y += fb_ls1048a_puma2.o
+ obj-y += uboot_ddr1.o
+ ifndef CONFIG_SPL_BUILD
+-obj-$(CONFIG_TARGET_FB_LS1048A_PUMA) += eth_fb_ls1048a_puma.o
++obj-$(CONFIG_TARGET_FB_LS1048A_PUMA2) += eth_fb_ls1048a_puma2.o
+ endif
+diff --git a/board/freescale/fb_ls1048a_puma2/eth_fb_ls1048a_puma2.c b/board/freescale/fb_ls1048a_puma2/eth_fb_ls1048a_puma2.c
+index 42e621bb9a..7bcbf3064f 100644
+--- a/board/freescale/fb_ls1048a_puma2/eth_fb_ls1048a_puma2.c
++++ b/board/freescale/fb_ls1048a_puma2/eth_fb_ls1048a_puma2.c
+@@ -40,8 +40,14 @@ int board_eth_init(bd_t *bis)
+ 	/* Register the EMI 1 */
+ 	fm_memac_mdio_init(bis, &mdio_info);
+ 
++	/* Register the EMI 2 */
++	reg = (struct memac_mdio_controller *)CONFIG_SYS_FSL_WRIOP1_MDIO2;
++	mdio_info.regs = reg;
++	mdio_info.name = DEFAULT_WRIOP_MDIO2_NAME;
++	fm_memac_mdio_init(bis, &mdio_info);
++
+ 	switch (srds_s1) {
+-	case 0x15:
++	case 0x19:
+ 		/*
+ 		 * XFI does not need a PHY to work, but to avoid U-boot use
+ 		 * default PHY address which is zero to a MAC when it found
+@@ -49,11 +55,16 @@ int board_eth_init(bd_t *bis)
+ 		 * MAC error.
+ 		 */
+ 		wriop_set_phy_address(WRIOP1_DPMAC2, 0, 0x0A);  /* XFI */
+-		wriop_set_phy_address(WRIOP1_DPMAC7, 0, 2);  /* SGMII */
++		wriop_set_phy_address(WRIOP1_DPMAC3, 0, 2);  /* SGMII */
+ 
++		wriop_set_phy_address(WRIOP1_DPMAC7, 0, QSGMII2_PORT1_PHY_ADDR);
++		wriop_set_phy_address(WRIOP1_DPMAC8, 0, QSGMII2_PORT2_PHY_ADDR);
++		wriop_set_phy_address(WRIOP1_DPMAC9, 0, QSGMII2_PORT3_PHY_ADDR);
++		wriop_set_phy_address(WRIOP1_DPMAC10, 0, QSGMII2_PORT4_PHY_ADDR);
+ 		break;
++
+ 	default:
+-		printf("SerDes1 protocol 0x%x is not supported on FB-LS1048A-PUMA\n",
++		printf("SerDes1 protocol 0x%x is not supported on FB-LS1048A-PUMA Proto 2\n",
+ 		       srds_s1);
+ 		break;
+ 	}
+@@ -65,7 +76,11 @@ int board_eth_init(bd_t *bis)
+ 			dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO1_NAME);
+ 			wriop_set_mdio(i, dev);
+ 			break;
+-		default:
++		case PHY_INTERFACE_MODE_QSGMII:
++			dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO2_NAME);
++			wriop_set_mdio(i, dev);
++			break;
++ 		default:
+ 			break;
+ 		}
+ 	}
+diff --git a/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c b/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c
+index 35cdd2bfa3..7398b0fedb 100644
+--- a/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c
++++ b/board/freescale/fb_ls1048a_puma2/fb_ls1048a_puma2.c
+@@ -188,7 +188,7 @@ int checkboard(void)
+ #endif
+ 	char buf[64];
+ 
+-	printf("Board: FB-LS1048A-PUMA, ");
++	printf("Board: FB-LS1048A-PUMA Proto 2, ");
+ 
+ 	memset((u8 *)buf, 0x00, ARRAY_SIZE(buf));
+ 
+diff --git a/configs/fb-ls1048a-puma2_qspi_defconfig b/configs/fb-ls1048a-puma2_qspi_defconfig
+index 3dd30fa1c1..cacf79fe2b 100644
+--- a/configs/fb-ls1048a-puma2_qspi_defconfig
++++ b/configs/fb-ls1048a-puma2_qspi_defconfig
+@@ -1,5 +1,5 @@
+ CONFIG_ARM=y
+-CONFIG_TARGET_FB_LS1048A_PUMA=y
++CONFIG_TARGET_FB_LS1048A_PUMA2=y
+ CONFIG_SYS_TEXT_BASE=0x20010000
+ CONFIG_FSL_LS_PPA=y
+ CONFIG_QSPI_AHB_INIT=y
+@@ -28,7 +28,7 @@ CONFIG_MP=y
+ CONFIG_CMD_DHCP=y
+ CONFIG_CMD_PING=y
+ CONFIG_OF_CONTROL=y
+-CONFIG_DEFAULT_DEVICE_TREE="fb-ls1048a-puma"
++CONFIG_DEFAULT_DEVICE_TREE="fb-ls1048a-puma-proto2"
+ CONFIG_ENV_IS_IN_SPI_FLASH=y
+ CONFIG_NET_RANDOM_ETHADDR=y
+ CONFIG_DM=y
+diff --git a/drivers/i2c/i2c_core.c b/drivers/i2c/i2c_core.c
+index 234277a299..7921388afb 100644
+--- a/drivers/i2c/i2c_core.c
++++ b/drivers/i2c/i2c_core.c
+@@ -272,7 +272,15 @@ int i2c_set_bus_num(unsigned int bus)
+  */
+ int i2c_probe(uint8_t chip)
+ {
+-	return I2C_ADAP->probe(I2C_ADAP, chip);
++	int ret;
++	ret = I2C_ADAP->probe(I2C_ADAP, chip);
++
++	/* Adding 100ms delay when writing to broadcast address of TPS23861 (0x30)
++	 * to avoid receiving extra acks.
++	 */
++	if (0x30 == chip)
++		udelay(100000);
++	return ret;
+ }
+ 
+ /*
+diff --git a/include/configs/fb_ls1048a_puma2.h b/include/configs/fb_ls1048a_puma2.h
+index 1fde1a0a2b..2f655b6422 100644
+--- a/include/configs/fb_ls1048a_puma2.h
++++ b/include/configs/fb_ls1048a_puma2.h
+@@ -3,8 +3,8 @@
+  * Copyright 2017 NXP
+  */
+ 
+-#ifndef __FB_LS1048A_PUMA_H
+-#define __FB_LS1048A_PUMA_H
++#ifndef __FB_LS1048A_PUMA2_H
++#define __FB_LS1048A_PUMA2_H
+ 
+ #include "ls1088a_common.h"
+ 
+@@ -157,7 +157,7 @@
+ 	"tg_mtd_b=2\0"         \
+ 	"tg_mtd_recovery=3\0"  \
+ 	"tg_rootfs_mtd=1\0"    \
+-	"tg_fitimage_conf=5\0" \
++	"tg_fitimage_conf=6\0" \
+ 	"tg_bootargs_mmc=setenv bootargs console=ttyS0,115200 earlycon=uart8250,mmio,0x21c0600 rootfstype=ext4 root=/dev/mmcblk0p${tg_active_mtd} rw rootwait lpj=250000 mtdparts=20c0000.quadspi:${tg_mtdparts} ${tg_extra_kernel_args}\0" \
+ 	"tg_load_mc=sf probe 0; sf read 0x80000000 0xe6000 0x100000; sf read 0x80100000 0xe4000 0x2000; fsl_mc start mc 0x80000000 0x80100000\0" \
+ 	"tg_apply_mc_dpl=sf read 0x80200000 0xe2000 0x2000; fsl_mc apply dpl 0x80200000\0" \
+@@ -182,6 +182,10 @@
+ 	"\0"
+ 
+ /* MAC/PHY configuration */
++#define QSGMII2_PORT1_PHY_ADDR		0x04
++#define QSGMII2_PORT2_PHY_ADDR		0x05
++#define QSGMII2_PORT3_PHY_ADDR		0x06
++#define QSGMII2_PORT4_PHY_ADDR		0x07
+ #undef CONFIG_RESET_PHY_R
+ #define CONFIG_RESET_PHY_R
+ #ifdef CONFIG_FSL_MC_ENET
+@@ -189,10 +193,11 @@
+ #define CONFIG_PHY_GIGE
+ #define CONFIG_PHYLIB
+ 
++#define CONFIG_PHY_MARVELL
+ #define CONFIG_PHY_REALTEK
+ #define PHY_ADDR			0x2
+ 
+-#define CONFIG_ETHPRIME		"DPMAC7@sgmii"
++#define CONFIG_ETHPRIME		"DPMAC3@sgmii"
+ #define CONFIG_PHY_GIGE
+ #endif
+ #endif
+@@ -218,4 +223,4 @@
+ 
+ #include <asm/fsl_secure_boot.h>
+ 
+-#endif /* __FB_LS1048A_PUMA_H */
++#endif /* __FB_LS1048A_PUMA2_H */
+-- 
+2.17.1
+

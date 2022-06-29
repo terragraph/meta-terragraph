@@ -1,0 +1,24 @@
+From 4431f719137fd32ffc220b09643d06b4539fa473 Mon Sep 17 00:00:00 2001
+From: Jingyi Yang <girasoley@fb.com>
+Date: Tue, 25 Oct 2016 13:55:09 -0700
+Subject: [PATCH] Do not install the data file
+
+---
+ setup.py | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/setup.py b/setup.py
+index 6e19911..d8345c9 100644
+--- a/setup.py
++++ b/setup.py
+@@ -111,7 +111,6 @@ setup(
+     ],
+ 
+     py_modules=['hexdump'],
+-    data_files=[('data', ['data/hexfile.bin'])],
+ 
+     long_description=get_description('README.txt'),
+ 
+-- 
+2.9.3
+

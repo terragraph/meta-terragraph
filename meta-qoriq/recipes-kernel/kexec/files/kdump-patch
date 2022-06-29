@@ -1,0 +1,34 @@
+Index: 2.0.16-r1/kdump
+===================================================================
+--- 2.0.16-r1.orig/kdump
++++ 2.0.16-r1/kdump
+@@ -58,7 +58,8 @@ do_save_vmcore()
+ 	mkdir -p ${KDUMP_VMCORE_PATH}
+ 	echo "Saving a vmcore to ${KDUMP_VMCORE_PATH}."
+
+-	${MAKEDUMPFILE} ${MAKEDUMPFILE_ARGS} /proc/vmcore ${KDUMP_VMCORE_PATH}/vmcore-"`date +"%H:%M:%S"`"
++	/bin/rm ${KDUMP_VMCORE_PATH}/vmcore 2> /dev/null
++	${MAKEDUMPFILE} ${MAKEDUMPFILE_ARGS} /proc/vmcore ${KDUMP_VMCORE_PATH}/vmcore
+ #	cp --sparse=always /proc/vmcore ${KDUMP_VMCORE_PATH}/vmcore-"`date +"%H:%M:%S"`"
+ 	rc=$?
+ 	if [ ${rc} == 0 ]; then
+@@ -127,6 +128,19 @@ case "$1" in
+ 		do_save_vmcore
+ 		reboot
+ 	else
++		if [ -e "${KDUMP_VMCORE_PATH}"/vmcore ]; then
++			# If kernel crashed and rebooted give vmcore a timestamp
++			# now, since when crashkernel running date not available
++			touch "${KDUMP_VMCORE_PATH}"/vmcore
++			mv "${KDUMP_VMCORE_PATH}"/vmcore "${KDUMP_VMCORE_PATH}"/vmcore."$(date +%Y%m%d_%H%M%S)"
++
++			# Keep only last ten of them
++			cnt=$(/bin/ls -1 "${KDUMP_VMCORE_PATH}"/vmcore* | wc -l)
++		 	if [ "$cnt" -gt 10 ]; then
++				del_cnt=$(expr "$cnt" - 10)
++				/bin/ls -1t "${KDUMP_VMCORE_PATH}"/vmcore* | tail -n "${del_cnt}" | xargs /bin/rm -f
++			fi
++		fi
+ 		do_start
+ 	fi
+ 	;;

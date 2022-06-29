@@ -1,0 +1,39 @@
+From e2d26d9d2ef37f4aa4e9f38984df8b935db6a36d Mon Sep 17 00:00:00 2001
+From: vandwalle <vandwalle@fb.com>
+Date: Sat, 25 Apr 2020 17:34:00 -0700
+Subject: [PATCH] Exit instead of crash, when heap alloc fails
+
+---
+ src/vppinfra/dlmalloc.c     | 2 ++
+ src/vppinfra/mem_dlmalloc.c | 2 +-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/vppinfra/dlmalloc.c b/src/vppinfra/dlmalloc.c
+index 36c80b09b..ca1d63d2a 100644
+--- a/src/vppinfra/dlmalloc.c
++++ b/src/vppinfra/dlmalloc.c
+@@ -4046,6 +4046,8 @@ mspace create_mspace(size_t capacity, int locked) {
+       m = init_user_mstate(tbase, tsize);
+       m->seg.sflags = USE_MMAP_BIT;
+       set_lock(m, locked);
++    } else {
++      fprintf(stderr, "Failed to create memspace size %lu, %s\n", tsize, strerror(errno));
+     }
+   }
+   return (mspace)m;
+diff --git a/src/vppinfra/mem_dlmalloc.c b/src/vppinfra/mem_dlmalloc.c
+index bc6561a73..1a23646f2 100644
+--- a/src/vppinfra/mem_dlmalloc.c
++++ b/src/vppinfra/mem_dlmalloc.c
+@@ -256,7 +256,7 @@ clib_mem_init_internal (void *base, uword size,
+ 
+   clib_mem_set_heap (h);
+ 
+-  if (mheap_trace_main.lock == 0)
++  if (h && mheap_trace_main.lock == 0)
+     clib_spinlock_init (&mheap_trace_main.lock);
+ 
+   return h;
+-- 
+2.30.2
+

@@ -1,0 +1,31 @@
+#!/bin/sh
+
+# load tg config environment variables
+. /usr/sbin/config_get_env.sh
+
+LOGFILE="/tmp/settz.log"
+TZ_DATA_BASE="/usr/share/zoneinfo"
+
+if [ "$TIMEZONE" = "" ]; then
+  echo "No TZ set in config. Ensuring UTC is set" | tee $LOGFILE >&2
+  TIMEZONE="UTC"
+fi
+
+LINK_DST="$TZ_DATA_BASE/$TIMEZONE"
+LINK="/data/etc/localtime"
+LN="/bin/ln -fs"
+
+if [ ! -e $LINK_DST ]
+then
+  echo "ERROR: $LINK_DST does not exist. Not touching $LINK" | tee -a $LOGFILE >&2
+  exit 1
+fi
+
+$LN $LINK_DST $LINK
+if [ $? -ne 0 ]
+then
+  echo "Failed to $LN $LINK_DST $LINK" | tee -a $LOGFILE >&2
+  exit 2
+fi
+
+echo "Timezone successfully set to $TIMEZONE - $(/usr/bin/file $LINK)" | tee -a $LOGFILE >&2

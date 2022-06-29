@@ -1,0 +1,420 @@
+From 891d2d14ae9ae43dfb3186938c619c24cda9638e Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Mon, 2 Apr 2018 15:14:58 -0700
+Subject: [PATCH 19/20] Read NIC mac addresses from EEPROM on TG boards.
+
+Store MAC addresses for WLAN and Ethernet port in EEPROM
+and restore them from there if missing in environment.
+While there, add version information to the root of the
+FDT tree to allow for future format changes. Restore
+TG_IF2IF flag from eeprom as well, while at it.
+---
+ board/freescale/common/Kconfig          |   4 +
+ board/freescale/common/Makefile         |   1 +
+ board/freescale/common/sys_eeprom_fdt.c | 302 ++++++++++++++++++++++++
+ cmd/fdt.c                               |   4 +-
+ cmd/mac.c                               |   5 +
+ common/board_r.c                        |   2 +-
+ configs/ls1048atg_qspi_defconfig        |   1 +
+ 7 files changed, 316 insertions(+), 3 deletions(-)
+ create mode 100644 board/freescale/common/sys_eeprom_fdt.c
+
+diff --git a/board/freescale/common/Kconfig b/board/freescale/common/Kconfig
+index 8b89c10aba..ee156eb256 100644
+--- a/board/freescale/common/Kconfig
++++ b/board/freescale/common/Kconfig
+@@ -36,3 +36,7 @@ config VOL_MONITOR_LTC3882_SET
+ 	help
+ 	 This option enables LTC3882 voltage monitor set
+ 	 functionality. It is used by common VID driver.
++
++config FDT_EEPROM
++	default n
++	bool "EEPROM contents stored as a device tree"
+diff --git a/board/freescale/common/Makefile b/board/freescale/common/Makefile
+index b02ca445e9..ed7ef5c3d2 100644
+--- a/board/freescale/common/Makefile
++++ b/board/freescale/common/Makefile
+@@ -27,6 +27,7 @@ obj-$(CONFIG_FSL_QIXIS)	+= qixis.o
+ obj-$(CONFIG_PQ_MDS_PIB)	+= pq-mds-pib.o
+ ifndef CONFIG_SPL_BUILD
+ obj-$(CONFIG_ID_EEPROM)	+= sys_eeprom.o
++obj-$(CONFIG_FDT_EEPROM)	+= sys_eeprom_fdt.o
+ endif
+ obj-$(CONFIG_FSL_SGMII_RISER)	+= sgmii_riser.o
+ ifndef CONFIG_RAMBOOT_PBL
+diff --git a/board/freescale/common/sys_eeprom_fdt.c b/board/freescale/common/sys_eeprom_fdt.c
+new file mode 100644
+index 0000000000..55c71709f8
+--- /dev/null
++++ b/board/freescale/common/sys_eeprom_fdt.c
+@@ -0,0 +1,302 @@
++/*
++ */
++
++#include <common.h>
++#include <command.h>
++#include <i2c.h>
++#include <linux/ctype.h>
++
++#ifndef MAX_NUM_PORTS
++#define MAX_NUM_PORTS	2
++#endif
++
++/* Eeprom stored in fdt format */
++u8 eeprom_fdt[2048]; /* assume max of 2K eeprom */
++
++static int prog_eeprom(void);
++
++
++/* Set to 1 if we've read EEPROM into memory */
++static int has_been_read = 0;
++
++/**
++ * show_eeprom - display the contents of the EEPROM
++ */
++static void show_eeprom(void)
++{
++#ifdef DEBUG
++	int i;
++#endif
++
++	/* just print the device tree */
++	set_working_fdt_addr((ulong) eeprom_fdt);
++
++	fdt_print("/", NULL, 5);
++
++#ifdef DEBUG
++	printf("EEPROM dump: (0x%x bytes)\n", sizeof(eeprom_fdt));
++	for (i = 0; i < sizeof(eeprom_fdt); i++) {
++		if ((i % 16) == 0)
++			printf("%02X: ", i);
++		printf("%02X ", eeprom_fdt[i]);
++		if (((i % 16) == 15) || (i == sizeof(eeprom_fdt) - 1))
++			printf("\n");
++	}
++#endif
++}
++
++/**
++ * read_eeprom - read the EEPROM into memory
++ */
++static int read_eeprom(void)
++{
++	int ret;
++	u32 crc;
++#ifdef CONFIG_SYS_EEPROM_BUS_NUM
++	unsigned int bus;
++#endif
++
++	if (has_been_read)
++		return 0;
++
++#ifdef CONFIG_SYS_EEPROM_BUS_NUM
++	bus = i2c_get_bus_num();
++	i2c_set_bus_num(CONFIG_SYS_EEPROM_BUS_NUM);
++#endif
++
++	ret = i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR, 0, CONFIG_SYS_I2C_EEPROM_ADDR_LEN,
++		(void *)eeprom_fdt, sizeof(eeprom_fdt));
++
++#ifdef CONFIG_SYS_EEPROM_BUS_NUM
++	i2c_set_bus_num(bus);
++#endif
++	if (ret) {
++		printf("ERROR: Couldnot read eeprom \n");
++		goto done;
++	}
++
++	/* set eeprom_fdt variable.  Then from uboot prompt we can do
++	 * "fdt addr $eeprom_fdt" and manipulate eeprom
++	 * */
++	env_set_hex("eeprom_fdt", (ulong) eeprom_fdt);
++
++	/* Is the fdt ok ?.  if not init */
++	if (fdt_check_header(eeprom_fdt)) {
++		printf("EEPROM FDT Corrupted. Reiniting: ");
++
++		if (fdt_create_empty_tree(eeprom_fdt, sizeof(eeprom_fdt)) ||
++			(fdt_add_subnode(eeprom_fdt, 0, "board") < 0) ||
++			prog_eeprom()) {
++
++			printf("Failed\n");
++			ret = -1;
++			goto done;
++		}
++		printf("Success\n");
++	}
++
++	crc = crc32(0, eeprom_fdt, sizeof(eeprom_fdt));
++	printf("EERPOM read. CRC: %x \n", crc);
++
++#ifdef DEBUG
++	show_eeprom();
++#endif
++
++done:
++	has_been_read = (ret == 0) ? 1 : 0;
++	return ret;
++}
++
++/**
++ * prog_eeprom - write the EEPROM from memory
++ */
++static int prog_eeprom(void)
++{
++	int ret = 0;
++	int i;
++	void *p;
++#ifdef CONFIG_SYS_EEPROM_BUS_NUM
++	unsigned int bus;
++#endif
++	u32 in_crc, out_crc;
++
++#ifdef CONFIG_SYS_EEPROM_BUS_NUM
++	bus = i2c_get_bus_num();
++	i2c_set_bus_num(CONFIG_SYS_EEPROM_BUS_NUM);
++#endif
++	/*
++	 * The AT24C02 datasheet says that data can only be written in page
++	 * mode, which means 8 bytes at a time, and it takes up to 5ms to
++	 * complete a given write.
++	 */
++	for (i = 0, p = eeprom_fdt; i < sizeof(eeprom_fdt); i += 8, p += 8) {
++		ret = i2c_write(CONFIG_SYS_I2C_EEPROM_ADDR, i, CONFIG_SYS_I2C_EEPROM_ADDR_LEN,
++				p, min((int)(sizeof(eeprom_fdt) - i), 8));
++		if (ret)
++			break;
++		udelay(5000);	/* 5ms write cycle timing */
++	}
++
++	if (!ret) {
++		/* Verify the write by reading back and comparing CRCS  */
++		in_crc = crc32(0, eeprom_fdt, sizeof(eeprom_fdt));
++		has_been_read = 0;
++		ret = read_eeprom();
++		out_crc = crc32(0, eeprom_fdt, sizeof(eeprom_fdt));
++		if (!ret && (in_crc != out_crc))
++			ret = -1;
++	}
++
++#ifdef CONFIG_SYS_EEPROM_BUS_NUM
++	i2c_set_bus_num(bus);
++#endif
++
++	if (ret) {
++		printf("Programming failed.\n");
++		has_been_read = 0;
++		return -1;
++	}
++
++	printf("Programming passed.\n");
++	return 0;
++}
++
++/* use boardinfo to read/write fdt eeprom */
++int do_boardinfo(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
++{
++	int ret;
++
++	if (argc == 1) {
++		ret = read_eeprom();
++		if (ret)
++			return ret;
++
++		show_eeprom();
++		return 0;
++	}
++	/* Bare commands */
++	if (argc == 2) {
++		if (strcmp(argv[1], "read") == 0) {
++			/* force read */
++			has_been_read = 0;
++			return read_eeprom();
++		}
++		if (strcmp(argv[1], "dump") == 0) {
++			ret  = read_eeprom();
++			if (ret)
++				return ret;
++			show_eeprom();
++			return 0;
++		}
++		if (strcmp(argv[1], "save") == 0) {
++			return prog_eeprom();
++		}
++	}
++	/* Cannot recognize the command at all */
++	return cmd_usage(cmdtp);
++}
++
++U_BOOT_CMD(
++	   boardinfo, 2, 1,  do_boardinfo,
++	   "display and program the system ID and MAC addresses in EEPROM",
++	   "boardinfo read\n"
++	   "    - read EEPROM content into memory\n"
++	   "boardinfo dump\n"
++	   "    - dump EEPROM contents \n"
++	   "boardinfo save\n"
++	   "    - save EEPROM contents \n"
++	   );
++
++
++
++/**
++ * mac_read_from_eeprom - read the MAC addresses from EEPROM
++ *
++ * This function reads the MAC addresses from EEPROM and sets the
++ * appropriate environment variables for each one read.
++ *
++ * The environment variables are only set if they haven't been set already.
++ * This ensures that any user-saved variables are never overwritten.
++ *
++ * This function must be called after relocation.
++ *
++ */
++int mac_read_from_eeprom(void)
++{
++	uchar enetaddr[ARP_HLEN];
++	char fdtpath[sizeof("/board/ethernet/nicXXX")];
++	int nodeoffset, len, i;
++
++	puts("EEPROM: ");
++
++	if (read_eeprom()) {
++		printf("Read failed.\n");
++		return 0;
++	}
++
++	/*
++	 * Read nic nodes in eeprom and set ethaddr with mac-address properties
++	 * from those nodes.
++	 */
++	set_working_fdt_addr((ulong) eeprom_fdt);
++
++	/* Check the EEPROM format version */
++	do {
++		const fdt32_t *val;
++
++		val = fdt_getprop(working_fdt, 0, "version", &len);
++		if (val == NULL || len != sizeof(*val))
++			return (0);
++
++		if (fdt32_to_cpu(*val) != 1)
++			return (0);
++	} while (0);
++
++	/* Check and restore the IF2IF flag */
++	if (env_get("tg_if2if") == NULL) {
++		const fdt32_t *val;
++		uint32_t if2if_flag;
++
++		/* By default, we are RF */
++		if2if_flag = 0;
++
++		/* .. but EEPROM can say otherwise */
++		nodeoffset = fdt_path_offset(working_fdt, "/board");
++		if (nodeoffset >= 0) {
++			val = fdt_getprop(working_fdt, nodeoffset, "tg-if2if",
++				&len);
++			if (val != NULL && len == sizeof(*val))
++				if2if_flag = fdt32_to_cpu(*val);
++		}
++
++		env_set_ulong("tg_if2if", if2if_flag);
++	}
++
++	for (i = 0; i < MAX_NUM_PORTS; i++) {
++		const void *nodep;
++
++		/* Only set the MAC if not already present in U-Boot */
++		if (eth_env_get_enetaddr_by_index("eth", i, enetaddr))
++			continue;
++
++		/* Attempt to get the MAC from EEPROM */
++		sprintf(fdtpath, "/board/ethernet/eth%d", i);
++
++		nodeoffset = fdt_path_offset(working_fdt, fdtpath);
++		if (nodeoffset < 0)
++			continue;
++
++		nodep = fdt_getprop(working_fdt, nodeoffset,
++				"mac-address", &len);
++		if (nodep == NULL || len != ARP_HLEN_ASCII + 1)
++			continue;
++
++		/* Check for valid MAC address string */
++		eth_parse_enetaddr(nodep, enetaddr);
++		if (!is_valid_ethaddr(enetaddr))
++			continue;
++
++		eth_env_set_enetaddr_by_index("eth", i, enetaddr);
++	}
++	return 0;
++}
+diff --git a/cmd/fdt.c b/cmd/fdt.c
+index 28de467f96..bef8dc074e 100644
+--- a/cmd/fdt.c
++++ b/cmd/fdt.c
+@@ -28,7 +28,7 @@ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static int fdt_valid(struct fdt_header **blobp);
+ static int fdt_parse_prop(char *const*newval, int count, char *data, int *len);
+-static int fdt_print(const char *pathp, char *prop, int depth);
++int fdt_print(const char *pathp, char *prop, int depth);
+ static int is_printable_string(const void *data, int len);
+ 
+ /*
+@@ -946,7 +946,7 @@ static void print_data(const void *data, int len)
+  * Recursively print (a portion of) the working_fdt.  The depth parameter
+  * determines how deeply nested the fdt is printed.
+  */
+-static int fdt_print(const char *pathp, char *prop, int depth)
++int fdt_print(const char *pathp, char *prop, int depth)
+ {
+ 	static char tabs[MAX_LEVEL+1] =
+ 		"\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t"
+diff --git a/cmd/mac.c b/cmd/mac.c
+index 4227d10936..a558b6e96e 100644
+--- a/cmd/mac.c
++++ b/cmd/mac.c
+@@ -7,6 +7,9 @@
+ #include <common.h>
+ #include <command.h>
+ 
++#ifndef CONFIG_FDT_EEPROM
++/* When using eeprom in fdt format ignore this */
++
+ extern int do_mac(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[]);
+ 
+ U_BOOT_CMD(
+@@ -30,3 +33,5 @@ U_BOOT_CMD(
+ 	"mac X string\n"
+ 	"    - program MAC addr for port X [X=0,1..] to colon separated string"
+ );
++
++#endif
+diff --git a/common/board_r.c b/common/board_r.c
+index 1842bd720b..9b48394a61 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -797,7 +797,7 @@ static init_fnc_t init_sequence_r[] = {
+ #endif
+ 	INIT_FUNC_WATCHDOG_RESET
+ 	initr_secondary_cpu,
+-#if defined(CONFIG_ID_EEPROM) || defined(CONFIG_SYS_I2C_MAC_OFFSET)
++#if defined(CONFIG_ID_EEPROM) || defined(CONFIG_FDT_EEPROM) || defined(CONFIG_SYS_I2C_MAC_OFFSET)
+ 	mac_read_from_eeprom,
+ #endif
+ 	INIT_FUNC_WATCHDOG_RESET
+diff --git a/configs/ls1048atg_qspi_defconfig b/configs/ls1048atg_qspi_defconfig
+index 0ba14eca1e..89f659ca2c 100644
+--- a/configs/ls1048atg_qspi_defconfig
++++ b/configs/ls1048atg_qspi_defconfig
+@@ -60,3 +60,4 @@ CONFIG_WDT_SP805=y
+ CONFIG_CMD_GPT=y
+ CONFIG_SYS_LS_PPA_FW_ADDR=0x200D0000
+ CONFIG_CONS_INDEX=2
++CONFIG_FDT_EEPROM=y
+-- 
+2.17.1
+

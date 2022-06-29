@@ -1,0 +1,86 @@
+#!/usr/bin/python3
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+import mmap
+import os
+import struct
+import sys
+
+WRIOP_BASE = 0x8c07000
+PORT_SIZE = 0x4000
+NUM_PORTS = 10
+
+REGS = [
+    # offset, size, name
+    (0x120, 8, "RFRM"),
+    (0x128, 8, "RFCS"),
+    (0x138, 8, "RERR"),
+    (0x140, 8, "RUCA"),
+    (0x158, 8, "RDRP"),
+    (0x160, 8, "RPKT"),
+    (0x198, 8, "R1518"),
+    (0x1a0, 8, "R1519X"),
+    (0x1a8, 8, "ROVR"),
+    (0x1c8, 8, "RDRNTP"),
+    (0x218, 8, "TXPF"),
+]
+
+def read_port(mm, port):
+    regs = []
+    for (offset, size, name) in REGS:
+        mm.seek(port * PORT_SIZE + offset)
+
+        if size == 4:
+            val = struct.unpack("I", mm.read(4))[0]
+        elif size == 8:
+            val_lo = struct.unpack("I", mm.read(4))[0]
+            val_hi = struct.unpack("I", mm.read(4))[0]
+            val = val_lo | (val_hi << 32)
+        else:
+            print(f"Unsupported register size {size} for reg {name} offset {offset:#x}")
+            sys.exit(1)
+
+        regs.append(val)
+
+    return regs
+
+def print_regs(regs):
+    for (i, val) in enumerate(regs):
+        (offset, _, name) = REGS[i]
+        print(f"{offset:>#6x} {name:<7} {val}")
+
+def main():
+    if len(sys.argv) == 1:
+        print(f"Usage: {sys.argv[0]} port_number_1_based")
+        sys.exit(1)
+
+    # Convert 1-based to 0-based port
+    port = int(sys.argv[1]) - 1
+
+    if not 0 <= port < NUM_PORTS:
+        print(f"Port {port+1} too large, max available {NUM_PORTS}")
+        sys.exit(1)
+
+    f = os.open("/dev/mem", os.O_SYNC | os.O_RDONLY)
+    mm = mmap.mmap(
+        f,
+        NUM_PORTS * PORT_SIZE,
+        mmap.MAP_SHARED,
+        mmap.PROT_READ,
+        offset=WRIOP_BASE,
+    )
+
+    regs = read_port(mm, port)
+    print_regs(regs)
+
+    mm.close()
+    os.close(f)
+
+
+if __name__ == "__main__":
+    main()
+

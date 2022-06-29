@@ -1,0 +1,11 @@
+--- a/lib/resty/prettycjson.lua
++++ b/lib/resty/prettycjson.lua
+@@ -18,7 +18,7 @@
+             j = j - 1
+             if p == "{" or p == "[" then
+                 i = i - 1
+-                r[i] = cat{ rep(id, j), p, c }
++                r[i] = cat{ p, c }
+             else
+                 r[i] = cat{ lf, rep(id, j), c }
+             end

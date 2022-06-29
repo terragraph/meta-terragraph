@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+DELAY=10
+
+sleep ${DELAY}
+
+while [ : ]; do
+
+launch_mobd=0
+use_socket="true"
+
+# TODO logic for enabling mobd
+
+if [ "${launch_mobd}" = "0" ]; then
+  sleep ${DELAY}
+  continue
+fi
+
+exec /usr/sbin/mobd -logtostderr --socket="$use_socket" 2>&1
+
+done

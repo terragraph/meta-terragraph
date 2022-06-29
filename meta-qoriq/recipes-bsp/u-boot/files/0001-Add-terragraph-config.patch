@@ -1,0 +1,27 @@
+From 94fb368c6687f9b8dbb8868499c67e4db18d88ac Mon Sep 17 00:00:00 2001
+From: Sudhakar Mamillapalli <sudhakar@fb.com>
+Date: Tue, 14 Nov 2017 18:41:54 -0800
+Subject: [PATCH 01/21] Add terragraph config
+
+---
+ Kconfig | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/Kconfig b/Kconfig
+index d96e3373c1..0384ef62b3 100644
+--- a/Kconfig
++++ b/Kconfig
+@@ -122,6 +122,10 @@ config SYS_BOOT_GET_KBD
+ 	  Enables allocating and saving a kernel copy of the bd_info in
+ 	  space between "bootm_low" and "bootm_low" + BOOTMAPSZ.
+ 
++config TERRAGRAPH
++	bool "Select Terragraph specific feature"
++	default n
++
+ config SYS_MALLOC_F
+ 	bool "Enable malloc() pool before relocation"
+ 	default y if DM
+-- 
+2.17.1
+

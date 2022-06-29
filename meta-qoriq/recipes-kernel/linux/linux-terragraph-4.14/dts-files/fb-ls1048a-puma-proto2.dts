@@ -1,0 +1,207 @@
+/*
+ * Device Tree file for FB LS1048A PUMA Proto 2 Board.
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include "fsl-ls1048a.dtsi"
+
+/ {
+	model = "NXP TG Board LS1048A (PUMA Proto2)";
+	compatible = "fsl,ls1088a-rdb", "fsl,ls1088a";
+
+	chosen {
+		bootargs = "iommu.passthrough=1 default_hugepagesz=2m hugepagesz=2m hugepages=512 pcie_aspm=off cma=512M crashkernel=32M@3G isolcpus=2,3 firmware_class.path=/data/firmware/wil6210 ";
+		eeprom = "/sys/bus/nvmem/devices/1-00540/nvmem" ;
+		bb1_eeprom = "/sys/bus/i2c/devices/1-0056/eeprom";
+		bb2_eeprom = "/sys/bus/i2c/devices/2-0056/eeprom";
+		bb3_eeprom = "/sys/bus/i2c/devices/4-0056/eeprom";
+		bb4_eeprom = "/sys/bus/i2c/devices/5-0056/eeprom";
+		wlan0_eeprom = "/sys/bus/i2c/devices/5-0056/eeprom";
+		wlan1_eeprom = "/sys/bus/i2c/devices/2-0056/eeprom";
+		wlan2_eeprom = "/sys/bus/i2c/devices/4-0056/eeprom";
+		wlan3_eeprom = "/sys/bus/i2c/devices/1-0056/eeprom";
+		wlan0_pci = "0000:01:00.0";
+		wlan1_pci = "0001:01:00.0";
+		wlan2_pci = "0002:03:00.0";
+		wlan3_pci = "0002:04:00.0";
+	};
+
+	i2cmux {
+		compatible = "i2c-mux-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		mux-gpios = <&gpio3 7 GPIO_ACTIVE_HIGH>;
+		i2c-parent = <&i2c3>;
+
+		i2c@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			eeprom@56 {
+				compatible = "at24,24c1024";
+				reg = <0x56>;
+				pagesize = <256>;
+			};
+		};
+
+		i2c@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			eeprom@54 {
+				compatible = "at24,24c512";
+				reg = <0x54>;
+				pagesize = <128>;
+			};
+
+			eeprom@56 {
+				compatible = "at24,24c1024";
+				reg = <0x56>;
+				pagesize = <256>;
+			};
+		};
+	};
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	eeprom@54 {
+		compatible = "at24,24c64";
+		reg = <0x54>;
+		pagesize = <32>;
+	};
+
+	eeprom@56 {
+		compatible = "at24,24c1024";
+		reg = <0x56>;
+		pagesize = <256>;
+	};
+
+	rtc@51 {
+		compatible = "nxp,pcf8563";
+		reg = <0x51>;
+	};
+
+	lm90: lm90@48 {
+		compatible = "nxp,sa56004";
+		reg = <0x48>;
+	};
+
+};
+
+&i2c2 {
+	status = "okay";
+
+	eeprom@56 {
+		compatible = "at24,24c1024";
+		reg = <0x56>;
+		pagesize = <256>;
+	};
+};
+
+&i2c3 {
+	status = "okay";
+};
+
+&qspi {
+	status = "okay";
+	qflash0: s25fs512s@0 {
+		compatible = "spansion,m25p80";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-max-frequency = <20000000>;
+		spi-rx-bus-width = <1>;
+		spi-tx-bus-width = <1>;
+		reg = <0>;
+	};
+};
+
+&ifc {
+	status = "disabled";
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&duart1 {
+	status = "okay";
+};
+
+&duart2 {
+	status = "okay";
+};
+
+&duart3 {
+	status = "okay";
+};
+
+&esdhc {
+	status = "okay";
+	non-removable;
+};
+
+&emdio1 {
+	/* RealTek RTL8211FSI PHY
+	 * PHY_AD[2:0] = 010: PHY Addr = 0b00010
+	 * CFG_MODE[2:0]=011: SGMII <=> UTP
+	 * CFG_LDO[1:0] = 10 : RGMII IO LDO voltage selection (1.8V)
+	 * RXDLY = 0: No Delay
+	 */
+	mdio1_phy1: emdio1_phy@1 {
+		reg = <0x2>;
+		phy-connection-type = "sgmii";
+	};
+};
+
+/* DPMAC connections to external PHYs
+ * based on LS1088A RM RevC - $24.1.2 SerDes Options
+ */
+/* DPMAC2 is SFP+, fixed link */
+&dpmac3 {
+	phy-handle = <&mdio1_phy1>;
+};
+
+&emdio2 {
+	/* Marvell 88E1545 PHY
+	 */
+	mdio2_phy1: emdio2_phy@1 {
+		reg = <0x4>;
+		phy-connection-type = "qsgmii";
+	};
+	mdio2_phy2: emdio2_phy@2 {
+		reg = <0x5>;
+		phy-connection-type = "qsgmii";
+	};
+	mdio2_phy3: emdio2_phy@3 {
+		reg = <0x6>;
+		phy-connection-type = "qsgmii";
+	};
+	mdio2_phy4: emdio2_phy@4 {
+		reg = <0x7>;
+		phy-connection-type = "qsgmii";
+	};
+};
+
+&dpmac7 {
+	phy-handle = <&mdio2_phy1>;
+};
+&dpmac8 {
+	phy-handle = <&mdio2_phy2>;
+};
+&dpmac9 {
+	phy-handle = <&mdio2_phy3>;
+};
+&dpmac10 {
+	phy-handle = <&mdio2_phy4>;
+};

@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+. tg.env
+# Needed to get fb_stop_bh_device_by_busid()
+# shellcheck disable=SC1091
+. fb_load_bh_drv.sh
+
+FW_BUSID="${1}"
+
+if [ -z "${FW_BUSID}" ]; then
+	# We are stopping all interfaces
+	if [ -d /sys/module/zl3079x ]; then
+		rmmod zl3079x
+	fi
+
+	if [ -d "/sys/module/${TG_MOD_NAME}" ]
+	then
+		rmmod "${TG_MOD_NAME}"
+	fi
+
+	if [ -d "/sys/module/${WL_MOD_NAME}" ]
+	then
+		rmmod "${WL_MOD_NAME}"
+	fi
+
+	if [ -e /usr/bin/fb_load_dpdk.sh ]; then
+		# shellcheck disable=SC1091
+		. /usr/bin/fb_load_dpdk.sh
+		fb_unload_dpdk
+	fi
+
+	# kill firmware logging utility
+	killall host_manager_11ad
+else
+	# we are only stopping the interface specified by FW_BUSID
+	fb_stop_bh_device_by_busid "${FW_BUSID}"
+fi

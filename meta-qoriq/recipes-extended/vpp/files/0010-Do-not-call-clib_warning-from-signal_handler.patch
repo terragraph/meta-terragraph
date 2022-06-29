@@ -1,0 +1,72 @@
+From 7ede0f543822d7b24502669f3bfd5b25cf6c7741 Mon Sep 17 00:00:00 2001
+From: Alexander Kabaev <kan@fb.com>
+Date: Tue, 21 Jan 2020 09:15:03 -0800
+Subject: [PATCH] Do not call clib_warning from signal_handler
+
+Doing so can recurse into memory allocator and cause thread to deadlock
+against itself in allocator spinlock. Print message only on fatal
+signals, and only by direct syslog call.
+---
+ src/vlib/unix/main.c | 23 ++++++++++-------------
+ 1 file changed, 10 insertions(+), 13 deletions(-)
+
+diff --git a/src/vlib/unix/main.c b/src/vlib/unix/main.c
+index e86d42105..506811e9c 100644
+--- a/src/vlib/unix/main.c
++++ b/src/vlib/unix/main.c
+@@ -105,12 +105,6 @@ unix_signal_handler (int signum, siginfo_t * si, ucontext_t * uc)
+   vlib_last_signum = signum;
+   vlib_last_faulting_address = (uword) si->si_addr;
+ 
+-  syslog_msg = format (syslog_msg, "received signal %U, PC %U",
+-		       format_signal, signum, format_ucontext_pc, uc);
+-
+-  if (signum == SIGSEGV)
+-    syslog_msg = format (syslog_msg, ", faulting address %p", si->si_addr);
+-
+   switch (signum)
+     {
+       /* these (caught) signals cause the application to exit */
+@@ -138,7 +132,7 @@ unix_signal_handler (int signum, siginfo_t * si, ucontext_t * uc)
+       fatal = 1;
+       break;
+ 
+-      /* by default, print a message and continue */
++      /* by default, just continue */
+     default:
+       fatal = 0;
+       break;
+@@ -155,11 +149,17 @@ unix_signal_handler (int signum, siginfo_t * si, ucontext_t * uc)
+   }
+ #endif
+ 
+-  /* Null terminate. */
+-  vec_add1 (syslog_msg, 0);
+-
+   if (fatal)
+     {
++      syslog_msg = format (syslog_msg, "received signal %U, PC %U",
++			   format_signal, signum, format_ucontext_pc, uc);
++
++      if (signum == SIGSEGV)
++	syslog_msg = format (syslog_msg, ", faulting address %p", si->si_addr);
++
++      /* Null terminate. */
++      vec_add1 (syslog_msg, 0);
++
+       syslog (LOG_ERR | LOG_DAEMON, "%s", syslog_msg);
+ 
+       /* Address of callers: outer first, inner last. */
+@@ -186,9 +186,6 @@ unix_signal_handler (int signum, siginfo_t * si, ucontext_t * uc)
+       else
+ 	os_exit (1);
+     }
+-  else
+-    clib_warning ("%s", syslog_msg);
+-
+ }
+ 
+ static clib_error_t *
+-- 
+2.30.2
+

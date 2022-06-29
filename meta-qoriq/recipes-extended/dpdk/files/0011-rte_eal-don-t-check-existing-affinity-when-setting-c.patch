@@ -1,0 +1,46 @@
+From 87d8c610cd7b729b240c5b643109390033cc30be Mon Sep 17 00:00:00 2001
+From: Frank Li <frankli1@fb.com>
+Date: Sat, 9 Apr 2022 03:03:31 -0700
+Subject: [PATCH] rte_eal: don't check existing affinity when setting ctrl
+ thread affinity
+
+For VPP compatibility.
+---
+ lib/librte_eal/common/eal_common_options.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/lib/librte_eal/common/eal_common_options.c b/lib/librte_eal/common/eal_common_options.c
+index f8ab47435d..4dd1bf837a 100644
+--- a/lib/librte_eal/common/eal_common_options.c
++++ b/lib/librte_eal/common/eal_common_options.c
+@@ -1843,7 +1843,9 @@ static void
+ compute_ctrl_threads_cpuset(struct internal_config *internal_cfg)
+ {
+ 	rte_cpuset_t *cpuset = &internal_cfg->ctrl_cpuset;
++#if 0
+ 	rte_cpuset_t default_set;
++#endif
+ 	unsigned int lcore_id;
+ 
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+@@ -1853,11 +1855,17 @@ compute_ctrl_threads_cpuset(struct internal_config *internal_cfg)
+ 	}
+ 	RTE_CPU_NOT(cpuset, cpuset);
+ 
++	/* Don't bother checking against the existing CPU affinity since VPP
++	 * doesn't care about the original affinity and sets main thread affinity
++	 * before this function gets called anyway.
++	 */
++#if 0
+ 	if (pthread_getaffinity_np(pthread_self(), sizeof(rte_cpuset_t),
+ 				&default_set))
+ 		CPU_ZERO(&default_set);
+ 
+ 	RTE_CPU_AND(cpuset, cpuset, &default_set);
++#endif
+ 
+ 	/* if no remaining cpu, use main lcore cpu affinity */
+ 	if (!CPU_COUNT(cpuset)) {
+-- 
+2.30.2
+

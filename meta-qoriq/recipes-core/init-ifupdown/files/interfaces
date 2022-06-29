@@ -1,0 +1,7 @@
+# The loopback interface
+auto lo
+iface lo inet loopback
+
+# OOB interface
+auto nic0
+iface nic0 inet dhcp

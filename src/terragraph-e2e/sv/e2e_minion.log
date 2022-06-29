@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /var/log/e2e_minion
+exec svlogd /var/log/e2e_minion

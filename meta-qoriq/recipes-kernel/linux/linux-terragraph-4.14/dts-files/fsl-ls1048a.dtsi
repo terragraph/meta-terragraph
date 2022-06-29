@@ -1,0 +1,120 @@
+/*
+ * Device Tree Include file for NXP Layerscape-1088A family SoC.
+ *
+ * Copyright 2017 NXP
+ *
+ * Harninder Rai <harninder.rai@nxp.com>
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPLv2 or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This library is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This library is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#include "fsl-ls1088a.dtsi"
+
+/ {
+	aliases {
+		serial0 = &duart1;
+		serial1 = &duart0;
+		serial2 = &duart2;
+		serial3 = &duart3;
+	};
+
+	/* LS1048a has only 4 cores, remove excess created by LS1088a file */
+	/delete-node/ cpu@4;
+	/delete-node/ cpu@5;
+	/delete-node/ cpu@6;
+	/delete-node/ cpu@7;
+
+	soc {
+		duart2: serial@21d0500 {
+			compatible = "fsl,ns16550", "ns16550a";
+			reg = <0x0 0x21d0500 0x0 0x100>;
+			clocks = <&clockgen 4 3>;
+			interrupts = <0 33 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+		};
+
+		duart3: serial@21d0600 {
+			compatible = "fsl,ns16550", "ns16550a";
+			reg = <0x0 0x21d0600 0x0 0x100>;
+			clocks = <&clockgen 4 3>;
+			interrupts = <0 33 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+		};
+
+		pcie@3400000  {
+			num-lanes = <1>;
+		};
+
+		pcie@3500000  {
+			num-lanes = <1>;
+		};
+
+		pcie@3600000  {
+			num-lanes = <2>;
+		};
+
+		ptp-timer@8b95000 {
+			compatible = "fsl,dpaa2-ptp";
+			reg = <0x0 0x8b95000 0x0 0x100>;
+			clocks = <&clockgen 4 0>;
+			little-endian;
+			fsl,extts-fifo;
+		};
+	};
+};
+
+&gpio0 {
+	compatible = "fsl,qoriq-gpio-lsch3";
+	little-endian;
+};
+
+&gpio1 {
+	compatible = "fsl,qoriq-gpio-lsch3";
+	little-endian;
+};
+
+&gpio2 {
+	compatible = "fsl,qoriq-gpio-lsch3";
+	little-endian;
+};
+
+&gpio3 {
+	compatible = "fsl,qoriq-gpio-lsch3";
+	little-endian;
+};

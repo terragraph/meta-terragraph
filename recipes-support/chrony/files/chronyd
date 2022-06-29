@@ -1,0 +1,89 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:        chrony
+# Required-Start:  $network $remote_fs $syslog
+# Required-Stop:   $network $remote_fs $syslog
+# Default-Start:   2 3 4 5
+# Default-Stop:
+# Short-Description: Start chrony time daemon
+### END INIT INFO
+
+PATH=/sbin:/bin:/usr/bin:/usr/sbin
+
+DAEMON=/usr/sbin/chronyd
+PIDFILE=/var/run/chrony/chronyd-main.pid
+LOGDIR=/var/log/chrony
+LOGFILE=$LOGDIR/chrony.log
+
+CHRONY_CONF_FILE=/data/etc/chrony.conf
+
+test -x $DAEMON -a -r /etc/chrony.conf || exit 0
+
+# Source function library.
+. /etc/init.d/functions
+
+
+# Functions to do individual actions
+updateconfig(){
+	echo -n "Updating chrony config file: "
+	# use default chrony config file if necessary
+	if [ ! -f $CHRONY_CONF_FILE ]; then
+		# atomically update chrony config file
+		exec 300>/tmp/chronyconfiglockfile
+		flock -x 300
+		cp /etc/chrony.conf.default /data/chrony.conf.tmp
+		sync
+		mv /data/chrony.conf.tmp $CHRONY_CONF_FILE
+		flock -u 300
+		echo -n "Using default config file"
+	fi
+
+	# Generate TG environment if neccesary
+	/usr/sbin/config_get_env.sh
+
+	# Update chrony.conf
+	/usr/sbin/update_chrony_conf
+
+	echo "done"
+}
+
+startdaemon(){
+	# Create logs/stats directory
+	mkdir -p "$LOGDIR"
+
+	echo -n "Starting chronyd: "
+	start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --startas $DAEMON -- -f $CHRONY_CONF_FILE -l $LOGFILE "$@"
+	echo "done"
+}
+
+stopdaemon(){
+	echo -n "Stopping chronyd: "
+	start-stop-daemon --stop --quiet --oknodo -p $PIDFILE
+	echo "done"
+}
+
+case "$1" in
+  start)
+    updateconfig
+	startdaemon
+	;;
+  stop)
+  	stopdaemon
+	;;
+  force-reload | restart | reload)
+  	stopdaemon
+	updateconfig
+	startdaemon
+	;;
+  status)
+	status /usr/sbin/chronyd;
+	exit $?
+	;;
+  *)
+	echo "Usage: chronyd { start | stop | status | restart | reload }" >&2
+	exit 1
+	;;
+esac
+
+exit 0

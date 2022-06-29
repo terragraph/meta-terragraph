@@ -1,0 +1,31 @@
+#
+# Kbuild file for Terragraph kernel module
+#
+ccflags-y += -I$(KERNEL_EXTRA_HEADER_PATH)/nl-driver-if \
+	     -I$(srctree)/include/net -I.
+
+# Disable new warnings
+ccflags-y += -Werror
+
+ifeq ($(ENABLE_ASAN),1)
+	ccflags-y += -fsanitize=kernel-address
+endif
+
+MODULE_NAME ?= ublox-gps
+
+obj-m := $(MODULE_NAME).o
+
+# List of objects to compile, keep sorted
+$(MODULE_NAME)-y := fb_tgd_ublox_gps.o \
+		    fb_tgd_ublox_msg_handler.o \
+		    fb_tgd_queue_mgr.o
+
+# Comment/uncomment the following line to disable/enable debugging
+DEBUG = n
+ifeq ($(DEBUG),y)
+	DEBFLAGS = -O -g -DDEBUG # "-O" is needed to expand inlines
+else
+	DEBFLAGS = -O2
+ endif
+
+ccflags-y += $(DEBFLAGS)

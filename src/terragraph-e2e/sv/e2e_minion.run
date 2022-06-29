@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# Redirect stderr to stdout to capture errors in log file as well
+exec 2>&1
+
+E2E_BOOT_DELAY_FILE=/var/run/e2e_minion_boot_delay
+DELAY=10
+E2E_BOOT_DELAY_SEC=60
+
+while [ : ]; do
+
+# load tg config environment variables
+# shellcheck source=/dev/null
+. /usr/sbin/config_get_env.sh
+
+# check if minion is enabled
+if [ -z "$E2E_ENABLED" ] || [ "$E2E_ENABLED" -ne "1" ]; then
+  echo "E2E is not enabled"
+  sleep ${DELAY}
+  continue
+fi
+
+# check if e2e_minion_wrapper is executable
+if [ ! -x /usr/sbin/e2e_minion_wrapper.sh ]; then
+  echo "/usr/sbin/e2e_minion_wrapper.sh does not exist or is not executable"
+  sleep ${DELAY}
+  continue
+fi
+
+# Delay _first_ startup when previous reboot was dirty
+if [ ! -f "${E2E_BOOT_DELAY_FILE}" ] && [ -e "${prev_reboot_dirty_indicator}" ]; then
+  echo "Delaying E2E minion start after boot"
+  sleep "${E2E_BOOT_DELAY_SEC}"
+fi
+touch "${E2E_BOOT_DELAY_FILE}" 2>/dev/null
+
+# Prevent spurious watchdog timeouts when e2e_minion (re)starts.
+/etc/monit_init.sh >/dev/null 2>/dev/null
+
+exec /usr/sbin/e2e_minion_wrapper.sh 2>&1
+
+done

@@ -1,0 +1,39 @@
+--- a/ldoc/html/ldoc_new_css.lua
++++ b/ldoc/html/ldoc_new_css.lua
+@@ -7,6 +7,9 @@
+     background: #eff4ff;
+ }
+
++/* remove underlines from links (modules, functions, etc.) */
++a { text-decoration: none; }
++
+ a:link { color: #008fee; }
+ a:visited { color: #008fee; }
+ a:hover { color: #22a7ff; }
+@@ -153,6 +156,7 @@
+     font-size:1em;
+     list-style-type: none;
+     margin: 1px 1px 10px 1px;
++    padding-left: 15px; /* reduced from 40px */
+ }
+
+ #navigation li {
+@@ -246,11 +250,18 @@
+     border-bottom: solid 1px #def;
+ }
+
++/* un-hide list markers (numbers, bullets, etc.)
+ #content dl.function dd ul, #content dl.function dd ol {
+     padding: 0px;
+     padding-left: 15px;
+     list-style-type: none;
+ }
++*/
++
++/* undo inconsistent indentation in page body */
++dd p {
++    padding-left: 0 !important;
++}
+
+ ul.nowrap {
+     overflow:auto;
