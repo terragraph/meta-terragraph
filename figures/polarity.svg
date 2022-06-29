@@ -1,0 +1,185 @@
+
+<svg width="350px" height="350px" viewBox="0 0 350 350" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 49.3 (51167) - http://www.bohemiancoding.com/sketch -->
+    <desc>Created with Sketch.</desc>
+    <defs>
+        <rect id="path-1" x="0" y="0" width="50" height="50"></rect>
+        <rect id="path-2" x="100" y="0" width="50" height="50"></rect>
+        <rect id="path-3" x="0" y="100" width="50" height="50"></rect>
+        <rect id="path-4" x="100" y="100" width="50" height="50"></rect>
+        <rect id="path-5" x="200" y="0" width="50" height="50"></rect>
+        <rect id="path-6" x="300" y="0" width="50" height="50"></rect>
+        <rect id="path-7" x="200" y="100" width="50" height="50"></rect>
+        <rect id="path-8" x="300" y="100" width="50" height="50"></rect>
+        <rect id="path-9" x="0" y="200" width="50" height="50"></rect>
+        <rect id="path-10" x="100" y="200" width="50" height="50"></rect>
+        <rect id="path-11" x="0" y="300" width="50" height="50"></rect>
+        <rect id="path-12" x="100" y="300" width="50" height="50"></rect>
+        <rect id="path-13" x="200" y="200" width="50" height="50"></rect>
+        <rect id="path-14" x="300" y="200" width="50" height="50"></rect>
+        <rect id="path-15" x="200" y="300" width="50" height="50"></rect>
+        <rect id="path-16" x="300" y="300" width="50" height="50"></rect>
+    </defs>
+    <g id="Polarity" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-1"></use>
+            <rect stroke="#979797" stroke-width="1" x="0.5" y="0.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-2"></use>
+            <rect stroke="#979797" stroke-width="1" x="100.5" y="0.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-3"></use>
+            <rect stroke="#979797" stroke-width="1" x="0.5" y="100.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-4"></use>
+            <rect stroke="#979797" stroke-width="1" x="100.5" y="100.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-5"></use>
+            <rect stroke="#979797" stroke-width="1" x="200.5" y="0.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-6"></use>
+            <rect stroke="#979797" stroke-width="1" x="300.5" y="0.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-7"></use>
+            <rect stroke="#979797" stroke-width="1" x="200.5" y="100.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-8"></use>
+            <rect stroke="#979797" stroke-width="1" x="300.5" y="100.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-9"></use>
+            <rect stroke="#979797" stroke-width="1" x="0.5" y="200.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-10"></use>
+            <rect stroke="#979797" stroke-width="1" x="100.5" y="200.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-11"></use>
+            <rect stroke="#979797" stroke-width="1" x="0.5" y="300.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-12"></use>
+            <rect stroke="#979797" stroke-width="1" x="100.5" y="300.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-13"></use>
+            <rect stroke="#979797" stroke-width="1" x="200.5" y="200.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-14"></use>
+            <rect stroke="#979797" stroke-width="1" x="300.5" y="200.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#E3BBBB" fill-rule="evenodd" xlink:href="#path-15"></use>
+            <rect stroke="#979797" stroke-width="1" x="200.5" y="300.5" width="49" height="49"></rect>
+        </g>
+        <g id="Rectangle">
+            <use fill="#B3C5DB" fill-rule="evenodd" xlink:href="#path-16"></use>
+            <rect stroke="#979797" stroke-width="1" x="300.5" y="300.5" width="49" height="49"></rect>
+        </g>
+        <path d="M49.5,25.5 L97.5,25.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M86.7,28.5 L97.5,25.5 L86.7,22.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M251.5,25.5 L299.5,25.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M288.7,28.5 L299.5,25.5 L288.7,22.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M251.5,224.5 L299.5,224.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M288.7,227.5 L299.5,224.5 L288.7,221.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M49.5,227.5 L97.5,227.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M86.7,230.5 L97.5,227.5 L86.7,224.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M151.5,124.5 L199.5,124.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M188.7,127.5 L199.5,124.5 L188.7,121.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M150.5,325.5 L198.5,325.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M187.7,328.5 L198.5,325.5 L187.7,322.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M201.5,25.5 L151.5,25.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M162.3,22.5 L151.5,25.5 L162.3,28.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M301.5,124.5 L251.5,124.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M262.3,121.5 L251.5,124.5 L262.3,127.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M100.5,125.5 L50.5,125.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M61.3,122.5 L50.5,125.5 L61.3,128.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M198.5,224.5 L148.5,224.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M159.3,221.5 L148.5,224.5 L159.3,227.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M301.5,324.5 L251.5,324.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M262.3,321.5 L251.5,324.5 L262.3,327.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M97.5,324.5 L47.5,324.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M58.3,321.5 L47.5,324.5 L58.3,327.5" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M323.5,96.5 L323.5,50.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M326.5,61.3 L323.5,50.5 L320.5,61.3" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M123.5,96.5 L123.5,50.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M126.5,61.3 L123.5,50.5 L120.5,61.3" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M226.5,196.5 L226.5,150.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M229.5,161.3 L226.5,150.5 L223.5,161.3" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M24.5,199.5 L24.5,153.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M27.5,164.3 L24.5,153.5 L21.5,164.3" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M323.5,296.5 L323.5,250.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M326.5,261.3 L323.5,250.5 L320.5,261.3" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M225.5,50.5 L225.5,96.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M222.5,85.7 L225.5,96.5 L228.5,85.7" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M23.5,53.5 L23.5,99.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M20.5,88.7 L23.5,99.5 L26.5,88.7" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M126.5,299.5 L126.5,253.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M129.5,264.3 L126.5,253.5 L123.5,264.3" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M326.5,150.5 L326.5,196.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M323.5,185.7 L326.5,196.5 L329.5,185.7" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M126.5,150.5 L126.5,196.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M123.5,185.7 L126.5,196.5 L129.5,185.7" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M224.5,251.5 L224.5,297.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M221.5,286.7 L224.5,297.5 L227.5,286.7" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path d="M25.5,251.5 L25.5,297.5" id="Line" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <path id="Line-decoration-1" d="M22.5,286.7 L25.5,297.5 L28.5,286.7" stroke="#000000" fill="#000000" stroke-linecap="square" stroke-dasharray="1,1,8"></path>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="214.15918" y="30">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="212.15918" y="229">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="115.15918" y="129">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="315.15918" y="129">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="113.15918" y="329">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="11.1591797" y="229">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="12.1591797" y="30">Odd</tspan>
+        </text>
+        <text id="Odd" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="313.15918" y="330">Odd</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="309.824219" y="30">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="112.324219" y="29">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="311.324219" y="231">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="210.324219" y="128">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="12.3242188" y="130">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="109.324219" y="228">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="212.324219" y="328">Even</tspan>
+        </text>
+        <text id="Even" font-family="Helvetica" font-size="12" font-weight="normal" fill="#000000">
+            <tspan x="10.3242188" y="328">Even</tspan>
+        </text>
+    </g>
+</svg>

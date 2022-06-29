@@ -1,0 +1,92 @@
+digraph tgcfg {
+	splines="ortho";
+	decorate="true";
+	labelfloat="true";
+	size="7.5,10";
+	subgraph cluster_dpdk_rx {
+		label="DPDK RX";
+		margin="20";
+		baseband_rx [label="Wigig RX (dpdk-input)", shape=box];
+		ethernet_rx [label="Ethernet RX (dpdk-input)", shape=box];
+	}
+	subgraph cluster_slowpath_from_kernel {
+		label="Packets from kernel";
+		margin="20";
+		kernel_tapX_rx [label="nicX", shape=box];
+		kernel_terraX_rx [label="terraX", shape=box];
+		kernel_vnet0_tx [label="vnet0", shape="box"];
+	}
+	subgraph cluster_dpdk_tx {
+		label="DPDK TX";
+		baseband_tx [label="Wigig TX", shape=box];
+		ethernet_tx [label="Ethernet TX", shape=box];
+	}
+	subgraph cluster_slowpath_to_kernel {
+		label="Packets to kernel";
+		kernel_tapX_tx [label="nicX", shape=box];
+		kernel_terraX_tx [label="terraX", shape=box];
+		kernel_vnet0_rx [label="vnet0", shape="box"];
+	}
+	subgraph cluster_vpp {
+		label = "VPP";
+		margin="40";
+		local_iface [label="loop[0,1..]", shape=box];
+
+		vpp_vnet0_rx [label="vpp-vnet0", shape="box"];
+		vpp_vnet0_tx [label="vpp-vnet0", shape="box"];
+
+		vpp_terra_tx [label="vpp-terraX-tx"];
+
+		lookup_local [label="Local?", shape=diamond];
+		lookup [label="ip6-lookup"];
+
+		vpp_ip6_input [label="ip6-input"];
+		vpp_ip6_local [label="ip6-local"];
+		vpp_local_receive [label="VPP only interfaces"]
+
+		tg_link_input [label="tg-link-input"];
+		tg_slowpath_terra_rx [label="tg-slowpath-terra-rx"];
+		tg_slowpath_wired_rx [label="tg-slowpath-wired-rx"];
+		tg_link_local_tx [label="tg-link-local-tx"];
+		tg_link_local_rx [label="tg-link-local-rx"];
+		tg_wired_local_tx [label="tg-wired-local-tx"];
+		tg_wired_local_rx [label="tg-wired-local-rx"];
+
+		ethernet_input_terraX [label="ethernet-input (vpp-terraX)"]
+		ethernet_input_wired [label="ethernet-input (TenGigEthernetX)"]
+	}
+
+	baseband_rx -> tg_link_input [headlabel="device-input (Wigig0/x/y/z)"];
+	tg_link_input -> ethernet_input_terraX;
+	ethernet_input_terraX -> vpp_ip6_input [label="IPv6"];
+	vpp_ip6_input -> lookup_local;
+	ethernet_input_terraX -> tg_link_local_tx [xlabel="WPA", tailport="w", headport="w"];
+	vpp_ip6_local -> tg_slowpath_terra_rx [label="RX: vpp-terraX"];
+	tg_slowpath_terra_rx -> tg_link_local_tx [label="slowpath ifaces"];
+	tg_slowpath_terra_rx -> vpp_local_receive [xlabel="other ifaces"; samehead="other"];
+	vpp_local_receive -> local_iface;
+	tg_link_local_tx -> kernel_terraX_tx [taillabel="dpdk-dhd"];
+
+	lookup_local -> vpp_ip6_local [xlabel="yes"];
+	lookup_local -> lookup [xlabel="No"];
+
+	ethernet_rx -> ethernet_input_wired [headlabel="device-input (TenGigEthernetX)"];
+	ethernet_input_wired -> vpp_ip6_input [label="IPv6"];
+	vpp_ip6_local -> tg_slowpath_wired_rx [label="RX: wired"];
+	tg_slowpath_wired_rx -> tg_wired_local_tx [label="slowpath ifaces"];
+	tg_slowpath_wired_rx -> vpp_local_receive [xlabel="other ifaces", samehead="other"];
+	tg_wired_local_tx -> kernel_tapX_tx [taillabel="tapcli-tx"];
+
+	kernel_tapX_rx -> tg_wired_local_rx [taillabel="tapcli-rx"];
+	kernel_terraX_rx -> tg_link_local_rx [taillabel="dpdk-dhd"];
+	tg_wired_local_rx -> ethernet_tx;
+	tg_link_local_rx -> baseband_tx;
+
+	lookup -> ethernet_tx;
+	lookup -> vpp_terra_tx->baseband_tx;
+	lookup -> vpp_vnet0_tx;
+
+	kernel_vnet0_tx -> vpp_vnet0_rx [taillabel="tapcli-rx"];
+	vpp_vnet0_rx -> vpp_ip6_input [label="IPv6"];
+	vpp_vnet0_tx -> kernel_vnet0_rx [label="tapcli-tx"];
+}
