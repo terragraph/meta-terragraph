@@ -10,6 +10,7 @@ BGPD_CONF_FILE=/var/run/bgpd.conf
 exec /usr/sbin/bgpd \
   --config_file "$BGPD_CONF_FILE" \
   --vty_addr ::1 \
+  -e 2 \
   -u frr \
   -g frr \
   2>&1
