@@ -21,12 +21,17 @@ local CONF_FILE_FORMAT = Template([[
 router bgp ${asn}
  bgp router-id ${router_id}
  no bgp default ipv4-unicast
+ bgp deterministic-med
+ bgp bestpath as-path multipath-relax
+ bgp log-neighbor-changes
 ${no_prefix_check}
 ${neighbors_info}
 
  timers bgp ${keepalive} ${holdtime}
 
  address-family ipv6 unicast
+  maximum-paths 2
+  maximum-paths ibgp 2
 ${network_prefixes}
 
 ${active_neighbors}
@@ -61,6 +66,9 @@ log stdout
 ]])
 local NEIGHBOR_INFO_FORMAT = Template(
   " neighbor ${neighbor_ip} remote-as ${remote_asn}"
+)
+local NEIGHBOR_MD5_FORMAT  = Template (
+   " neighbor ${neighbor_ip} password ${md5Password}"
 )
 local AF_NEIGHBOR_INFO_FORMAT = Template([[
   neighbor ${neighbor_ip} soft-reconfiguration inbound
@@ -174,6 +182,8 @@ function frr_utils.readBgpParams(bgpParams, popParams, dpdkVppEnabled)
     return nil
   end
 
+  local md5Password = bgpParams.md5Password or ""
+
   local keepalive = bgpParams.keepalive or 30
   if (
     keepalive == nil
@@ -198,6 +208,7 @@ function frr_utils.readBgpParams(bgpParams, popParams, dpdkVppEnabled)
     localAsn = localAsn,
     keepalive = keepalive,
     nextHop = nextHop,
+    md5Password = md5Password,
   }
 end
 
@@ -296,16 +307,32 @@ function frr_utils.fillConfigTemplate(
   -- Fill in neighbors
   local neighborsInfo, afNeighborsInfo, activeNeighbors = {}, {}, {}
   for k, v in tablex.sort(neighbors or {}) do
-    neighborsInfo[#neighborsInfo + 1] = NEIGHBOR_INFO_FORMAT:substitute{
+    local neighborMd5Password
+    local neighborGeneralConfig
+
+    if staticBgpParams.md5Password == "" then
+      neighborMd5Password = ""
+    else
+      neighborMd5Password = "\n"..NEIGHBOR_MD5_FORMAT:substitute{
+        neighbor_ip = v.ipv6,
+        md5Password = staticBgpParams.md5Password
+      }
+    end
+
+    neighborGeneralConfig = NEIGHBOR_INFO_FORMAT:substitute{
       neighbor_ip = v.ipv6,
       remote_asn = v.asn,
     }
+    neighborsInfo[#neighborsInfo + 1] =
+	neighborGeneralConfig..neighborMd5Password
+
     afNeighborsInfo[#afNeighborsInfo + 1] = AF_NEIGHBOR_INFO_FORMAT:substitute{
       neighbor_ip = v.ipv6,
       maximum_prefix = v.maximumPrefixes or 128,
     }
     activeNeighbors[#activeNeighbors + 1] =
       ACTIVE_NEIGHBOR_FORMAT:substitute{neighbor_ip = v.ipv6}
+
   end
 
   return CONF_FILE_FORMAT:substitute{

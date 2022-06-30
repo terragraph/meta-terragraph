@@ -159,10 +159,7 @@ FILES_${PN}-minion += " \
     /etc/e2e_config/tpc_tables/fw_phy_txpower_adj_tbl_diversity_2D_chn_10.json \
     /etc/e2e_config/tpc_tables/fw_phy_txpower_adj_tbl_diversity_2D_chn_11.json \
     "
-# quagga files
-FILES_${PN}-minion += " \
-    /etc/e2e_config/bgpd.conf.template \
-    "
+
 # one-off scripts
 FILES_${PN}-minion += " \
     /usr/sbin/bgp_wrapper.sh \
