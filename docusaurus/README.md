@@ -5,7 +5,7 @@ static website generator.
 
 ### Requirements
 
-* NodeJS 14+
+* NodeJS 16.14+
 * Yarn
 
 ### Installation
