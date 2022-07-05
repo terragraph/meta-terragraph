@@ -110,13 +110,12 @@ const config = {
                 docId: 'developer/README',
                 label: 'Developer Manual',
               },
+              {
+                type: 'doc',
+                docId: 'whitepapers/README',
+                label: 'Whitepapers',
+              },
             ],
-          },
-          {
-            type: 'doc',
-            docId: 'whitepapers/README',
-            label: 'Whitepapers',
-            position: 'right',
           },
         ],
       },
