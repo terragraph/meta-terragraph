@@ -76,6 +76,11 @@ const config = {
       },
       hideableSidebar: true,
       image: 'logo/terragraph-logo-full-RGB.png',
+      algolia: {
+        appId: 'TB9T0CGM6Y',
+        apiKey: 'c60c33d83f465d9ec428517c9f9f9ead',
+        indexName: 'terragraph',
+      },
       navbar: {
         logo: {
           alt: 'Terragraph Logo',
