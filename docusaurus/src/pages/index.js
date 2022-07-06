@@ -212,7 +212,7 @@ function PartnerModal({name, imageUrl, href, products}) {
   const imgUrl = useBaseUrl(imageUrl);
   return (
     <div className={styles.modalContainer}>
-      <div className={clsx('col col--4', styles.partner)}>
+      <div className={styles.partner}>
         <img className={styles.partnerModalImage} src={imgUrl} alt={name} />
       </div>
       <hr />
