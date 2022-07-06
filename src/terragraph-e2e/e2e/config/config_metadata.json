@@ -93,7 +93,7 @@
       "action": "REDO_POP_CONFIG",
       "type": "STRING",
       "strVal": {
-        "regexMatches": ".{1,128}"
+        "regexMatches": ".{1,80}"
       }
     },
     "cpePrefixesAutoAdvertisement": {
