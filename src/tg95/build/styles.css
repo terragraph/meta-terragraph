@@ -1,0 +1,256 @@
+body {
+  font-family: "ms_sans_serif", Arial, Helvetica, sans-serif !important;
+  background: teal;
+  margin: 0;
+}
+
+a {
+  cursor: pointer;
+}
+
+.loading {
+  font-size: 24px;
+  color: white;
+  animation: loading-reveal 2s forwards; /* fade in after 1 second */
+}
+.loading:after {
+  content: "\2026";
+  animation: loading-ellipsis steps(4,end) 1s infinite;
+  display: inline-block;
+  vertical-align: bottom;
+  overflow: hidden;
+}
+@keyframes loading-reveal {
+  0% { opacity: 0; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes loading-ellipsis {
+  from { width: 0; }
+  to { width: 1.25em; }
+}
+
+.container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.desktop {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.tab-body {
+  height: 300px !important;
+  overflow-y: auto;
+}
+
+.justify {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.justify > span:first-child {
+  padding-right: 4px;
+}
+.justify > span:last-child {
+  text-align: right;
+}
+
+.pre {
+  white-space: pre;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+.left-emoji {
+  margin-right: 4px;
+}
+
+.window-text {
+  font-size: 0.8rem;
+}
+
+.ellipsis {
+  text-overflow: ellipsis;
+  overflow-x: hidden;
+  white-space: nowrap;
+}
+
+.scrollX {
+  overflow-x: auto;
+}
+
+.loading-text {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.window {
+  min-height: 150px !important;
+  position: fixed !important;
+  max-width: 96vw;
+}
+.window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: default;
+}
+.window-header-title {
+  width: 100%;
+}
+.window-content {
+  max-height: 600px;
+  overflow: auto;
+}
+.window-footer {
+  width: 100%;
+  padding: 0 0.5rem;
+  height: 31px;
+  line-height: 31px;
+  overflow-y: hidden;
+}
+
+.close-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-left: -1px;
+  margin-top: -1px;
+  transform: rotateZ(45deg);
+  position: relative;
+}
+.close-icon:before,
+.close-icon:after {
+  content: "";
+  position: absolute;
+  background: rgb(10, 10, 10);
+}
+.close-icon:before {
+  height: 100%;
+  width: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.close-icon:after {
+  height: 3px;
+  width: 100%;
+  left: 0px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.button-menu-container {
+  position: relative;
+  display: inline-block;
+  padding-right: 4px;
+}
+.button-menu {
+  position: absolute !important;
+  left: 0;
+  z-index: 9999;
+  max-width: 256px;
+}
+.button-menu-up {
+  bottom: 100%;
+  margin-left: -4px;
+}
+.button-menu-down {
+  top: 100%;
+}
+.button-menu > li {
+  display: block;
+  text-align: left;
+  padding-right: 1rem;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
+.start-menu-button {
+  font-weight: bold;
+}
+
+.appbar {
+  position: relative !important;
+  z-index: 999;
+}
+.appbar-window-button-container {
+  display: flex;
+  width: 100%;
+}
+.appbar-window-button {
+  flex: 1 1 0;
+  max-width: 240px;
+  width: 0 !important;
+  justify-content: left !important;
+  margin: 0 4px;
+}
+@media only screen and (max-width: 414px) {
+  .appbar-window-button {
+    max-width: 40px;
+    justify-content: center !important;
+  }
+  .appbar-window-button-title {
+    display: none;
+  }
+  .appbar-window-button .left-emoji {
+    margin-right: 0;
+  }
+}
+
+#appbar-dock {
+  min-width: 81px;
+  text-align: right;
+  padding: 0 0.5rem;
+  margin-right: 4px;
+}
+#appbar-dock span {
+  font-size: 0.9rem;
+}
+
+#title-frame {
+  width: 400px;
+  max-width: 90vw;
+}
+
+#title-frame h1 {
+  text-align: center;
+  font-size: 2rem;
+  margin: 0.5rem;
+}
+
+.window-footer-button-container {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+}
+.prompt-button {
+  width: 64px !important;
+  margin: 0 2px;
+}
+.choice-button {
+  width: 96px !important;
+  margin: 0 2px;
+}
+
+.notepad-textfield > textarea {
+  min-height: 480px;
+  overflow: scroll;
+  white-space: pre;
+}
+
+.radio-horizontal {
+  padding-right: 8px;
+}
