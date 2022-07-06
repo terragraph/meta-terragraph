@@ -4,6 +4,9 @@ POKY_COMMIT="bba323389749ec3e306509f8fb12649f031be152"
 OE_COMMIT="ec978232732edbdd875ac367b5a9c04b881f2e19"
 BRANCH="dunfell"
 
+# Meta-internal source_mirrors location, change this as needed
+SOURCE_MIRRORS_DIR="/mnt/gvfs/yocto/source_mirrors/04d5c868a31bbd7ea0a0795aeb65acf2202e8008"
+
 sync_yocto() {
   POKY_REPO_URI=$1
   OE_REPO_URI=$2
@@ -27,8 +30,20 @@ sync_yocto() {
   git clone -b "${BRANCH}" "${OE_REPO_URI}" yocto/meta-openembedded
   (cd yocto/meta-openembedded && git reset --hard "${OE_COMMIT}")
 
-  # Make a blank source_mirrors for any extra blobs required
+  # Make source_mirrors for any extra blobs required.
+  # If $SOURCE_MIRRORS_DIR exists, symlink to it, otherwise create an empty dir.
+  if [ -L ./yocto/source_mirrors ]; then
+    rm -v ./yocto/source_mirrors
+  fi
+  if [ -d "$SOURCE_MIRRORS_DIR" ]; then
+    ln -v -s "$SOURCE_MIRRORS_DIR" ./yocto/source_mirrors
+  fi
   if [ ! -e ./yocto/source_mirrors ]; then
-    mkdir ./yocto/source_mirrors
+    mkdir -v ./yocto/source_mirrors
+  fi
+
+  # On Meta-internal servers, also install "facebook.2" symlink to "facebook"
+  if [ -d "$SOURCE_MIRRORS_DIR" ] && [ ! -e ./facebook.2 ]; then
+    ln -v -s ./facebook ./facebook.2
   fi
 }

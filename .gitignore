@@ -74,6 +74,7 @@ ENV/
 # dependecy repos
 yocto/meta-openembedded
 yocto/poky
+yocto/source_mirrors
 
 # CLion
 .DS_Store
@@ -86,3 +87,8 @@ cmake-build-release
 
 # watchman cookies
 .watchman-cookie*
+
+# Meta-specific files/dirs
+/facebook/*
+!/facebook/conf
+/facebook.2
