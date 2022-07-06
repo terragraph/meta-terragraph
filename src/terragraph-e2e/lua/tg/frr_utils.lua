@@ -308,7 +308,6 @@ function frr_utils.fillConfigTemplate(
   local neighborsInfo, afNeighborsInfo, activeNeighbors = {}, {}, {}
   for k, v in tablex.sort(neighbors or {}) do
     local neighborMd5Password
-    local neighborGeneralConfig
 
     if staticBgpParams.md5Password == "" then
       neighborMd5Password = ""
@@ -319,12 +318,12 @@ function frr_utils.fillConfigTemplate(
       }
     end
 
-    neighborGeneralConfig = NEIGHBOR_INFO_FORMAT:substitute{
+    local neighborGeneralConfig = NEIGHBOR_INFO_FORMAT:substitute{
       neighbor_ip = v.ipv6,
       remote_asn = v.asn,
     }
     neighborsInfo[#neighborsInfo + 1] =
-	neighborGeneralConfig..neighborMd5Password
+      neighborGeneralConfig..neighborMd5Password
 
     afNeighborsInfo[#afNeighborsInfo + 1] = AF_NEIGHBOR_INFO_FORMAT:substitute{
       neighbor_ip = v.ipv6,
