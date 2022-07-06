@@ -11,7 +11,6 @@ import React from 'react';
 import Modal from 'react-overlays/Modal';
 import {Transition} from 'react-transition-group';
 import clsx from 'clsx';
-import Head from '@docusaurus/Head';
 import Layout from '@theme/Layout';
 import Link from '@docusaurus/Link';
 import {useColorMode} from '@docusaurus/theme-common';
@@ -261,16 +260,6 @@ const Fade = ({children, ...props}) => (
   </Transition>
 );
 
-const LayoutWrapper = props => (
-  <>
-    <Layout {...props} />
-    <Head titleTemplate="%s">
-      {props.title && <title>{props.title}</title>}
-      {props.title && <meta property="og:title" content={props.title} />}
-    </Head>
-  </>
-);
-
 export default function Home() {
   const context = useDocusaurusContext();
   const {siteConfig = {}} = context;
@@ -286,7 +275,7 @@ export default function Home() {
   );
 
   return (
-    <LayoutWrapper title="Terragraph" description={siteConfig.tagline}>
+    <Layout description={siteConfig.tagline}>
       <header className={clsx('hero', styles.heroBanner)}>
         <div className={styles.heroVideo}>
           <video
@@ -447,6 +436,6 @@ export default function Home() {
         aria-label="Partner details">
         {partnerModalData && <PartnerModal {...partnerModalData} />}
       </Modal>
-    </LayoutWrapper>
+    </Layout>
   );
 }
