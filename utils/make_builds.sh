@@ -1,7 +1,5 @@
 #!/bin/bash
 ABS_OEROOT="$(dirname "$(dirname "$(realpath "$0")")")"
-# shellcheck disable=SC1091
-source /opt/rh/devtoolset-7/enable
 # shellcheck disable=SC1090
 source "$ABS_OEROOT/utils/check_build_ver.sh"
 
@@ -10,8 +8,6 @@ if [ "$1" == "--allow-all-networks" ];
 then
   echo "Allowing bitbake to access all networks"
   EXTRA_BITBAKE_ARGS="-R $ABS_OEROOT/facebook/conf/allow-all-networks.conf"
-  # shellcheck disable=SC1090
-  source "$ABS_OEROOT/facebook/utils/fb-proxy-settings.sh"
 fi
 
 echo ----

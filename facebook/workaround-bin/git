@@ -1,0 +1,10 @@
+#!/bin/bash
+# libpseudo can cause a recursive call to malloc() when initializing
+# jemalloc.  Pseudo isn't needed for git commands, so prevent it from
+# being loaded and then hand off to real git.
+#
+# It's not enough to clear LD_PRELOAD to disable pseudo, as pseudo
+# intercepts the execve() syscall in the shell and will re-enter LD_PRELOAD
+# into the environment if it's missing.  PSEUDO_UNLOAD must be used instead.
+export PSEUDO_UNLOAD=1
+exec /usr/bin/git "$@"
