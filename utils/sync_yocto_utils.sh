@@ -42,8 +42,8 @@ sync_yocto() {
     mkdir -v ./yocto/source_mirrors
   fi
 
-  # On Meta-internal servers, also install "facebook.2" symlink to "facebook"
-  if [ -d "$SOURCE_MIRRORS_DIR" ] && [ ! -e ./facebook.2 ]; then
-    ln -v -s ./facebook ./facebook.2
+  # On Meta-internal servers, also install "facebook.enabled" symlink
+  if [ -d "$SOURCE_MIRRORS_DIR" ] && [ ! -e ./facebook.enabled ]; then
+    ln -v -s ./facebook ./facebook.enabled
   fi
 }

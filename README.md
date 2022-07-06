@@ -49,7 +49,9 @@ complete Yocto image.
 
 Building complete Yocto images from scratch can be time-consuming. It is
 recommended that you set up a rather beefy machine or server with a flash
-storage device for clean builds.
+storage device for clean builds. To greatly reduce disk usage requirements
+during builds, add `INHERIT += "rm_work"` to `conf/local.conf` in the build
+directory.
 
 The Yocto Project's [Quick Start Guide] covers how to set up a machine for
 various platforms. Several Meta components require C++17 support and require a

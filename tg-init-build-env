@@ -52,9 +52,9 @@ else
     echo "Neither ${ABS_OEROOT}/$1 nor ${ABS_OEROOT}/meta-$1 exists"
     return 1
 fi
-    
-if [ -d "facebook/workaround-bin" ]; then
-    PATH="$(realpath facebook/workaround-bin):$PATH"
+
+if [ -d "${ABS_OEROOT}/facebook.enabled/workaround-bin" ]; then
+    PATH="$(realpath ${ABS_OEROOT}/facebook.enabled/workaround-bin):$PATH"
 fi
 
 export TEMPLATECONF

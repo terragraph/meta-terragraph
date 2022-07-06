@@ -91,4 +91,5 @@ cmake-build-release
 # Meta-specific files/dirs
 /facebook/*
 !/facebook/conf
-/facebook.2
+!/facebook/workaround-bin
+/facebook.enabled
