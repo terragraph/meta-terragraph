@@ -45,6 +45,12 @@ fi
 # vpp instance, it will not respond to other signals.
 killall -9 fib_vpp
 
+while /bin/pidof vpp_chaperone; do
+  echo "attempt to kill concurrent vpp_chaperone..."
+  /usr/bin/killall vpp_chaperone
+  sleep 0.5
+done
+
 echo "Starting vpp_chaperone..."
 sv once vpp_chaperone
 
