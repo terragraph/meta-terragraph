@@ -1,0 +1,30 @@
+name: Build terragraph-image-x86
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: [self-hosted, yocto]
+    steps:   
+    - name: Run Configuration Script
+      run: sudo bash /home/ubuntu/on_run.sh
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Sync Yocto
+      run: bash sync_yocto.sh
+    - name: Update Source Mirrors
+      run: rm -r yocto/source_mirrors ; ln -s /home/ubuntu/source_mirrors yocto/source_mirrors
+    # Reduce the resources Yocto uses to prevent out-of-memory failures.
+    - name: Configure Build 
+      run:
+        source tg-init-build-env meta-x86 build-x86 &&
+        sed -i "s/\${@oe.utils.cpu_count()}/\${@oe.utils.cpu_count() \/\/ 2}/g" conf/local.conf &&
+        sed -i "s/PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j 8\"/g" conf/local.conf
+    - name: Link sstate-cache
+      run: mkdir -p /home/ubuntu/sstate-cache ; mkdir -p build-x86 ; ln -s /home/ubuntu/sstate-cache build-x86/sstate-cache
+    - name: Build Image
+      run: source tg-init-build-env meta-x86 build-x86 && USER=meta bitbake terragraph-image-x86
