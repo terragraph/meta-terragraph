@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: [self-hosted, yocto]
     if: github.repository_owner == 'terragraph'
-    steps:   
+    steps:
     - name: Run Configuration Script
       run: sudo bash /home/ubuntu/on_run.sh
     - uses: actions/checkout@v2
@@ -20,12 +20,39 @@ jobs:
     - name: Update Source Mirrors
       run: rm -r yocto/source_mirrors ; ln -s /home/ubuntu/source_mirrors yocto/source_mirrors
     # Reduce the resources Yocto uses to prevent out-of-memory failures.
-    - name: Configure Build 
+    - name: Configure Build
       run:
         source tg-init-build-env meta-x86 build-x86 &&
         sed -i "s/\${@oe.utils.cpu_count()}/\${@oe.utils.cpu_count() \/\/ 2}/g" conf/local.conf &&
-        sed -i "s/PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j 8\"/g" conf/local.conf
+        sed -i "s/PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j 8\"/g" conf/local.conf &&
+        echo "INHERIT += \"rm_work\"" >> conf/local.conf
     - name: Link sstate-cache
       run: mkdir -p /home/ubuntu/sstate-cache ; mkdir -p build-x86 ; ln -s /home/ubuntu/sstate-cache build-x86/sstate-cache
     - name: Build Image
       run: source tg-init-build-env meta-x86 build-x86 && USER=meta bitbake terragraph-image-x86
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: rootfsx86
+        path: build-x86/tmp/deploy/images/tgx86/terragraph-image-x86-tgx86.tar.gz
+        retention-days: 3
+  tests:
+    runs-on: [self-hosted, yocto]
+    needs: build
+    steps:
+    - name: Download rootfs
+      uses: actions/download-artifact@v3
+      with:
+        name: rootfsx86
+        path: /tmp/
+    - name: Create rootfs
+      run: |
+        sudo rm -rf /tmp/rootfs
+        mkdir /tmp/rootfs
+        cd /tmp/rootfs
+        tar -xf /tmp/terragraph-image-x86-tgx86.tar.gz
+    - name: Exclude update_firewall
+      run: rm /tmp/rootfs/usr/bin/update_firewall
+    - name: Run Tests
+      run: |
+        sudo chroot /tmp/rootfs /bin/bash /usr/sbin/run_tests.sh
