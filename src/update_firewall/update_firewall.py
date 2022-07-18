@@ -23,7 +23,7 @@ FORWARD_CHAIN = "FORWARD"
 
 # Using Any as Thrift `py` has not type information
 def get_firewall_config(node_config: Path) -> Any:
-    """ Read Node Config and get firewall configs, CPE and POP interfaces. """
+    """Read Node Config and get firewall configs, CPE and POP interfaces."""
     if not node_config.exists() or not node_config.is_file():
         print(f"{node_config} does not exist")
         print("Please specify a valid node config file")
@@ -47,8 +47,8 @@ def get_firewall_config(node_config: Path) -> Any:
 
 
 class FirewallRules:
-    """ Generate firewall rules and config for a firewall chain
-        - Only support default chains """
+    """Generate firewall rules and config for a firewall chain
+    - Only support default chains"""
 
     def __init__(self, chain: str, default_policy=iptc.Policy.ACCEPT) -> None:
         table = iptc.Table6(iptc.Table.FILTER)
@@ -57,7 +57,7 @@ class FirewallRules:
         self.rules: List[iptc.Rule6] = []
 
     def allow_established(self) -> None:
-        """ Allow the TCP connections which are already established"""
+        """Allow the TCP connections which are already established"""
         # TODO - Fix me!
         # This is broken as of python3-iptables v1.0.0 + iptables v1.8.3
         # python3 interpreter aborts with:
@@ -80,14 +80,14 @@ class FirewallRules:
         self.rules.append(rule)
 
     def allow_link_local(self) -> None:
-        """ Allow any traffic from fe80::/10 """
+        """Allow any traffic from fe80::/10"""
         rule = iptc.Rule6()
         rule.src = "fe80::/10"
         rule.target = iptc.Target(rule, iptc.Policy.ACCEPT)
         self.rules.append(rule)
 
     def allow_loopback(self) -> None:
-        """ Allow all communication unintrupted on loopbak interface"""
+        """Allow all communication unintrupted on loopbak interface"""
         rule = iptc.Rule6()
         rule.in_interface = "lo"
         rule.target = iptc.Target(rule, iptc.Policy.ACCEPT)
@@ -113,13 +113,13 @@ class FirewallRules:
     def modify_tcp(
         self, port: int, target: iptc.Policy, interface: Optional[str] = None
     ) -> None:
-        """ Create a rule for provided tcp port for specified target """
+        """Create a rule for provided tcp port for specified target"""
         self._modify_port(port, target, "tcp", interface)
 
     def modify_udp(
         self, port: int, target: iptc.Policy, interface: Optional[str] = None
     ) -> None:
-        """ Create a rule for provided udp port for specified target """
+        """Create a rule for provided udp port for specified target"""
         self._modify_port(port, target, "udp", interface)
 
     def set_interface_target(
@@ -188,7 +188,7 @@ def generate_rules(table_name: str, firewall_cfg: Any) -> FirewallRules:
 
 
 def apply_rules(node_config_file: str) -> int:
-    """ creates/updates firewall rules """
+    """creates/updates firewall rules"""
     firewall_cfg = get_firewall_config(Path(node_config_file))
     if not firewall_cfg:
         input_rules = FirewallRules(INPUT_CHAIN)

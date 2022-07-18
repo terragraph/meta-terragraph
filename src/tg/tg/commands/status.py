@@ -35,8 +35,8 @@ class StatusCli(object):
     def status(
         cli_opts, loopback, mac, version, uboot, timestamp, openr_name, hw_id, raw
     ):
-        """ Show status of e2e minions:
-            by default status shows all information except openr name
+        """Show status of e2e minions:
+        by default status shows all information except openr name
         """
         StatusCmd(
             cli_opts, loopback, mac, version, uboot, timestamp, openr_name, hw_id, raw

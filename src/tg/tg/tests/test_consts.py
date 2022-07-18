@@ -11,7 +11,7 @@ from tg.commands import consts
 
 
 class TestConsts(unittest.TestCase):
-    """ Test string encoding coversion """
+    """Test string encoding coversion"""
 
     def test_bytes_string_encoding(self):
         uni_str = consts.byte_string_decode("test_string")

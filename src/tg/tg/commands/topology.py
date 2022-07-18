@@ -45,7 +45,7 @@ class TopologyCli(object):
 
     @click.group()
     def topology():
-        """ View/Validate/Sanitize/Manipulate topology """
+        """View/Validate/Sanitize/Manipulate topology"""
         pass
 
     @click.command()
@@ -63,7 +63,7 @@ class TopologyCli(object):
         help="dump current topology into json file as specified",
     )
     def _ls(cli_opts, raw, include_wired, json):
-        """ View current topology """
+        """View current topology"""
         TopoListCmd(cli_opts, raw, include_wired, json).run()
 
     @click.command()
@@ -76,7 +76,7 @@ class TopologyCli(object):
         help="Link State Db file (breeze decision adj --json)",
     )
     def _validate(cli_opts, link_state_db):
-        """ Validate E2E topology against OpenR Link State Db """
+        """Validate E2E topology against OpenR Link State Db"""
         ValidateCmd(cli_opts, link_state_db).run()
 
     @click.command()
@@ -88,12 +88,12 @@ class TopologyCli(object):
         help="E2E topology file needed by controller",
     )
     def _sanitize(cli_opts, topology_file):
-        """ Sanitize E2E topology file and write the sanitized
-            topology in a new file postfixed by '.sanitized'.
-            Fow now, we support
-            1) order nodes in each link lexically if they are not ordered yet
-            2) add wire links among all nodes at the same site
-            """
+        """Sanitize E2E topology file and write the sanitized
+        topology in a new file postfixed by '.sanitized'.
+        Fow now, we support
+        1) order nodes in each link lexically if they are not ordered yet
+        2) add wire links among all nodes at the same site
+        """
         SanitizeCmd(cli_opts, topology_file).run()
 
     @click.command()
@@ -102,8 +102,8 @@ class TopologyCli(object):
     )
     @click.pass_obj
     def _reset(cli_opts, linkup_attempts):
-        """ Reset dynamic information in Topology
-            e.g. linkup_attempts
+        """Reset dynamic information in Topology
+        e.g. linkup_attempts
         """
         ResetCmd(cli_opts, linkup_attempts).run()
 
@@ -111,19 +111,19 @@ class TopologyCli(object):
     @click.option("--name", "-n", type=str, required=True, help="New topology name")
     @click.pass_obj
     def _set_name(cli_opts, name):
-        """ Set topology name """
+        """Set topology name"""
         SetTopologyNameCmd(cli_opts, name).run()
 
     @click.command()
     @click.pass_obj
     def _time(cli_opts):
-        """ Get controller UNIX and GPS timestamps"""
+        """Get controller UNIX and GPS timestamps"""
         GetTime(cli_opts).run()
 
     @click.group()
     @click.pass_obj
     def _prefixes(cli_opts):
-        """ View/Modify topology prefix information"""
+        """View/Modify topology prefix information"""
         pass
 
     @click.command()

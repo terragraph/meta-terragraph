@@ -51,7 +51,7 @@ class ScanCli:
     @click.group()
     @click.pass_obj
     def scan(cli_opts):
-        """ Start/query/reset scans """
+        """Start/query/reset scans"""
         pass
 
     @click.command()
@@ -131,7 +131,7 @@ class ScanCli:
     )
     @click.pass_obj
     def _start(cli_opts, **kwargs):
-        """ Start interference measurement scan """
+        """Start interference measurement scan"""
         ScanStartCmd(cli_opts).run(**kwargs)
 
     @click.command()
@@ -158,13 +158,13 @@ class ScanCli:
     )
     @click.pass_obj
     def _status(cli_opts, format, concise, tokens):
-        """ Show status of interference measurement scan """
+        """Show status of interference measurement scan"""
         ScanStatusCmd(cli_opts).run(format, concise, tokens)
 
     @click.command()
     @click.pass_obj
     def _reset(cli_opts):
-        """ Reset status of interference measurement scan """
+        """Reset status of interference measurement scan"""
         ScanStatusResetCmd(cli_opts).run()
 
     @click.command()
@@ -197,7 +197,7 @@ class ScanCli:
     )
     @click.pass_obj
     def _schedule(cli_opts, timer, period, pbf, rtcal, cbf, im):
-        """ Get/set configuration for periodic scans.
+        """Get/set configuration for periodic scans.
 
         Two types of periodic scans can be enabled in the network and each type
         is configured independently:
@@ -209,7 +209,7 @@ class ScanCli:
         For combined scans PBF, RTCAL, CBF, and fast IM scans can be selectively
         enabled using flags given when the combined scan period is configured.
         At least one scan type must be enabled when periodic combined scans are
-        enabled and all types are disabled by default. """
+        enabled and all types are disabled by default."""
         ScanScheduleCmd(cli_opts).run(timer, period, pbf, rtcal, cbf, im)
 
     @click.command()
@@ -222,7 +222,7 @@ class ScanCli:
     )
     @click.pass_obj
     def _slotmapconfig(cli_opts, config):
-        """ Get/set slot map config """
+        """Get/set slot map config"""
         SlotMapConfigCmd(cli_opts).run(config)
 
     @click.command()
@@ -244,25 +244,25 @@ class ScanCli:
     @click.argument("timestamps", nargs=-1)
     @click.pass_obj
     def _timeconv(cli_opts, from_, to, timestamps):
-        """ Convert timestamps to different format """
+        """Convert timestamps to different format"""
         TimeConvCmd(cli_opts).run(from_, to, timestamps)
 
     @click.group()
     @click.pass_obj
     def _cbfConfig(cli_opts):
-        """ Get/set/reset CBF config """
+        """Get/set/reset CBF config"""
         pass
 
     @click.command()
     @click.pass_obj
     def _cbfConfigGet(cli_opts):
-        """ Get CBF configuration for all links """
+        """Get CBF configuration for all links"""
         CbfConfigGetCmd(cli_opts).run()
 
     @click.command()
     @click.pass_obj
     def _cbfConfigSet(cli_opts):
-        """ Set CBF configuration for all links.
+        """Set CBF configuration for all links.
 
         CBF configuration is generated using RF state information from IM
         scan data and latest link state from PBF scans (if available)."""
@@ -271,19 +271,19 @@ class ScanCli:
     @click.command()
     @click.pass_obj
     def _cbfConfigReset(cli_opts):
-        """ Reset CBF configuration for all links """
+        """Reset CBF configuration for all links"""
         CbfConfigResetCmd(cli_opts).run()
 
     @click.group()
     @click.pass_obj
     def _rfState(cli_opts):
-        """ Get/set/reset RF state """
+        """Get/set/reset RF state"""
         pass
 
     @click.command()
     @click.pass_obj
     def _rfStateGet(cli_opts):
-        """ Get RF state (internal use only) """
+        """Get RF state (internal use only)"""
         RfStateGetCmd(cli_opts).run()
 
     @click.command()
@@ -296,19 +296,19 @@ class ScanCli:
     )
     @click.pass_obj
     def _rfStateSet(cli_opts, rfstate_file):
-        """ Set RF state (internal use only) """
+        """Set RF state (internal use only)"""
         RfStateSetCmd(cli_opts).run(rfstate_file)
 
     @click.command()
     @click.pass_obj
     def _rfStateReset(cli_opts):
-        """ Reset RF state """
+        """Reset RF state"""
         RfStateResetCmd(cli_opts).run()
 
     @click.command()
     @click.pass_obj
     def _laTpcParamsSet(cli_opts):
-        """ Set LA/TPC params from RF state """
+        """Set LA/TPC params from RF state"""
         LaTpcParamsSetCmd(cli_opts).run()
 
 

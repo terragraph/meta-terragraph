@@ -25,27 +25,27 @@ class UpgradeTorrentCli(object):
     @click.group()
     @click.pass_obj
     def torrent(cli_opts):
-        """ Utilities for torrent broadcast """
+        """Utilities for torrent broadcast"""
         pass
 
     @click.command()
     @click.option("--url", "-u", type=str, required=True, help="URL of the image")
     @click.pass_obj
     def _add_image(cli_opts, url):
-        """ Download an image and start seeding it """
+        """Download an image and start seeding it"""
         UpgradeTorrentCmd(cli_opts).add_image(url)
 
     @click.command()
     @click.option("--name", "-n", type=str, required=True, help="Name of the image")
     @click.pass_obj
     def _del_image(cli_opts, name):
-        """ Remove an image """
+        """Remove an image"""
         UpgradeTorrentCmd(cli_opts).del_image(name)
 
     @click.command()
     @click.pass_obj
     def _list_images(cli_opts):
-        """ List all known images """
+        """List all known images"""
         UpgradeTorrentCmd(cli_opts).list_images()
 
 

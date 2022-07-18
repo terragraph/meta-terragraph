@@ -51,7 +51,7 @@ class UpgradeCli(object):
     @click.group()
     @click.pass_obj
     def upgrade(cli_opts):
-        """ Upgrade nodes/network """
+        """Upgrade nodes/network"""
         pass
 
     @click.command()
@@ -79,7 +79,7 @@ class UpgradeCli(object):
     )
     @click.pass_obj
     def _launch_server(cli_opts, image, server_port, global_v6_interface):
-        """ Launch a server for image distribution """
+        """Launch a server for image distribution"""
         upgrade_commands.UpgradeLaunchCmd(cli_opts).run(
             image, server_port, global_v6_interface
         )
@@ -100,7 +100,7 @@ class UpgradeCli(object):
     )
     @click.pass_obj
     def _abort(cli_opts, req_ids, all, reset_status):
-        """ Abort queued or in-progress requests in UpgradeApp """
+        """Abort queued or in-progress requests in UpgradeApp"""
         req_ids = req_ids.replace(",", " ").split()
         upgrade_commands.UpgradeAbortCmd(cli_opts).run(req_ids, all, reset_status)
 
@@ -115,7 +115,7 @@ class UpgradeCli(object):
     )
     @click.pass_obj
     def _node(cli_opts, names):
-        """ Upgrade applied to node(s) """
+        """Upgrade applied to node(s)"""
         cli_opts.group_type = ctrlTypes.UpgradeGroupType.NODES
         cli_opts.names = names.replace(",", " ").split()
 
@@ -129,14 +129,14 @@ class UpgradeCli(object):
     )
     @click.pass_obj
     def _network(cli_opts, exclude):
-        """ Upgrade applied to entire network """
+        """Upgrade applied to entire network"""
         cli_opts.group_type = ctrlTypes.UpgradeGroupType.NETWORK
         cli_opts.exclude = exclude.replace(",", " ").split()
 
     @click.command()
     @click.pass_obj
     def _status(cli_opts):
-        """ Dump UpgradeStatus of all nodes """
+        """Dump UpgradeStatus of all nodes"""
         upgrade_status.UpgradeStatusCmd(cli_opts).run()
 
     @click.command()
@@ -178,7 +178,7 @@ class UpgradeCli(object):
     )
     @click.pass_obj
     def _prepare(cli_opts, image, timeout, download_attempts, batch_size, retries):
-        """ Prepare upgrade """
+        """Prepare upgrade"""
         upgrade_commands.UpgradePrepareCmd(cli_opts).run(
             image, timeout, download_attempts, batch_size, retries
         )
@@ -262,7 +262,7 @@ class UpgradeCli(object):
         retries,
         boards,
     ):
-        """ Prepare torrent upgrade """
+        """Prepare torrent upgrade"""
         hw_board_ids = None
         if boards:
             hw_board_ids = [x.strip() for x in boards.split(",") if x.strip()]
@@ -360,7 +360,7 @@ class UpgradeCli(object):
         dry_run,
         retries,
     ):
-        """ Commit upgrade """
+        """Commit upgrade"""
         skip_links = skip_links.replace(",", " ").split()
 
         if dry_run:
@@ -501,7 +501,7 @@ class UpgradeCli(object):
         magnet,
         md5,
     ):
-        """ Full upgrade """
+        """Full upgrade"""
         skip_links = skip_links.replace(",", " ").split()
         upgrade_commands.UpgradeFullCmd(cli_opts).run(
             version,
@@ -524,5 +524,5 @@ class UpgradeCli(object):
     @click.command()
     @click.pass_obj
     def _reset_status(cli_opts):
-        """ Reset upgrade status """
+        """Reset upgrade status"""
         upgrade_commands.UpgradeResetCmd(cli_opts).run()

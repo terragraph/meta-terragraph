@@ -26,8 +26,8 @@ class UpgradeBaseCmd(base.BaseCmd):
         _log.info("Request Id: %s", self._upgrade_req_id)
 
     def _load_meta(self, image):
-        """ Extract meta data from an upgrade image
-            @param image: file like type object"""
+        """Extract meta data from an upgrade image
+        @param image: file like type object"""
 
         # Terragraph images have three blocks:
         #  1. preamble block (run script)
@@ -134,7 +134,7 @@ class UpgradeBaseCmd(base.BaseCmd):
 
     def _validate_port(self, ip, port, process_name):
         """Checks if the port is in use. If it's being used by process_name,
-           that process will be killed. Otherwise, this program terminates."""
+        that process will be killed. Otherwise, this program terminates."""
         import psutil
 
         for conn in psutil.net_connections("inet6"):

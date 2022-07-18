@@ -19,7 +19,7 @@ DEFAULT_JSON_BASE_PATH = Path("/usr/share/vpp/api")
 def load_api_json(
     jsonfiles: List[Path], json_base_path: Path = DEFAULT_JSON_BASE_PATH
 ) -> None:
-    """ Recursive filesystem walker to get all the API JSON files """
+    """Recursive filesystem walker to get all the API JSON files"""
     for d in json_base_path.iterdir():
         if d.is_dir():
             load_api_json(jsonfiles, d)

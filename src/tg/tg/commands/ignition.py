@@ -26,7 +26,7 @@ class IgnitionCli(object):
 
     @click.group()
     def ignition():
-        """ Modify/Query ignition parameters """
+        """Modify/Query ignition parameters"""
         pass
 
     @click.command()
@@ -55,7 +55,7 @@ class IgnitionCli(object):
     )
     @click.pass_obj
     def _auto(cli_opts, enable, linkup_interval, linkup_dampen_interval, bf_timeout):
-        """ Change network auto-ignition parameters """
+        """Change network auto-ignition parameters"""
         if all(
             op is None
             for op in [enable, linkup_interval, linkup_dampen_interval, bf_timeout]
@@ -74,7 +74,7 @@ class IgnitionCli(object):
     )
     @click.pass_obj
     def _link(cli_opts, name, enable):
-        """ Change link auto-ignition state """
+        """Change link auto-ignition state"""
         if enable is None:
             IgnitionStateCmd(cli_opts, name).run()
         else:
@@ -83,7 +83,7 @@ class IgnitionCli(object):
     @click.command()
     @click.pass_obj
     def _state(cli_opts):
-        """ Dump ignition state at the controller """
+        """Dump ignition state at the controller"""
         IgnitionStateCmd(cli_opts, None).run()
 
     @click.command()
@@ -95,7 +95,7 @@ class IgnitionCli(object):
     )
     @click.pass_obj
     def _extinguish(cli_opts, link_down_interval):
-        """ bring all wireless links down, must disable auto-ignition before"""
+        """bring all wireless links down, must disable auto-ignition before"""
         ExtinguishCmd(cli_opts, link_down_interval).run()
 
 

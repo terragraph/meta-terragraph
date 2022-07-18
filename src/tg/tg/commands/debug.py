@@ -29,10 +29,10 @@ class SshCli:
     @click.argument("cmds", nargs=-1)
     @click.pass_obj
     def ssh(cli_opts, atonce, node_name, cmds):
-        """ ssh like command for given node using inband address
-            E.g. ssh terra111 -- ls -ltr /usr/sbin,
-            To run command on all nodes, use:
-            ssh all -- ls -ltr /usr/sbin"""
+        """ssh like command for given node using inband address
+        E.g. ssh terra111 -- ls -ltr /usr/sbin,
+        To run command on all nodes, use:
+        ssh all -- ls -ltr /usr/sbin"""
         if node_name == "all" and not cmds:
             raise click.UsageError("Please provide command to run on all nodes")
         SshCmd(cli_opts, node_name, cmds, atonce).run()
@@ -57,7 +57,7 @@ class ScpCli(object):
     @click.option("--dst", "-d", help="remote destination")
     @click.pass_obj
     def _put(cli_opts, node_name, atonce, src, dst):
-        """ copy local file to given node """
+        """copy local file to given node"""
         ScpPutCmd(cli_opts, node_name, src, dst, atonce).run()
 
     @click.command()
@@ -69,7 +69,7 @@ class ScpCli(object):
     @click.option("--dst", "-d", help="local destination")
     @click.pass_obj
     def _get(cli_opts, node_name, atonce, src, dst):
-        """ copy file from given node """
+        """copy file from given node"""
         ScpGetCmd(cli_opts, node_name, src, dst, atonce).run()
 
 

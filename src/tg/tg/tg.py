@@ -66,7 +66,7 @@ _log = logging.getLogger(__name__)
 
 
 class CliOptions(object):
-    """ Object for holding CLI state information """
+    """Object for holding CLI state information"""
 
     def __init__(
         self,
@@ -187,7 +187,7 @@ def tg(
     minion_port,
     verbosity,
 ):
-    """ Terragraph CLI """
+    """Terragraph CLI"""
 
     # Convert IPs to hosts for backwards compatibility
     if controller_ip:

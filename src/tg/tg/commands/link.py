@@ -37,7 +37,7 @@ class LinkCli(object):
 
     @click.group()
     def link():
-        """ View/Add/Modify/Delete/Assoc/Dissoc Links """
+        """View/Add/Modify/Delete/Assoc/Dissoc Links"""
         pass
 
     @click.command()
@@ -46,7 +46,7 @@ class LinkCli(object):
         "--include_wired", is_flag=True, help="include information about wired links"
     )
     def _list(cli_opts, include_wired):
-        """ List all the links """
+        """List all the links"""
         LinkListCmd(cli_opts, include_wired).run()
 
     @click.command()
@@ -58,7 +58,7 @@ class LinkCli(object):
     )
     @click.pass_obj
     def _up(cli_opts, initiator_node, responder_node):
-        """ Bring up a link """
+        """Bring up a link"""
         LinkStatusCmd(
             cli_opts, initiator_node, responder_node, ctrlTypes.LinkActionType.LINK_UP
         ).run()
@@ -72,7 +72,7 @@ class LinkCli(object):
     )
     @click.pass_obj
     def _down(cli_opts, initiator_node, responder_node):
-        """ Bring down a link """
+        """Bring down a link"""
         LinkStatusCmd(
             cli_opts, initiator_node, responder_node, ctrlTypes.LinkActionType.LINK_DOWN
         ).run()
@@ -122,7 +122,7 @@ class LinkCli(object):
         wired,
         backup_cn_link,
     ):
-        """ Add a link """
+        """Add a link"""
         if a_node_name >= z_node_name:
             raise click.UsageError(
                 "Error: %s is not lexicographically "
@@ -160,7 +160,7 @@ class LinkCli(object):
     )
     @click.pass_obj
     def _del(cli_opts, a_node_name, z_node_name, force):
-        """ Delete a link """
+        """Delete a link"""
         if a_node_name >= z_node_name:
             raise click.UsageError(
                 "Error: %s is not lexicographically "
@@ -221,7 +221,7 @@ class LinkCli(object):
         node_type,
         peer_node_type,
     ):
-        """ Send fake DriverLinkStatus to a minion """
+        """Send fake DriverLinkStatus to a minion"""
         SendFakeDriverStatusCmd(
             cli_opts,
             node_mac,

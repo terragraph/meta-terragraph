@@ -27,7 +27,7 @@ class EventCli(object):
 
     @click.group()
     def event():
-        """ Send an event to the stats agent """
+        """Send an event to the stats agent"""
         pass
 
     @click.command()
@@ -90,7 +90,7 @@ class EventCli(object):
         node_name,
         topology,
     ):
-        """ Add an event """
+        """Add an event"""
         EventCmd(cli_opts).add(
             category,
             id,

@@ -1,13 +1,10 @@
 [ptr]
-atonce = 24
 exclude_patterns =
   build*
   yocto
-extra_build_env_prefix = /usr/local/fbcode/platform007
-pypi_url = https://pypi.facebook.com/simple/
 venv_pkgs =
   black
   coverage
+  flake8
+  git+https://github.com/cooperlees/aioexabgp
   mypy
-  pip
-  setuptools

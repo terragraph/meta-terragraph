@@ -8,7 +8,9 @@
 from setuptools import setup
 
 
+# Need Open/R libs installed - Disabled by default
 ptr_params = {
+    "disabled": True,
     "entry_point_module": "exaconf/__init__",
     "test_suite": "exaconf.tests.base",
     "test_suite_timeout": 120,

@@ -22,21 +22,21 @@ class VersionCli(object):
 
     @click.group()
     def version():
-        """ Show version of controller or aggregator
-            (located in /etc/tgversion)
+        """Show version of controller or aggregator
+        (located in /etc/tgversion)
         """
         pass
 
     @click.command()
     @click.pass_obj
     def _controller(cli_opts):
-        """ Show controller version """
+        """Show controller version"""
         VersionCmd(cli_opts)._controller()
 
     @click.command()
     @click.pass_obj
     def _aggregator(cli_opts):
-        """ Show aggregator version """
+        """Show aggregator version"""
         VersionCmd(cli_opts)._aggregator()
 
 

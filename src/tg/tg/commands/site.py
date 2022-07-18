@@ -25,7 +25,7 @@ class SiteCli(object):
 
     @click.group()
     def site():
-        """ Add/Modify/Delete Sites """
+        """Add/Modify/Delete Sites"""
         pass
 
     @click.command()
@@ -38,14 +38,14 @@ class SiteCli(object):
     )
     @click.pass_obj
     def _add(cli_opts, name, lon, lat, alt, acc):
-        """ Add a site """
+        """Add a site"""
         SiteCmd(cli_opts, name, None, lon, lat, alt, acc)._add_site()
 
     @click.command()
     @click.option("--name", "-n", type=str, required=True, help="site name")
     @click.pass_obj
     def _del(cli_opts, name):
-        """ Delete a site """
+        """Delete a site"""
         SiteCmd(cli_opts, name)._del_site()
 
     @click.command()
@@ -53,7 +53,7 @@ class SiteCli(object):
     @click.option("--new_name", "-r", type=str, required=True, help="new site name")
     @click.pass_obj
     def _rename(cli_opts, name, new_name):
-        """ Rename a site """
+        """Rename a site"""
         SiteCmd(cli_opts, name, new_name)._rename_site()
 
     @click.command()
@@ -66,7 +66,7 @@ class SiteCli(object):
     )
     @click.pass_obj
     def _relocate(cli_opts, name, lon, lat, alt, acc):
-        """ Edit a site location """
+        """Edit a site location"""
         SiteCmd(cli_opts, name, None, lon, lat, alt, acc)._relocate()
 
 

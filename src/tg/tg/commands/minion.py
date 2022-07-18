@@ -39,7 +39,7 @@ class MinionCli(object):
 
     @click.group()
     def minion():
-        """ Interface with the E2E minion directly (FOR DEVELOPMENT ONLY) """
+        """Interface with the E2E minion directly (FOR DEVELOPMENT ONLY)"""
         pass
 
     @click.command()
@@ -52,7 +52,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _sub(cli_opts, minion_pub_port):
-        """ Subscribe to broadcast messages """
+        """Subscribe to broadcast messages"""
         MinionCmd(cli_opts).sub(minion_pub_port)
 
     @click.command()
@@ -88,7 +88,7 @@ class MinionCli(object):
         control_superframe,
         responder_polarity,
     ):
-        """ Associate a link """
+        """Associate a link"""
         MinionCmd(cli_opts).assoc(
             responder_mac,
             initiator_mac,
@@ -106,7 +106,7 @@ class MinionCli(object):
     @click.option("--initiator_mac", "-i", type=str, help="initiator MAC address")
     @click.pass_obj
     def _dissoc(cli_opts, responder_mac, initiator_mac):
-        """ Dissociate a link """
+        """Dissociate a link"""
         MinionCmd(cli_opts).dissoc(responder_mac, initiator_mac)
 
     @click.command()
@@ -115,13 +115,13 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _get_link_status(cli_opts, responder_mac):
-        """ Get link status """
+        """Get link status"""
         MinionCmd(cli_opts).get_link_status(responder_mac)
 
     @click.command()
     @click.pass_obj
     def _get_gps_pos(cli_opts):
-        """ Get GPS position """
+        """Get GPS position"""
         MinionCmd(cli_opts).get_gps_pos()
 
     @click.command()
@@ -133,7 +133,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _gps_enable(cli_opts, radio_mac):
-        """ Enable GPS sync mode """
+        """Enable GPS sync mode"""
         MinionCmd(cli_opts).gps_enable(radio_mac)
 
     @click.command()
@@ -149,7 +149,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _set_params(cli_opts, radio_mac, channel, polarity):
-        """ Set node parameters """
+        """Set node parameters"""
         MinionCmd(cli_opts).set_params(radio_mac, channel, polarity)
 
     @click.command()
@@ -170,7 +170,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _fw_set_log_config(cli_opts, radio_mac, module, level):
-        """ Set firmware verbosity logging level for specified modules """
+        """Set firmware verbosity logging level for specified modules"""
         MinionCmd(cli_opts).fw_set_log_config(radio_mac, module, level)
 
     @click.command()
@@ -191,7 +191,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _fw_stats_config(cli_opts, radio_mac, enable, disable):
-        """ Set firmware stats config """
+        """Set firmware stats config"""
         MinionCmd(cli_opts).fw_stats_config(radio_mac, enable, disable)
 
     @click.command()
@@ -200,7 +200,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _nbr(cli_opts, device):
-        """ Get neighbors on network device(s) """
+        """Get neighbors on network device(s)"""
         MinionCmd(cli_opts).nbr(device)
 
     @click.command()
@@ -213,7 +213,7 @@ class MinionCli(object):
     )
     @click.pass_obj
     def _set_node_config(cli_opts, node_config_file):
-        """ Set node config and apply associated actions """
+        """Set node config and apply associated actions"""
         MinionCmd(cli_opts).set_node_config(node_config_file)
 
     @click.command()
@@ -265,10 +265,10 @@ class MinionCli(object):
         add_bool_val,
         delete_key,
     ):
-        """ Modify the local node config file.
+        """Modify the local node config file.
 
-            The config key name is a text traversal of the JSON tree with dot
-            delimiters (e.g. radioParamsBase.fwParams.wsecEnable).
+        The config key name is a text traversal of the JSON tree with dot
+        delimiters (e.g. radioParamsBase.fwParams.wsecEnable).
         """
         MinionCmd(cli_opts).modify_node_config(
             node_config_file,

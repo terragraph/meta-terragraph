@@ -120,7 +120,7 @@ def get_bwgd(unix_offset):
 
 
 class CliOptions:
-    """ Object for holding CLI state information """
+    """Object for holding CLI state information"""
 
     def __init__(self, debug, driver_if_host, driver_if_pair_port, timeout, radio_mac):
         self.debug = debug
@@ -141,7 +141,7 @@ class NodeInitCli:
     )
     @click.pass_obj
     def node_init(cli_opts, config_file):
-        """ Initialize the node. At the end of this process all of the config
+        """Initialize the node. At the end of this process all of the config
         parameters are set and the node is up in responder mode and looking for
         an initiator (if the node is given an r2d2 assoc command it will switch
         from responder to initiator). A node config file can be passed with
@@ -181,7 +181,7 @@ class LinkAssocCli:
         list of available config file parameters with correct format please
         refer to meta-terragraph/src/terragraph-e2e/e2e/config/
         config_metadata.json. The node_config file can be found on the image at
-        /data/cfg/node_config.json """
+        /data/cfg/node_config.json"""
         cmds.LinkAssocCmd(
             cli_opts, config_file, responder_mac, backwards_compatible
         ).run()
@@ -215,12 +215,12 @@ class AirtimeAllocationCli:
     )
     @click.pass_obj
     def airtime_alloc(cli_opts, airtime_alloc_file):
-        """ Allocate airtime in dynamic manner. Requires a dynamic airtime
+        """Allocate airtime in dynamic manner. Requires a dynamic airtime
         allocation configuration file. An example airtime allocation file can
         be found at meta-terragraph/src/terragraph-e2e/e2e/config/
         airtimes_r2d2_1dn_4cn.json or on the image at /etc/e2e_config/
         airtimes_r2d2_1dn_4cn.json. The airtime allocation in the file is a
-        percentage scaled to 10000 """
+        percentage scaled to 10000"""
         cmds.AirtimeAllocateCmd(cli_opts, airtime_alloc_file).run()
 
 
@@ -257,14 +257,14 @@ class FwStatsConfigCli:
     )
     @click.pass_obj
     def fw_stats_config(cli_opts, config_file):
-        """ Configure which firmware stats are dumped in r2d2 fw_stats command.
+        """Configure which firmware stats are dumped in r2d2 fw_stats command.
         A config file can be passed with this command to select the set of
         stats to be enabled. An example file may be found in the repo at
         meta-terragraph/src/terragraph-e2e/e2e/config/fw_stats_cfg.json
         or on the image at /etc/e2e_config/fw_stats_cfg.json. Each radio
         interface can have a different set of stats enabled.
         In addition to the stats listed in the example config file, vendors
-        can add their own stats to be enabled or disabled. """
+        can add their own stats to be enabled or disabled."""
         cmds.FwStatsConfigCmd(cli_opts, config_file).run()
 
 
@@ -388,7 +388,7 @@ class FwSetParamsCli:
     )
     @click.pass_obj
     def fw_set_params(cli_opts, parameters, responder_mac, bwgdidx, show_list):
-        """ Setting runtime firmware params """
+        """Setting runtime firmware params"""
         cmds.FwSetParamsCmd(
             cli_opts, parameters, responder_mac, bwgdidx, show_list
         ).run()
@@ -397,7 +397,7 @@ class FwSetParamsCli:
 class FwGetParamsCli:
     @click.group()
     def fw_get_params():
-        """ Getting runtime firmware parameters """
+        """Getting runtime firmware parameters"""
         pass
 
     _node_params = [
@@ -421,7 +421,7 @@ class FwGetParamsCli:
     )
     @click.pass_obj
     def _node(cli_opts, param_type):
-        """ Get FW parameters associated with the node. """
+        """Get FW parameters associated with the node."""
         cmds.FwGetParamsCmd(
             cli_opts, param_type, cmds.EMPTY_MAC_ADDRESS
         ).getNodeParams()
@@ -445,7 +445,7 @@ class FwGetParamsCli:
     )
     @click.pass_obj
     def _link(cli_opts, param_type, responder_mac):
-        """ Get current setting of FW Link parameters """
+        """Get current setting of FW Link parameters"""
         cmds.FwGetParamsCmd(cli_opts, param_type, responder_mac).getLinkParams()
 
     fw_get_params.add_command(_node, name="node")
@@ -467,10 +467,10 @@ class PhyLAConfigCli:
     )
     @click.pass_obj
     def phyla_config(cli_opts, config_file, responder_mac):
-        """ Configure PHY Link Adaptation at run time. A config file can be
+        """Configure PHY Link Adaptation at run time. A config file can be
         passed with this command. An example comfig file can be found at
         meta-terragraph/src/terragraph-e2e/e2e/config/fw_phyla_cfg.json
-        or in the image at /etc/e2e_config/fw_phyla_cfg.json """
+        or in the image at /etc/e2e_config/fw_phyla_cfg.json"""
         cmds.PhyLAConfigCmd(cli_opts, config_file, responder_mac).run()
 
 
@@ -489,12 +489,12 @@ class PhyAgcConfigCli:
     )
     @click.pass_obj
     def phyagc_config(cli_opts, config_file, responder_mac):
-        """ Configure PHY max AGC tracking. A config file can be passed with
+        """Configure PHY max AGC tracking. A config file can be passed with
         this command. An example config file can be found here: meta-terragraph/
         src/terragraph-e2e/e2e/config/fw_phyagc_cfg.json or on the image
         at /etc/e2e_config/fw_phyagc_cfg.json. Note: The node parameters are
         for all links on a node the link parameters are per link.
-        The last config file programmed will be the node parameters used. """
+        The last config file programmed will be the node parameters used."""
         cmds.PhyAgcConfigCmd(cli_opts, config_file, responder_mac).run()
 
 
@@ -513,7 +513,7 @@ class PhyTpcConfigCli:
     )
     @click.pass_obj
     def phytpc_config(cli_opts, config_file, responder_mac):
-        """ Configure PHY transmit power control. A config file can be passed
+        """Configure PHY transmit power control. A config file can be passed
         with this command. An example file can be found at meta-terragraph/
         src/terragraph-e2e/e2e/config/fw_phytpc_cfg.json or on the
         image at /etc/e2e_config/fw_phytpc_cfg.json. All radios attached to the
@@ -532,7 +532,7 @@ class PhyTpcAdjTblConfigCli:
     )
     @click.pass_obj
     def phy_tpc_adj_tbl_config(cli_opts, config_file):
-        """ Configure PHY TxPower Adjustment Table """
+        """Configure PHY TxPower Adjustment Table"""
         cmds.PhyTpcAdjustmentTblConfigCmd(cli_opts, config_file).run()
 
 
@@ -547,7 +547,7 @@ class PhyAntWgtCodeBookConfigCli:
     )
     @click.pass_obj
     def phy_ant_wgt_code_book_config(cli_opts, config_file):
-        """ Configure PHY Antenna CodeBook """
+        """Configure PHY Antenna CodeBook"""
         cmds.PhyAntWgtCodeBookConfigCmd(cli_opts, config_file).run()
 
 
@@ -558,7 +558,7 @@ class PhyGolaySequenceConfigCli:
     )
     @click.pass_obj
     def phy_golay_sequence_config(cli_opts, config_file):
-        """ Configure PHY Golay Sequences """
+        """Configure PHY Golay Sequences"""
         cmds.PhyGolaySequenceConfigCmd(cli_opts, config_file).run()
 
 
@@ -566,7 +566,7 @@ class GetGpsPosCli:
     @click.command()
     @click.pass_obj
     def get_gps_pos(cli_opts):
-        """ Get position of node from GPS """
+        """Get position of node from GPS"""
         cmds.GetGpsPosCmd(cli_opts).run()
 
 
@@ -580,7 +580,7 @@ class SetGpsPosCli:
     @click.option("--accuracy", "-e", default=50, type=float, help="Accuracy in meters")
     @click.pass_obj
     def set_gps_pos(cli_opts, latitude, longitude, height, accuracy):
-        """ Set position of node for GPS single satellite mode, default=MPK """
+        """Set position of node for GPS single satellite mode, default=MPK"""
         cmds.SetGpsPosCmd(cli_opts, latitude, longitude, height, accuracy).run()
 
 
@@ -588,7 +588,7 @@ class GpsEnableCli:
     @click.command()
     @click.pass_obj
     def gps_enable(cli_opts):
-        """ Enable GPS """
+        """Enable GPS"""
         cmds.GpsEnableCmd(cli_opts).run()
 
 
@@ -597,7 +597,7 @@ class GpsSendTimeCli:
     @click.argument("gps_time")
     @click.pass_obj
     def gps_send_time(cli_opts, gps_time):
-        """ Set current GPS time """
+        """Set current GPS time"""
         cmds.GpsSendTimeCmd(cli_opts, gps_time).run()
 
 
@@ -640,7 +640,7 @@ class BfSlotExclusionReqCli:
     @click.pass_obj
     def bf_slot_exclusion_req(cli_opts, bwgdidx):
         """Configure Bf Slot Exclusion. This used to make sure that scans and
-        BF don't collide. Not available yet. """
+        BF don't collide. Not available yet."""
         cmds.BfSlotExclusionReqCmd(cli_opts, bwgdidx).run()
 
 
@@ -650,9 +650,9 @@ class DebugCli:
     @click.option("--value", "-v", type=int, help="Command value")
     @click.pass_obj
     def debug(cli_opts, command, value):
-        """ Send debug command to firmware. Takes in the string specified by
+        """Send debug command to firmware. Takes in the string specified by
         the -c option and the value specified by the -v option and prints out
-        a debug cmd message in kern log. """
+        a debug cmd message in kern log."""
         cmds.DebugCmd(cli_opts, command, value).run()
 
 
@@ -774,7 +774,7 @@ class SynchronizedScanCli:
         from your devserver. The node on which this command is run is assumed
         to be tx for the scan."""
         if token is None:
-            token = randrange(2 ** 31)
+            token = randrange(2**31)
         if (
             ctrlTypes.ScanType._NAMES_TO_VALUES[scan_type.upper()]
             == ctrlTypes.ScanType.IM
@@ -979,7 +979,7 @@ class ScanCli:
         devices that receive. The r2d2 sync_scan command can start scans in a
         coordinated manner."""
         if token is None:
-            token = randrange(2 ** 31)
+            token = randrange(2**31)
         cmds.ScanCmd(
             cli_opts,
             token,
@@ -1005,8 +1005,8 @@ class ChannelConfigCli:
     @click.option("--channel", "-c", type=int, default=2, help="network channel (1-4)")
     @click.pass_obj
     def channel_config(cli_opts, channel):
-        """ Send channel configuration to firmware. Default channel is 2
-        (if no -c input) """
+        """Send channel configuration to firmware. Default channel is 2
+        (if no -c input)"""
         cmds.ChannelConfigCmd(cli_opts, channel).run()
 
 
@@ -1015,7 +1015,7 @@ class BfRespScanCli:
     @click.option("--cfg", "-c", type=bool, help="Enable/disable bf responder scan")
     @click.pass_obj
     def bf_resp_scan_config(cli_opts, cfg):
-        """ Enable/Disable Bf responder scan mode. Used when the node has
+        """Enable/Disable Bf responder scan mode. Used when the node has
         other links and allows the node to do other associations from
         Synchronous mode Initial Beam Forming."""
         cmds.BfRespScanConfigCmd(cli_opts, cfg).run()
@@ -1118,9 +1118,9 @@ class FwSetLogConfigCli:
     )
     @click.pass_obj
     def fw_set_log_config(cli_opts, module, level, show_list):
-        """ Set firmware verbosity logging level for specified modules. Each
+        """Set firmware verbosity logging level for specified modules. Each
         vendor needs to define the options to this command. These options
-        including modules, and levels should be defined in the --help message. """
+        including modules, and levels should be defined in the --help message."""
         cmds.FwSetLogConfigCmd(cli_opts, module, level, show_list).run()
 
 
@@ -1172,7 +1172,7 @@ def r2d2(
     timeout,
     radio_mac,
 ):
-    """ CLI to talk to driverIf daemon """
+    """CLI to talk to driverIf daemon"""
     log_level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
         format="[%(asctime)s] %(levelname)s: %(message)s (%(filename)s:%(lineno)d)",

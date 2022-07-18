@@ -8,8 +8,9 @@
 from setuptools import setup
 
 
-# Specific Python Test Runner (ptr) params for Unit Testing Enforcement
+# Disabled due to needing iptables libs as deps
 ptr_params = {
+    "disabled": True,
     "entry_point_module": "update_firewall",
     "test_suite": "update_firewall_tests",
     "test_suite_timeout": 150,
