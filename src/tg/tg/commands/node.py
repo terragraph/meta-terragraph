@@ -31,7 +31,7 @@ class NodeCli(object):
 
     @click.group()
     def node():
-        """ Add/Modify/Delete/Reboot Nodes """
+        """Add/Modify/Delete/Reboot Nodes"""
         pass
 
     @click.command()
@@ -42,14 +42,14 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _setmac(cli_opts, name, mac, force):
-        """ Set node mac address """
+        """Set node mac address"""
         NodeCmd(cli_opts, name, mac_addr=mac, force=force)._setmac()
 
     @click.group()
     @click.option("--name", "-n", type=str, required=True, help="node name")
     @click.pass_obj
     def _wlanmac(cli_opts, name):
-        """ Add/Delete/Change node's wlan mac addresses"""
+        """Add/Delete/Change node's wlan mac addresses"""
         cli_opts.nodeName = name
 
     @click.command()
@@ -62,7 +62,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _add_wlan_macs(cli_opts, wlan_macs):
-        """ Add node wlan mac addresses """
+        """Add node wlan mac addresses"""
         wlan_mac_addrs = [m.strip() for m in wlan_macs.split(",") if m.strip()]
         NodeCmd(
             cli_opts, cli_opts.nodeName, wlan_mac_addrs=wlan_mac_addrs
@@ -78,7 +78,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _del_wlan_macs(cli_opts, wlan_macs):
-        """ Delete node wlan mac addresses """
+        """Delete node wlan mac addresses"""
         wlan_mac_addrs = [m.strip() for m in wlan_macs.split(",") if m.strip()]
         NodeCmd(
             cli_opts, cli_opts.nodeName, wlan_mac_addrs=wlan_mac_addrs
@@ -92,7 +92,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _change_wlan_mac(cli_opts, old_mac, new_mac, force):
-        """ Change node wlan mac address """
+        """Change node wlan mac address"""
         NodeCmd(cli_opts, cli_opts.nodeName, force=force)._change_wlan_mac(
             old_mac, new_mac
         )
@@ -122,7 +122,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _add(cli_opts, name, mac, wlan_mac_addrs, site, node_type, pop_node):
-        """ Add a node """
+        """Add a node"""
         wlan_mac_addrs = [m.strip() for m in wlan_mac_addrs.split(",") if m.strip()]
         NodeCmd(
             cli_opts,
@@ -145,7 +145,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _del(cli_opts, name, force):
-        """ Delete a node """
+        """Delete a node"""
         NodeCmd(cli_opts, name, force=force)._del_node()
 
     @click.command()
@@ -153,7 +153,7 @@ class NodeCli(object):
     @click.option("--new_name", "-r", type=str, required=True, help="new node name")
     @click.pass_obj
     def _rename(cli_opts, name, new_name):
-        """ Rename a node """
+        """Rename a node"""
         NodeCmd(cli_opts, name, new_name)._rename_node()
 
     @click.command()
@@ -177,7 +177,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _reboot(cli_opts, name, force, delay):
-        """ Reboot a node(s). If no names are given, will reboot all nodes """
+        """Reboot a node(s). If no names are given, will reboot all nodes"""
         NodeCmd(cli_opts, name.replace(",", " ").split(), force=force)._reboot_node(
             delay
         )
@@ -202,7 +202,7 @@ class NodeCli(object):
     )
     @click.pass_obj
     def _restart_minion(cli_opts, name, delay):
-        """ Restart minon(s). If no names are given, will restart all minions """
+        """Restart minon(s). If no names are given, will restart all minions"""
         NodeCmd(cli_opts, name.replace(",", " ").split())._restart_minion(delay)
 
 

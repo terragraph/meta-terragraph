@@ -76,7 +76,7 @@ class FwCli(object):
     @click.group()
     @click.pass_obj
     def fw(cli_opts):
-        """ Enable/disable firmware stats types """
+        """Enable/disable firmware stats types"""
         pass
 
     @click.group()
@@ -90,7 +90,7 @@ class FwCli(object):
     )
     @click.pass_obj
     def _node(cli_opts, names):
-        """ Firmware commands applied to nodes """
+        """Firmware commands applied to nodes"""
         cli_opts.cmd = FwNodeCmd
         cli_opts.names = [n.strip() for n in names.split(",")]
 
@@ -104,7 +104,7 @@ class FwCli(object):
     )
     @click.pass_obj
     def _network(cli_opts, exclude):
-        """ Firmware commands applied to network """
+        """Firmware commands applied to network"""
         cli_opts.cmd = FwNetworkCmd
         cli_opts.exclude = [n.strip() for n in exclude.split(",")]
 
@@ -132,7 +132,7 @@ class FwCli(object):
     )
     @click.pass_obj
     def _stats_config(cli_opts, types, enable, on_duration, period):
-        """ Enable/disable firmware stats """
+        """Enable/disable firmware stats"""
         cli_opts.cmd(cli_opts).stats_config(types, enable, on_duration, period)
 
     # log config
@@ -155,7 +155,7 @@ class FwCli(object):
     )
     @click.pass_obj
     def _set_log_config(cli_opts, module, level, show_list):
-        """ Set firmware logging level for specified modules """
+        """Set firmware logging level for specified modules"""
         cli_opts.cmd(cli_opts).set_log_config(module, level, show_list)
 
     # runtime set fw params
@@ -182,12 +182,12 @@ class FwCli(object):
     )
     @click.pass_obj
     def _set_fw_params(cli_opts, parameters, responder_node, bwgdidx):
-        """ Setting runtime firmware params """
+        """Setting runtime firmware params"""
         cli_opts.cmd(cli_opts).set_fw_params(parameters, responder_node, bwgdidx)
 
     @click.group()
     def _get_fw_params():
-        """ Getting runtime firmware parameters """
+        """Getting runtime firmware parameters"""
         pass
 
     _node_params = [
@@ -211,7 +211,7 @@ class FwCli(object):
     )
     @click.pass_obj
     def _fw_get_node_params(cli_opts, param_type):
-        """ Get FW Node parameters """
+        """Get FW Node parameters"""
         cli_opts.cmd(cli_opts).get_fw_params("node", param_type, "")
 
     @click.command()
@@ -228,7 +228,7 @@ class FwCli(object):
     )
     @click.pass_obj
     def _fw_get_link_params(cli_opts, param_type, responder_node):
-        """ Get FW Link parameters """
+        """Get FW Link parameters"""
         cli_opts.cmd(cli_opts).get_fw_params("link", param_type, responder_node)
 
     _get_fw_params.add_command(_fw_get_node_params, name="nodeParams")
@@ -255,7 +255,7 @@ class FwCli(object):
     @click.option("--value", "-v", type=int, help="Command value")
     @click.pass_obj
     def _debug(cli_opts, command, value):
-        """ push debug command """
+        """push debug command"""
         cli_opts.cmd(cli_opts).debug(command, value)
 
     # bf responder scan command
@@ -263,7 +263,7 @@ class FwCli(object):
     @click.option("--cfg", "-c", type=bool, help="Enable/disable bf responder scan")
     @click.pass_obj
     def _bf_resp_scan(cli_opts, cfg):
-        """ Enable/disable bf responder scan """
+        """Enable/disable bf responder scan"""
         cli_opts.cmd(cli_opts).bf_resp_scan(cfg)
 
 

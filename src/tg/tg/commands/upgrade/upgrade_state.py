@@ -29,25 +29,25 @@ class UpgradeStateCli(object):
     @click.group()
     @click.pass_obj
     def state(cli_opts):
-        """ Print information about the controller UpgradeApp state """
+        """Print information about the controller UpgradeApp state"""
         pass
 
     @click.command()
     @click.pass_obj
     def _pending_reqs(cli_opts):
-        """ Print information about each pending request """
+        """Print information about each pending request"""
         UpgradeStateCmd(cli_opts).pending_reqs()
 
     @click.command()
     @click.pass_obj
     def _pending_batches(cli_opts):
-        """ Print the nodes in each of the pending batches """
+        """Print the nodes in each of the pending batches"""
         UpgradeStateCmd(cli_opts).pending_batches()
 
     @click.command()
     @click.pass_obj
     def _current_request(cli_opts):
-        """ Print information about the current request """
+        """Print information about the current request"""
         UpgradeStateCmd(cli_opts).current_request()
 
     @click.command()
@@ -61,7 +61,7 @@ class UpgradeStateCli(object):
     )
     @click.pass_obj
     def _current_batch(cli_opts, refresh):
-        """ Print information about each node in the current batch """
+        """Print information about each node in the current batch"""
         if refresh:
             cmd = UpgradeStateCmd(cli_opts)
             while True:
@@ -74,7 +74,7 @@ class UpgradeStateCli(object):
     @click.command()
     @click.pass_obj
     def _all(cli_opts):
-        """ Dump the controller UpgradeApp state """
+        """Dump the controller UpgradeApp state"""
         state_cmd = UpgradeStateCmd(cli_opts)
         state_cmd.current_batch()
         state_cmd.pending_batches()

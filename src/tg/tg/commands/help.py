@@ -11,7 +11,7 @@ import click
 @click.command()
 @click.pass_context
 def help(ctx):
-    """ Show help for all commands """
+    """Show help for all commands"""
     _print_help_recursive(ctx.parent, ctx.parent.command, [ctx.parent.info_name])
 
 

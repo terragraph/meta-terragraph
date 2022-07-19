@@ -39,7 +39,7 @@ from tg.tests.test_consts import TestConsts  # isort:skip
 
 
 class TestTg(unittest.TestCase):
-    """ Test click running """
+    """Test click running"""
 
     def test_help_output(self):
         runner = CliRunner()

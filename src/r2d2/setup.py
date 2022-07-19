@@ -15,7 +15,7 @@ ptr_params = {
     "test_suite_timeout": 30,
     "required_coverage": {
         "r2d2/help.py": 20,
-        "r2d2/r2d2.py": 64,
+        "r2d2/r2d2.py": 60,
         "r2d2/r2d2_commands.py": 15,
         "TOTAL": 35,
     },

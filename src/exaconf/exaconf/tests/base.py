@@ -232,7 +232,7 @@ class BGPTests(unittest.TestCase):
 
     def test_get_router_id(self) -> None:
         MAC_ADDR = "FF:FF:FF:FF:FF:FF"
-        ASN = 2 ** 16 - 1
+        ASN = 2**16 - 1
 
         self.assertEqual("79.255.255.255", bgp.gen_router_id(ASN, MAC_ADDR))
 

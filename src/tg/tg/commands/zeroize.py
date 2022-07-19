@@ -23,7 +23,7 @@ class ZeroizeCli:
     @click.option("-y", "--yes", is_flag=True, help="Do not prompt to confirm *DANGER*")
     @click.pass_obj
     def zeroize(cli_opts, **kwargs) -> None:
-        """ Wipe node config to restore factory settings """
+        """Wipe node config to restore factory settings"""
         ZeroizeCmd(cli_opts).zeroize(**kwargs)
 
 

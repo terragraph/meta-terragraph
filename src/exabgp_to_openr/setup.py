@@ -8,7 +8,9 @@
 from setuptools import setup
 
 
+# Needs Open/R libs installed to test ... So disabled by default
 ptr_params = {
+    "disabled": True,
     "entry_point_module": "exabgp_to_openr/eto",
     "test_suite": "exabgp_to_openr.tests.base",
     "test_suite_timeout": 120,

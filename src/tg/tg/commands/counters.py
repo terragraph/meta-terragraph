@@ -31,7 +31,7 @@ class CountersCli(object):
 
     @click.group()
     def counters():
-        """ Counters from controller/minion/driver/fw """
+        """Counters from controller/minion/driver/fw"""
         pass
 
     @click.command()
@@ -52,7 +52,7 @@ class CountersCli(object):
     )
     @click.pass_obj
     def _minion(cli_opts, minion_monitor_port, name):
-        """ Show counters from e2e minions """
+        """Show counters from e2e minions"""
         CountersCmd(cli_opts, minion_monitor_port, name).minionCounters()
 
     @click.command()
@@ -73,7 +73,7 @@ class CountersCli(object):
     )
     @click.pass_obj
     def _driverif(cli_opts, driver_monitor_port, name):
-        """ Show counters from DriverIf """
+        """Show counters from DriverIf"""
         CountersCmd(cli_opts, driver_monitor_port, name).driverIfCounters()
 
     @click.command()
@@ -94,7 +94,7 @@ class CountersCli(object):
     )
     @click.pass_obj
     def _ctrl(cli_opts, ctrl_monitor_port, name):
-        """ Show counters from e2e controller """
+        """Show counters from e2e controller"""
         CountersCmd(cli_opts, ctrl_monitor_port, name).ctrlCounters()
 
 

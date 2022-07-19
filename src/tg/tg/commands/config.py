@@ -49,19 +49,19 @@ class ConfigCli(object):
 
     @click.group()
     def config():
-        """ Config management CLI """
+        """Config management CLI"""
         pass
 
     @click.group()
     @click.pass_obj
     def _get(cli_opts):
-        """ Get node(s)/network config"""
+        """Get node(s)/network config"""
         pass
 
     @click.group()
     @click.pass_obj
     def _set(cli_opts):
-        """ Set node(s)/network config"""
+        """Set node(s)/network config"""
         pass
 
     @click.group()
@@ -83,14 +83,14 @@ class ConfigCli(object):
     )
     @click.pass_obj
     def _getNode(cli_opts, nodes, macs):
-        """ Get node(s) config"""
+        """Get node(s) config"""
         cli_opts.nodes = [n.strip() for n in nodes.split(",") if n.strip()]
         cli_opts.macs = [m.strip() for m in macs.split(",") if m.strip()]
 
     @click.group()
     @click.pass_obj
     def _getNetwork(cli_opts):
-        """ Get network config"""
+        """Get network config"""
         pass
 
     @click.command()
@@ -104,7 +104,7 @@ class ConfigCli(object):
     )
     @click.pass_obj
     def _getBase(cli_opts, versions):
-        """ Get base configs"""
+        """Get base configs"""
         sw = versions.split(",") if versions else []
         ConfigCmd(cli_opts)._getBaseCmd(sw)
 
@@ -119,7 +119,7 @@ class ConfigCli(object):
     )
     @click.pass_obj
     def _getFirmwareBase(cli_opts, versions):
-        """ Get firmware base configs"""
+        """Get firmware base configs"""
         fw = versions.split(",") if versions else []
         ConfigCmd(cli_opts)._getFirmwareBaseCmd(fw)
 
@@ -142,7 +142,7 @@ class ConfigCli(object):
     )
     @click.pass_obj
     def _getHardwareBase(cli_opts, hardware, versions):
-        """ Get hardware base configs"""
+        """Get hardware base configs"""
         hw = hardware.split(",") if hardware else []
         sw = versions.split(",") if versions else []
         ConfigCmd(cli_opts)._getHardwareBaseCmd(hw, sw)
@@ -150,13 +150,13 @@ class ConfigCli(object):
     @click.command()
     @click.pass_obj
     def _getController(cli_opts):
-        """ Get controller config"""
+        """Get controller config"""
         ConfigCmd(cli_opts)._getControllerConfigCmd()
 
     @click.command()
     @click.pass_obj
     def _getAggregator(cli_opts):
-        """ Get aggregator config"""
+        """Get aggregator config"""
         ConfigCmd(cli_opts, connect_to_ctrl=False)._getAggregatorConfigCmd()
 
     @click.command()
@@ -179,31 +179,31 @@ class ConfigCli(object):
     )
     @click.pass_obj
     def _getNodeFull(cli_opts, version, hardware, firmware, output):
-        """ Get node(s) full config """
+        """Get node(s) full config"""
         ConfigCmd(cli_opts)._getNodeFullCmd(version, hardware, firmware, output)
 
     @click.command()
     @click.pass_obj
     def _getNodeOverrides(cli_opts):
-        """ Get node(s) config overrides"""
+        """Get node(s) config overrides"""
         ConfigCmd(cli_opts)._getNodeOverridesCmd()
 
     @click.command()
     @click.pass_obj
     def _getAutoNodeOverrides(cli_opts):
-        """ Get node(s) automated config overrides"""
+        """Get node(s) automated config overrides"""
         ConfigCmd(cli_opts)._getAutoNodeOverridesCmd()
 
     @click.command()
     @click.pass_obj
     def _getNetworkOverrides(cli_opts):
-        """ Get network config overrides"""
+        """Get network config overrides"""
         ConfigCmd(cli_opts)._getNetworkOverridesCmd()
 
     @click.group()
     @click.pass_obj
     def _setNode(cli_opts):
-        """ Set node config"""
+        """Set node config"""
         pass
 
     @click.command()
@@ -215,13 +215,13 @@ class ConfigCli(object):
         help="Node config overrides json file",
     )
     def _setNodeOverrides(cli_opts, overrides_file):
-        """ Set node config overrides"""
+        """Set node config overrides"""
         ConfigCmd(cli_opts)._setNodeOverridesCmd(overrides_file)
 
     @click.group()
     @click.pass_obj
     def _setNetwork(cli_opts):
-        """ Set network config"""
+        """Set network config"""
         pass
 
     @click.command()
@@ -233,13 +233,13 @@ class ConfigCli(object):
         help="Network config overrides json file",
     )
     def _setNetworkOverrides(cli_opts, overrides_file):
-        """ Set network config overrides"""
+        """Set network config overrides"""
         ConfigCmd(cli_opts)._setNetworkOverridesCmd(overrides_file)
 
     @click.group()
     @click.pass_obj
     def _modify(cli_opts):
-        """ Modify node/network config overrides"""
+        """Modify node/network config overrides"""
         pass
 
     @click.command()
@@ -296,10 +296,10 @@ class ConfigCli(object):
         add_bool_val,
         delete_key,
     ):
-        """ Modify node config overrides.
+        """Modify node config overrides.
 
-            The config key name is a text traversal of the JSON tree with dot
-            delimiters (e.g. radioParamsBase.fwParams.wsecEnable).
+        The config key name is a text traversal of the JSON tree with dot
+        delimiters (e.g. radioParamsBase.fwParams.wsecEnable).
         """
         ConfigCmd(cli_opts)._modifyNodeOverridesCmd(
             node, mac, add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
@@ -341,10 +341,10 @@ class ConfigCli(object):
     def _modifyNetwork(
         cli_opts, add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
     ):
-        """ Modify network config overrides.
+        """Modify network config overrides.
 
-            The config key name is a text traversal of the JSON tree with dot
-            delimiters (e.g. radioParamsBase.fwParams.wsecEnable).
+        The config key name is a text traversal of the JSON tree with dot
+        delimiters (e.g. radioParamsBase.fwParams.wsecEnable).
         """
         ConfigCmd(cli_opts)._modifyNetworkOverridesCmd(
             add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
@@ -386,10 +386,10 @@ class ConfigCli(object):
     def _modifyController(
         cli_opts, add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
     ):
-        """ Modify controller config.
+        """Modify controller config.
 
-            The config key name is a text traversal of the JSON tree with dot
-            delimiters (e.g. flags.v).
+        The config key name is a text traversal of the JSON tree with dot
+        delimiters (e.g. flags.v).
         """
         ConfigCmd(cli_opts)._modifyControllerConfigCmd(
             add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
@@ -431,10 +431,10 @@ class ConfigCli(object):
     def _modifyAggregator(
         cli_opts, add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
     ):
-        """ Modify aggregator config.
+        """Modify aggregator config.
 
-            The config key name is a text traversal of the JSON tree with dot
-            delimiters (e.g. flags.v).
+        The config key name is a text traversal of the JSON tree with dot
+        delimiters (e.g. flags.v).
         """
         ConfigCmd(cli_opts, connect_to_ctrl=False)._modifyAggregatorConfigCmd(
             add_int_val, add_float_val, add_str_val, add_bool_val, delete_key
@@ -457,26 +457,26 @@ class ConfigCli(object):
     )
     @click.pass_obj
     def _metadata(cli_opts, format, output):
-        """ Get config metadata"""
+        """Get config metadata"""
         cli_opts.format = format
         cli_opts.output = output
 
     @click.command()
     @click.pass_obj
     def _metadataNode(cli_opts):
-        """ Get node config metadata"""
+        """Get node config metadata"""
         ConfigMetadataCmd(cli_opts)._getNodeConfigMetadataCmd()
 
     @click.command()
     @click.pass_obj
     def _metadataController(cli_opts):
-        """ Get controller config metadata"""
+        """Get controller config metadata"""
         ConfigMetadataCmd(cli_opts)._getControllerConfigMetadataCmd()
 
     @click.command()
     @click.pass_obj
     def _metadataAggregator(cli_opts):
-        """ Get aggregator config metadata"""
+        """Get aggregator config metadata"""
         ConfigMetadataCmd(
             cli_opts, connect_to_ctrl=False
         )._getAggregatorConfigMetadataCmd()
@@ -894,7 +894,7 @@ class ConfigMetadataCmd(base.BaseCmd):
             self._connect_to_aggregator()
 
     def _getNodeConfigMetadataCmd(self):
-        """ Retrieve the node config metadata """
+        """Retrieve the node config metadata"""
         self._send_to_ctrl(
             ctrlTypes.MessageType.GET_CTRL_CONFIG_METADATA_REQ,
             ctrlTypes.GetCtrlConfigMetadata(),
@@ -911,7 +911,7 @@ class ConfigMetadataCmd(base.BaseCmd):
         self._my_exit(True, "Success")
 
     def _getControllerConfigMetadataCmd(self):
-        """ Retrieve the controller config metadata """
+        """Retrieve the controller config metadata"""
         self._send_to_ctrl(
             ctrlTypes.MessageType.GET_CTRL_CONFIG_CONTROLLER_METADATA_REQ,
             ctrlTypes.GetCtrlControllerConfigMetadata(),
@@ -930,7 +930,7 @@ class ConfigMetadataCmd(base.BaseCmd):
         self._my_exit(True, "Success")
 
     def _getAggregatorConfigMetadataCmd(self):
-        """ Retrieve the aggregator config metadata """
+        """Retrieve the aggregator config metadata"""
         self._send_to_aggr(
             aggrTypes.AggrMessageType.GET_AGGR_CONFIG_METADATA_REQ,
             aggrTypes.AggrGetConfigMetadata(),
@@ -949,7 +949,7 @@ class ConfigMetadataCmd(base.BaseCmd):
         self._my_exit(True, "Success")
 
     def _write_metadata(self, title, metadata):
-        """ Write the given metadata to the output file """
+        """Write the given metadata to the output file"""
         with open(self._output, "w") as outfile:
             if self._format == "json":
                 self._write_metadata_json(metadata, outfile)
@@ -960,11 +960,11 @@ class ConfigMetadataCmd(base.BaseCmd):
         _log.info("Wrote output to " + self._output)
 
     def _write_metadata_json(self, metadata, outfile):
-        """ Write the metadata as JSON to the output file """
+        """Write the metadata as JSON to the output file"""
         json.dump(metadata, outfile, indent=4, sort_keys=True, ensure_ascii=False)
 
     def _write_metadata_html(self, title, metadata, outfile):
-        """ Write the metadata as HTML to the output file """
+        """Write the metadata as HTML to the output file"""
         bootstrap_css_url = (
             "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"
         )
@@ -1012,7 +1012,7 @@ class ConfigMetadataCmd(base.BaseCmd):
         )
 
     def _get_metadata_html_recursive(self, metadata, keys, t):
-        """ Recursively parse the metadata and return as HTML """
+        """Recursively parse the metadata and return as HTML"""
         output = StringIO()
 
         for k, v in sorted(metadata.items()):
@@ -1042,7 +1042,7 @@ class ConfigMetadataCmd(base.BaseCmd):
         return s
 
     def _get_metadata_html_obj(self, obj, keys, t):
-        """ Recursively parse the metadata param and return as HTML """
+        """Recursively parse the metadata param and return as HTML"""
         items = []
 
         # parse base properties
@@ -1213,7 +1213,7 @@ class ConfigMetadataCmd(base.BaseCmd):
     def _get_metadata_html_titled_panel(
         self, id, header, content, deprecated, collapsed, t
     ):
-        """ Return an HTML panel with the given DOM id and panel content """
+        """Return an HTML panel with the given DOM id and panel content"""
         return (
             self._tabbed('<div class="panel panel-default">\n', t)
             + self._tabbed('<div class="panel-heading">\n', t + 1)
@@ -1246,7 +1246,7 @@ class ConfigMetadataCmd(base.BaseCmd):
         )
 
     def _tabbed(self, s, t):
-        """ Return the string with the given number of tabs prepended """
+        """Return the string with the given number of tabs prepended"""
         return ("\t" * t) + s
 
 
