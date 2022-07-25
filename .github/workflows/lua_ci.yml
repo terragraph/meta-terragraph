@@ -1,0 +1,14 @@
+name: lua_ci
+
+on: [push]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Run luacheck
+        uses: lunarmodules/luacheck@v0
+        with:
+            args: --default-config .luacheckrc src/terragraph-e2e/lua/
