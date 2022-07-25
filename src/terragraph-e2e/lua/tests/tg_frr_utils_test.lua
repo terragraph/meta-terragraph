@@ -52,6 +52,7 @@ function TestMain:test_getNodeBgpInfo()
   local expectedBgpParams = {
     keepalive = 30,
     localAsn = 65075,
+    md5Password = "",
     nextHop = "2001::3",
     routerId = "79.227.243.230"
   }
@@ -180,6 +181,9 @@ function TestMain:test_fillConfigTemplate()
 router bgp 65075
  bgp router-id 79.227.243.230
  no bgp default ipv4-unicast
+ bgp deterministic-med
+ bgp bestpath as-path multipath-relax
+ bgp log-neighbor-changes
  no bgp network import-check
 
  neighbor 2620:10d:c0be:902b::2 remote-as 65074
@@ -188,6 +192,8 @@ router bgp 65075
  timers bgp 30 90
 
  address-family ipv6 unicast
+  maximum-paths 2
+  maximum-paths ibgp 2
   network 1001:1001::/55
   network 2001::/56
   network 3001:0:0:8000::/57
