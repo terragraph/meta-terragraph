@@ -40,14 +40,6 @@ fi
 # enable forwarding
 sysctl -w net.ipv6.conf.all.forwarding=1
 
-# Explicitly disable netlink-system-handler as Open/R has it enabled
-# Set platform-pub-url to non default value so that Open/R & platform_linux
-# don't bind on same URL. Ideally platform-pub-url shouldn't be binded if
-# netlink-system-handler is disabled.
-exec /usr/sbin/platform_linux \
---platform_pub_url="ipc:///tmp/linux-platform-pub-url" \
---v 1 \
--logtostderr \
-2>&1
+exec /usr/sbin/platform_linux -v 1 -logtostderr 2>&1
 
 done
