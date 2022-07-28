@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: [self-hosted, yocto]
+    if: github.repository_owner == 'terragraph'
     steps:   
     - name: Run Configuration Script
       run: sudo bash /home/ubuntu/on_run.sh
