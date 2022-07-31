@@ -227,6 +227,23 @@ local function fibBuildRoutes(prefixesStr, nexthopsStr)
   return routes
 end
 
+--- Group a KvStore.KeyVals map of prefixes by node name (in new prefix format,
+-- each key is 1 entry).
+local function groupPrefixDbByNodeName(prefixDbMap)
+  local ret = {}
+  for _, v in pairs(prefixDbMap) do
+    local prefix = ret[v.value.thisNodeName]
+    if prefix == nil then
+      ret[v.value.thisNodeName] = v
+    else
+      for _, entry in ipairs(v.value.prefixEntries) do
+        table.insert(prefix.value.prefixEntries, entry)
+      end
+    end
+  end
+  return ret
+end
+
 --- Format a KvStore.KeyVals map of prefixes (e.g. for printing).
 local function kvstoreFormatPrefixKeyvals(prefixDbMap)
   local s = {}
@@ -238,19 +255,7 @@ local function kvstoreFormatPrefixKeyvals(prefixDbMap)
   local invForwardingType = tg_utils.invertTable(PrefixForwardingType)
   local invForwardingAlgorithm = tg_utils.invertTable(PrefixForwardingAlgorithm)
 
-  -- Group prefixes by node name (in new prefix format, each key is 1 entry)
-  local prefixDbByNodeName = {}
-  for _, v in pairs(prefixDbMap) do
-    local prefix = prefixDbByNodeName[v.value.thisNodeName]
-    if prefix == nil then
-      prefixDbByNodeName[v.value.thisNodeName] = v
-    else
-      for _, entry in ipairs(v.value.prefixEntries) do
-        table.insert(prefix.value.prefixEntries, entry)
-      end
-    end
-  end
-
+  local prefixDbByNodeName = groupPrefixDbByNodeName(prefixDbMap)
   for k, v in tablex.sort(prefixDbByNodeName) do
     s[#s+1] = string.format("> %s\n", k)
 
@@ -666,7 +671,8 @@ function Puff_Handler.kvstorePrefixes(args, name)
 
   if args.json then
     local printJson = {}
-    for k, v in pairs(keyVals) do
+    local prefixDbByNodeName = groupPrefixDbByNodeName(keyVals)
+    for k, v in tablex.sort(prefixDbByNodeName) do
       printJson[v.value.thisNodeName] = v.value
     end
     logger.info(tg_thrift_utils.thriftToJson(printJson))
