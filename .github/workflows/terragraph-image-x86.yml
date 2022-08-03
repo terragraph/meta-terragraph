@@ -1,9 +1,12 @@
-name: Build terragraph-image-x86
+name: terragraph-image-x86 Workflow
 
 on:
   push:
     branches:
       - main
+
+env:
+  SELF_HOSTED_RUNNER_HOME: /home/ubuntu
 
 jobs:
   build:
@@ -11,30 +14,43 @@ jobs:
     if: github.repository_owner == 'terragraph'
     steps:
     - name: Run Configuration Script
-      run: sudo bash /home/ubuntu/on_run.sh
+      run: sudo bash $SELF_HOSTED_RUNNER_HOME/on_run.sh
     - uses: actions/checkout@v2
       with:
         submodules: recursive
     - name: Sync Yocto
       run: bash sync_yocto.sh
     - name: Update Source Mirrors
-      run: rm -r yocto/source_mirrors ; ln -s /home/ubuntu/source_mirrors yocto/source_mirrors
+      run: |
+        rm -r yocto/source_mirrors
+        ln -s $SELF_HOSTED_RUNNER_HOME/source_mirrors yocto/source_mirrors
     # Reduce the resources Yocto uses to prevent out-of-memory failures.
     - name: Configure Build
-      run:
-        source tg-init-build-env meta-x86 build-x86 &&
-        sed -i "s/\${@oe.utils.cpu_count()}/\${@oe.utils.cpu_count() \/\/ 2}/g" conf/local.conf &&
-        sed -i "s/PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j 8\"/g" conf/local.conf &&
+      run: |
+        source tg-init-build-env meta-x86 build-x86
+        sed -i "s/\${@oe.utils.cpu_count()}/\${@oe.utils.cpu_count() \/\/ 2}/g" conf/local.conf
+        sed -i "s/PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j 8\"/g" conf/local.conf
         echo "INHERIT += \"rm_work\"" >> conf/local.conf
     - name: Link sstate-cache
-      run: mkdir -p /home/ubuntu/sstate-cache ; mkdir -p build-x86 ; ln -s /home/ubuntu/sstate-cache build-x86/sstate-cache
+      run: |
+        mkdir -p $SELF_HOSTED_RUNNER_HOME/sstate-cache
+        mkdir -p build-x86
+        ln -s $SELF_HOSTED_RUNNER_HOME/sstate-cache build-x86/sstate-cache
     - name: Build Image
-      run: source tg-init-build-env meta-x86 build-x86 && USER=meta bitbake terragraph-image-x86
-    - name: Upload Artifacts
+      run: |
+        source tg-init-build-env meta-x86 build-x86
+        USER=meta bitbake -R ../conf/generate-tarballs.conf terragraph-image-x86
+    - name: Upload Rootfs
       uses: actions/upload-artifact@v3
       with:
         name: rootfsx86
         path: build-x86/tmp/deploy/images/tgx86/terragraph-image-x86-tgx86.tar.gz
+        retention-days: 3
+    - name: Upload Sources
+      uses: actions/upload-artifact@v3
+      with:
+        name: sources
+        path: build-x86/downloads
         retention-days: 3
   tests:
     runs-on: [self-hosted, yocto]
@@ -81,3 +97,20 @@ jobs:
       run: |
         docker import /tmp/terragraph-image-x86-tgx86.tar.gz "$REG/$IMAGE:$TAG"
         docker push "$REG/$IMAGE:$TAG"
+  sync-source-mirrors:
+    needs: tests
+    runs-on: [self-hosted, yocto]
+    steps:
+    - name: Download Sources
+      uses: actions/download-artifact@v3
+      with:
+        name: sources
+        path: /tmp/sources
+    - name: Sync Mirrors
+      run: >-
+        find /tmp/sources/
+        -regex ".*.\(tar\|tgz\|zip\).*"
+        -not -path "*uninative/*"
+        -and -not -path "*git2/*"
+        -not -name "*.done"
+        -exec cp -v {} $SELF_HOSTED_RUNNER_HOME/source_mirrors \;
