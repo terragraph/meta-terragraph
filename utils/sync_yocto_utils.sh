@@ -5,7 +5,7 @@ OE_COMMIT="ec978232732edbdd875ac367b5a9c04b881f2e19"
 BRANCH="dunfell"
 
 # Meta-internal source_mirrors location, change this as needed
-SOURCE_MIRRORS_DIR="/mnt/gvfs/yocto/source_mirrors/04d5c868a31bbd7ea0a0795aeb65acf2202e8008"
+SOURCE_MIRRORS_DIR="/mnt/gvfs/yocto/source_mirrors/14292d7f884eb7cd260dadd5a9d8b6dab12b26a6"
 
 sync_yocto() {
   POKY_REPO_URI=$1
