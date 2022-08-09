@@ -18,7 +18,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import styles from './styles.module.css';
 
-const getFeatures = ({tgnmsUrl, openrUrl}) => [
+const getFeatures = ({tgnmsUrl, tgPlannerUrl, openrUrl}) => [
   {
     title: '60 GHz spectrum',
     imageUrl: 'web/icon-wireless.svg',
@@ -60,7 +60,10 @@ const getFeatures = ({tgnmsUrl, openrUrl}) => [
     title: 'Advanced network planning',
     imageUrl: 'web/icon-pin-area.svg',
     description: (
-      <>Streamline and automate network planning and feasibility assessments</>
+      <>
+        Streamline and automate network planning and feasibility assessments (
+        <Link to={tgPlannerUrl}>learn more</Link>)
+      </>
     ),
   },
   {
