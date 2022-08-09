@@ -1,6 +1,9 @@
-name: Check for bitbake recipe updates
+name: Check bitbake recipes
 
-on: [push]
+on:
+  push:
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   build:
