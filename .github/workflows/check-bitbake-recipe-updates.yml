@@ -8,7 +8,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.10"]
+        python-version: ["3.8"]
         os: [ubuntu-latest]
 
     steps:
@@ -20,5 +20,8 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Run script
-      run: |
+      run: >-
         python3 utils/check-bitbake-recipe-updates.py meta-* recipes-*
+        --rewrite_git_url
+        --skip_url /qoriq/qoriq-components/u-boot
+        --skip_url /qoriq/qoriq-components/linux
