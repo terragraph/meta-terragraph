@@ -29,6 +29,7 @@ const katex = require('rehype-katex');
 const REPO_URL = 'https://github.com/terragraph/meta-terragraph';
 const DISCORD_URL = 'https://discord.gg/HQaxCevzus';
 const TGNMS_URL = 'https://github.com/terragraph/tgnms';
+const TGPLANNER_URL = 'https://github.com/terragraph/terragraph-planner';
 const OPENR_URL = 'https://github.com/facebook/openr';
 
 /** @type {import('@docusaurus/types').Config} */
@@ -159,6 +160,10 @@ const config = {
                 label: 'Terragraph NMS',
                 href: TGNMS_URL,
               },
+              {
+                label: 'Terragraph Planner',
+                href: TGPLANNER_URL,
+              },
             ],
           },
           {
@@ -192,6 +197,7 @@ const config = {
     repoUrl: REPO_URL,
     discordUrl: DISCORD_URL,
     tgnmsUrl: TGNMS_URL,
+    tgPlannerUrl: TGPLANNER_URL,
     openrUrl: OPENR_URL,
   },
 };
