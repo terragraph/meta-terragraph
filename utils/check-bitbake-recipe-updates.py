@@ -400,7 +400,11 @@ def main():
         "--skip_http", action="store_true", help="Skip HTTP/HTTPS sources"
     )
     parser.add_argument(
-        "--skip_url", type=str, nargs="*", help="Source URL substrings to skip"
+        "--skip_url",
+        type=str,
+        nargs="*",
+        default=[],
+        help="Source URL substrings to skip",
     )
     parser.add_argument(
         "--rewrite_git_url",
