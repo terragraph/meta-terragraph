@@ -25,3 +25,4 @@ jobs:
         --rewrite_git_url
         --skip_url /qoriq/qoriq-components/u-boot
         --skip_url /qoriq/qoriq-components/linux
+        --skip_url erdgeist.org/opentracker
