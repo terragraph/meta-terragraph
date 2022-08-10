@@ -400,6 +400,12 @@ def main():
         "--skip_http", action="store_true", help="Skip HTTP/HTTPS sources"
     )
     parser.add_argument(
+        "--skip_url",
+        action="append",
+        default=[],
+        help="Source URL substrings to skip",
+    )
+    parser.add_argument(
         "--rewrite_git_url",
         action="store_true",
         help="Rewrite all git:// URLs to https://",
@@ -437,8 +443,13 @@ def main():
                 total_skipped += 1
                 continue
 
+            if any(s in url for s in args.skip_url):
+                total_skipped += 1
+                continue
+
             if url[url.index("://") + 3 :].startswith("localhost/"):
                 LOG.info(f"<{name}> package source URL is localhost, skipping...\n")
+                total_skipped += 1
                 continue
 
             # Download file
@@ -458,6 +469,10 @@ def main():
             (git_uri, src_rev, branch) = results
 
             if args.skip_git:
+                total_skipped += 1
+                continue
+
+            if any(s in git_uri for s in args.skip_url):
                 total_skipped += 1
                 continue
 
