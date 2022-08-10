@@ -26,6 +26,7 @@ jobs:
       run: >-
         python3 utils/check-bitbake-recipe-updates.py meta-* recipes-*
         --rewrite_git_url
+        --fetch_timeout_s 60
         --skip_url /qoriq/qoriq-components/u-boot
         --skip_url /qoriq/qoriq-components/linux
         --skip_url erdgeist.org/opentracker
