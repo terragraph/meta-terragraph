@@ -401,8 +401,7 @@ def main():
     )
     parser.add_argument(
         "--skip_url",
-        type=str,
-        nargs="*",
+        action="append",
         default=[],
         help="Source URL substrings to skip",
     )
