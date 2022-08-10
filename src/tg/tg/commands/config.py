@@ -984,12 +984,12 @@ class ConfigMetadataCmd(base.BaseCmd):
             "\t<style>\n"
             "\t.panel-heading .panel-toggle:after {{\n"
             '\t  font-family: "Glyphicons Halflings";\n'
-            '\t  content: "\e114";\n'
+            '\t  content: "\\e114";\n'
             "\t  float: right;\n"
             "\t  color: grey;\n"
             "\t}}\n"
             "\t.panel-heading .panel-toggle.collapsed:after {{\n"
-            '\t  content: "\e080";\n'
+            '\t  content: "\\e080";\n'
             "\t}}\n"
             "\t</style>\n"
             "</head>\n"

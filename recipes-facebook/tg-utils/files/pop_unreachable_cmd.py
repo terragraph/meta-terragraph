@@ -80,8 +80,8 @@ class LogOutput(object):
             return
 
         mylogger = self._get_logger()
-        for l in lines:
-            mylogger.info(l)
+        for line in lines:
+            mylogger.info(line)
 
 
 class RunCmd(object):

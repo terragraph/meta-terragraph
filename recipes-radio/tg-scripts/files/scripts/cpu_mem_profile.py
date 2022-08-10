@@ -173,7 +173,7 @@ def process_top_data(
             try:
                 with open(file0, "r") as f:
                     line3 = f.readlines()[2]  # Just us summary line.
-                    is_match = re.search("\d+(.)\d+ id", line3)
+                    is_match = re.search(r"\d+(.)\d+ id", line3)
                     if is_match:
                         temp = is_match.group(0)
                         idle_cpu_values.append(float(temp.split()[0]))
@@ -252,12 +252,12 @@ def process_meminfo_data_Marvell(output_folder, minimum_memory_free, minimum_low
                     for line in f:
                         if line.startswith("MemFree"):
                             temp = line.split(":")[1]
-                            is_match = re.search("(\s+)(\d+)( kB)", temp)
+                            is_match = re.search(r"(\s+)(\d+)( kB)", temp)
                             if is_match:
                                 memory_free.append(int(is_match.group(2)))
                         if line.startswith("LowFree"):
                             temp = line.split(":")[1]
-                            is_match = re.search("(\s+)(\d+)( kB)", temp)
+                            is_match = re.search(r"(\s+)(\d+)( kB)", temp)
                             if is_match:
                                 low_free.append(int(is_match.group(2)))
             except Exception as err:
@@ -332,7 +332,7 @@ def process_meminfo_data_Jaguar(output_folder, minimum_memory_free):
                     for line in f:
                         if line.startswith("MemFree"):
                             temp = line.split(":")[1]
-                            is_match = re.search("(\s+)(\d+)( kB)", temp)
+                            is_match = re.search(r"(\s+)(\d+)( kB)", temp)
                             if is_match:
                                 memory_free.append(int(is_match.group(2)))
             except Exception as err:

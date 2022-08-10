@@ -222,7 +222,7 @@ def main() -> int:
         "-c",
         "--node-config",
         default=NODE_CONFIG_FILE,
-        help=f"Path to node config JSON",
+        help="Path to node config JSON",
     )
     args = parser.parse_args()
     return apply_rules(args.node_config)
