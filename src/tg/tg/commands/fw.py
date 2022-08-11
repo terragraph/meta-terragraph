@@ -34,7 +34,7 @@ def loadThriftFromJson(file_name, thrift_struct):
 
 
 def validate_mac(ctx, param, mac):
-    if bool(re.match("^" + "[\:\-]".join(["([0-9a-f]{2})"] * 6) + "$", mac.lower())):
+    if bool(re.match("^" + r"[:-]".join(["([0-9a-f]{2})"] * 6) + "$", mac.lower())):
         return mac
     else:
         raise click.BadParameter(

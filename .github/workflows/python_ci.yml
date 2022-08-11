@@ -22,10 +22,13 @@ jobs:
     - name: Update pip + setuptools
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        python -m pip install ptr
+        python -m pip install flake8==4.0.1 ptr
 
-    - name: Run CI
+    - name: Run flake8
+      run: flake8 --config=.flake8 --benchmark .
+
+    - name: Run ptr
+      if: success() || failure()
       env:
        pythonioencoding: utf-8
-      run: |
-        ptr
+      run: ptr

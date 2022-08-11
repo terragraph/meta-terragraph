@@ -161,7 +161,7 @@ Most included shell scripts are compliant with POSIX shell, but some require
 Bash. Code is validated using [ShellCheck].
 
 ### Python
-Terragraph installs Python 3.8.*, with the interpreter at `/usr/bin/python3`
+Terragraph installs Python 3.8, with the interpreter at `/usr/bin/python3`
 (along with related links) and core/user packages at `/usr/lib/python3.8/`. In
 `terragraph-image-minimal`, only `.pyc` files are kept (`.py` and `.opt-*` files
 are deleted).

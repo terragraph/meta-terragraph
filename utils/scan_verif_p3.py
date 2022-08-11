@@ -718,7 +718,7 @@ def atoi(text):
 
 
 def natural_keys(text):
-    return [atoi(c) for c in re.split("(\d+)", text)]
+    return [atoi(c) for c in re.split(r"(\d+)", text)]
 
 
 def main():
@@ -815,7 +815,7 @@ def main():
                 res = verif_cbf(scan)
             else:
                 res = "FAIL"
-        except Exception as e:
+        except Exception:
             print("")
             test_str = "Token {:s}".format(token)
             res = log_subtest(
