@@ -78,7 +78,9 @@ A pair of helper scripts is provided to associate a point-to-point link using
 Most environment variables are loaded in scripts via
 `/usr/sbin/config_get_env.sh`, which exports fields in the `envParams` node
 configuration structure. This will call `/usr/sbin/config_read_env` to generate
-an intermediate file, `/data/cfg/config`, as needed.
+an intermediate file, `/data/cfg/config`, as needed. If the node configuration
+file (`/data/cfg/node_config.json`) does not yet exist or cannot be parsed, it
+is also generated in this process.
 
 Additional vendor-specific environment variables, mostly relating to kernel
 modules, are static and contained in `/usr/bin/tg.env`.
