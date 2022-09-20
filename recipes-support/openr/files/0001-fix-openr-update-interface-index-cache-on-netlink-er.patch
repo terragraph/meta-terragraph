@@ -33,10 +33,10 @@ index 8d6eddb11..6c7b1cae4 100644
    return rtBuilder.setValid(true).build();
  }
  
-+void NetlinkFibHandler::checkIfIndex(int ifIndex){
++void NetlinkFibHandler::checkIfIndex(const int ifIndex){
 +    char indexName[IF_NAMESIZE];
 +    if(if_indextoname(ifIndex, indexName)==NULL){
-+        XLOG(INFO) << "ifIndex "<< ifIndex<< " is invalid, setting flag to reload ifIndex cache on next request";
++        XLOG(INFO) << "ifIndex " << ifIndex << " is invalid, setting flag to reload ifIndex cache on next request";
 +        cacheInvalid = true;
 +    }
 +}
@@ -69,7 +69,7 @@ index fe7cd19b9..a339412e9 100644
 +   * Test if ifindex returned by cache is valid or not,
 +   * if invalid we set a flag and on next request update cache
 +   */
-+   void checkIfIndex(int ifIndex);
++   void checkIfIndex(const int ifIndex);
 +   bool cacheInvalid;
  };
  
