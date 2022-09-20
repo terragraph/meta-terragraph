@@ -93,21 +93,6 @@ function Feature({imageUrl, title, description}) {
 
 const PARTNERS = [
   {
-    name: 'Radwin',
-    imageUrl: 'web/partner-radwin.png',
-    href: 'https://www.radwin.com/',
-    products: [
-      {
-        name: 'TerraWIN\u2122 Client Node',
-        href: 'https://www.radwin.com/terrawin-60ghz/',
-      },
-      {
-        name: 'TerraWIN\u2122 Distribution Node',
-        href: 'https://www.radwin.com/terrawin-60ghz/',
-      },
-    ],
-  },
-  {
     name: 'Siklu',
     imageUrl: 'web/partner-siklu.png',
     href: 'https://www.siklu.com/',
@@ -146,11 +131,6 @@ const PARTNERS = [
     ],
   },
   {
-    name: 'MikroTik',
-    imageUrl: 'web/partner-mikrotik.png',
-    href: 'https://www.mikrotik.com/',
-  },
-  {
     name: 'Edgecore',
     imageUrl: 'web/partner-edgecore.png',
     href: 'https://www.edge-core.com/',
@@ -176,6 +156,11 @@ const PARTNERS = [
         href: 'https://store.ui.com/collections/operator-airfiber/products/airfiber-60-hd',
       },
     ],
+  },
+  {
+    name: 'MikroTik',
+    imageUrl: 'web/partner-mikrotik.png',
+    href: 'https://www.mikrotik.com/',
   },
   {
     name: 'Qualcomm',
