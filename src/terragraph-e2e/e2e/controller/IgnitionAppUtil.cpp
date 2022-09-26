@@ -216,8 +216,13 @@ IgnitionAppUtil::findAllIgnitionCandidates(
     const std::unordered_map<
         std::string,
         std::chrono::steady_clock::time_point>& initiatorToAttemptTs,
+    const std::unordered_map<
+        std::string,
+        std::pair<std::chrono::steady_clock::time_point, std::string>>&
+            radioToLinkUpTs,
     std::chrono::seconds bfTimeout,
     std::chrono::seconds backupCnLinkInterval,
+    std::chrono::seconds p2mpAssocDelay,
     std::unordered_map<std::string, size_t>& linkupIterationIndex,
     const std::unordered_set<std::string>& linkAutoIgniteOff) {
   auto now = std::chrono::steady_clock::now();
@@ -277,6 +282,29 @@ IgnitionAppUtil::findAllIgnitionCandidates(
       if (link.a_node_mac.empty() || link.z_node_mac.empty()) {
         continue;  // skip links with empty MAC address
       }
+
+      // Special handling for P2MP radios if assoc delay is required/configured:
+      // if either radio received LINK_UP too recently (for a DIFFERENT link)
+      // then do not try to ignite this link yet
+      if (p2mpAssocDelay.count() > 0) {
+        auto aIter = radioToLinkUpTs.find(link.a_node_mac);
+        if (aIter != radioToLinkUpTs.end()) {
+          auto delta = std::chrono::duration_cast<std::chrono::seconds>(
+              now - aIter->second.first);
+          if (delta < p2mpAssocDelay && aIter->second.second != link.name) {
+            continue;
+          }
+        }
+        auto zIter = radioToLinkUpTs.find(link.z_node_mac);
+        if (zIter != radioToLinkUpTs.end()) {
+          auto delta = std::chrono::duration_cast<std::chrono::seconds>(
+              now - zIter->second.first);
+          if (delta < p2mpAssocDelay && zIter->second.second != link.name) {
+            continue;
+          }
+        }
+      }
+
       auto nbrNode = topologyW.getNbrNode(node.name, link);
       if (!nbrNode) {
         continue;  // shouldn't happen
@@ -323,11 +351,16 @@ IgnitionAppUtil::findAllParallelIgnitionCandidates(
         cnToPossibleIgnitionTs,
     std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
         initiatorToAttemptTs,
+    const std::unordered_map<
+        std::string,
+        std::pair<std::chrono::steady_clock::time_point, std::string>>&
+            radioToLinkUpTs,
     std::chrono::seconds bfTimeout,
     std::chrono::seconds dampenInterval,
     std::chrono::seconds extendedDampenInterval,
     std::chrono::seconds extendedDampenFailureInterval,
     std::chrono::seconds backupCnLinkInterval,
+    std::chrono::seconds p2mpAssocDelay,
     std::unordered_map<std::string, size_t>& linkupIterationIndex,
     const std::unordered_set<std::string>& linkAutoIgniteOff) {
   // Find all possible ignition candidates
@@ -335,8 +368,10 @@ IgnitionAppUtil::findAllParallelIgnitionCandidates(
       topologyW,
       cnToPossibleIgnitionTs,
       initiatorToAttemptTs,
+      radioToLinkUpTs,
       bfTimeout,
       backupCnLinkInterval,
+      p2mpAssocDelay,
       linkupIterationIndex,
       linkAutoIgniteOff);
   if (igCandidates.empty()) {

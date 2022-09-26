@@ -27,13 +27,23 @@ algorithm is defined in `IgnitionAppUtil`, and is described below.
    initiator nodes, wait until any response is received (up to *16 seconds*, or
    controller config `ignitionParams.bfTimeoutSec`) before attempting ignition
    again for any link.
-3. Group candidates by link name. For links that can be ignited in both
+3. When enabled, delay successive ignition attempts on P2MP radios. For example,
+   QTI firmware-layer MTPO/autoPBF algorithms may continue to run after
+   `LINK_UP` is reported, and are needed to move to 4-tile operation and enable
+   higher MCS on the link (ex. MCS12); in this scenario each link requires up to
+   12-15 seconds after association to run MTPO/autoPBF. For P2MP radios, a
+   subsequent association request on the same radio may interrupt any ongoing
+   procedures, preventing transition to 4-tile mode and resulting in possibly
+   reduced MCS (ex. MCS9). If it acceptable to incur longer P2MP ignition times
+   for potentially higher throughput, then post-ignition delays can be enabled
+   by setting the controller flag `--linkup_p2mp_assoc_delay` to "15_s".
+4. Group candidates by link name. For links that can be ignited in both
    directions, pick the initiator node randomly and push the other candidate
    node to the end of the list (in case the first node gets filtered out in a
    subsequent step).
-4. Each node can only have one link ignited at a time, so filter out any
+5. Each node can only have one link ignited at a time, so filter out any
    candidate links to the same responder node.
-5. Ignition attempts across the same link are dampened (once per *10 seconds*,
+6. Ignition attempts across the same link are dampened (once per *10 seconds*,
    or controller config `ignitionParams.linkUpDampenInterval`); filter out any
    candidate links that had ignition attempts within the dampening interval.
    Note that this timeout may get cancelled when the controller receives any

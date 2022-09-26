@@ -49,6 +49,7 @@ class IgnitionApp final : public CtrlApp {
    *                                      interval to 'extendedDampenInterval'
    * @param backupCnLinkInterval the minimum time that must elapse before trying
    *                             to ignite using backup CN links
+   * @param p2mpAssocDelay the minimum time before igniting successive P2MP links
    * @param ignoreDampenIntervalAfterResp whether to ignore the regular dampen
    *                                      interval upon receiving a link-down
    *                                      event from a node
@@ -60,6 +61,7 @@ class IgnitionApp final : public CtrlApp {
       std::chrono::seconds extendedDampenInterval,
       std::chrono::seconds extendedDampenFailureInterval,
       std::chrono::seconds backupCnLinkInterval,
+      std::chrono::seconds p2mpAssocDelay,
       bool ignoreDampenIntervalAfterResp);
 
  private:
@@ -138,6 +140,11 @@ class IgnitionApp final : public CtrlApp {
   void cleanUpCnLinkUpAttempts(const TopologyWrapper& topologyW);
 
   /**
+   * Remove entries from radioToLinkUpTs_ if all links to a radio went offline.
+   */
+  void cleanUpRadioLinkUpRecords(const TopologyWrapper& topologyW);
+
+  /**
    * Ignition loop interval (for linkupTimeout_) at which all new ignition
    * attempts are made.
    */
@@ -177,6 +184,9 @@ class IgnitionApp final : public CtrlApp {
    */
   std::chrono::seconds backupCnLinkInterval_;
 
+  /** The minimum time before igniting successive P2MP links. */
+  std::chrono::seconds p2mpAssocDelay_;
+
   /**
    * Whether to ignore dampenInterval_ upon receiving a link-down event from a
    * node.
@@ -210,6 +220,7 @@ class IgnitionApp final : public CtrlApp {
 
   /**
    * Mapping from links to the OLDEST ignition attempt made.
+   *
    * This is cleared when a link comes up or in cleanUpInitialLinkUpAttempts().
    */
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
@@ -223,6 +234,18 @@ class IgnitionApp final : public CtrlApp {
    */
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       cnToPossibleIgnitionTs_;
+
+  /**
+   * Mapping from radio MACs to the MOST RECENT received LINK_UP.
+   *
+   * This is cleared when LINK_DOWN is received on the same radio/link or in
+   * cleanUpRadioLinkUpRecords().
+   */
+  std::unordered_map<
+      std::string /* radio MAC */,
+      std::pair<
+          std::chrono::steady_clock::time_point, std::string /* link name */>>
+              radioToLinkUpTs_;
 
   /** Per-link auto-ignition control. */
   std::unordered_set<std::string> linkAutoIgniteOff_{};

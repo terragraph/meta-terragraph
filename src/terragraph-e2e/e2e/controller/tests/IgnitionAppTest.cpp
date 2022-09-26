@@ -35,6 +35,7 @@ class CtrlIgnitionFixture : public CtrlFixture {
             std::chrono::seconds(300) /* extendedDampenInterval */,
             std::chrono::seconds(1800) /* extendedDampenFailureInterval */,
             std::chrono::seconds(300) /* backupCnLinkInterval */,
+            std::chrono::seconds(0) /* p2mpAssocDelay */,
             false /* ignoreDampenIntervalAfterResp */) {
     ignitionAppThread_ = std::make_unique<std::thread>([this]() {
       VLOG(1) << "IgnitionApp thread starting";
