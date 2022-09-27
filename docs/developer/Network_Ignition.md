@@ -34,9 +34,9 @@ algorithm is defined in `IgnitionAppUtil`, and is described below.
    12-15 seconds after association to run MTPO/autoPBF. For P2MP radios, a
    subsequent association request on the same radio may interrupt any ongoing
    procedures, preventing transition to 4-tile mode and resulting in possibly
-   reduced MCS (ex. MCS9). If it acceptable to incur longer P2MP ignition times
-   for potentially higher throughput, then post-ignition delays can be enabled
-   by setting the controller flag `--linkup_p2mp_assoc_delay` to "15_s".
+   reduced MCS (ex. MCS9). If it is acceptable to incur longer P2MP ignition
+   times for potentially higher throughput, then post-ignition delays can be
+   enabled by setting the controller flag `--linkup_p2mp_assoc_delay` to "15_s".
 4. Group candidates by link name. For links that can be ignited in both
    directions, pick the initiator node randomly and push the other candidate
    node to the end of the list (in case the first node gets filtered out in a
