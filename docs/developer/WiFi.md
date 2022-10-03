@@ -37,6 +37,12 @@ The default firmware binaries are installed in `/usr/share/esp32/`:
 | `partitions_singleapp.bin` | partition table |
 | `wifi_softAP.bin`          | application     |
 
+## Telnet
+The ESP32 firmware includes a Telnet listener which accepts connections on
+`192.168.4.1`. This can be used to access the Linux console. To disable the
+serial console altogether (not only over Wi-Fi), use the node configuration
+field `envParams.SERIAL_CONSOLE_DISABLE`.
+
 ## SLIP
 SLIP (Serial Line Internet Protocol) is used to enable TCP/IP on the serial port
 `/dev/ttyS2`. This is configured via node configuration keys `envParams.SLIP_*`,

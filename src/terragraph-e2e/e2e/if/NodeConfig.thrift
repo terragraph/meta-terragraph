@@ -88,6 +88,7 @@ struct NodeEnvParams {
   56: optional string FW_LOGGING_FILESIZE_MB;
   57: optional string OPENR_ENABLE_SPARK2;
   58: optional string OPENR_ENABLE_DEPRECATED_PREFIXES;
+  59: optional string SERIAL_CONSOLE_DISABLE;
 }
 
 struct PopConfigParams {

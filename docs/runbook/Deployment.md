@@ -671,6 +671,12 @@ across the entire network. For automatic assignment, only channel 2 is enabled
 by default but the set of enabled channels can be configured via the
 `topologyParams.enabledChannels` controller configuration field.
 
+### Disabling Serial Console
+The serial console (`/dev/ttyS0`) is enabled on nodes by default. To disable it
+(e.g. for security reasons), set the `envParams.SERIAL_CONSOLE_DISABLE` config
+to `1` (see [Maintenance and Configuration](Maintenance.md#maintenance-config)).
+Please be aware this may make it impossible to recover a node.
+
 ### DHCP, PD, and DS-Lite
 *Please note these features are only supported on the Rev5 platform.*
 

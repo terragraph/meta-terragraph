@@ -19,6 +19,7 @@ SRC_URI = " \
            file://get_wlanmac \
            file://initscript \
            file://log_boot_flash_info.sh \
+           file://manage_serial_console.sh \
            file://openr_hostnames.sh \
            file://persist_event_cache.sh \
            file://persist_reboot_history.sh \
@@ -95,6 +96,10 @@ do_install() {
     # Persist reboot history in /data
     install -m 755 ${S}/persist_reboot_history.sh ${D}${sysconfdir}/init.d/persist_reboot_history.sh
     update-rc.d -r ${D} persist_reboot_history.sh start 21 5 .
+
+    # Optionally disable the serial console
+    install -m 755 ${S}/manage_serial_console.sh ${D}${sysconfdir}/init.d/manage_serial_console.sh
+    update-rc.d -r ${D} manage_serial_console.sh start 21 5 .
 
     # install all sysdump scripts
     install -d ${D}/etc/sysdump
