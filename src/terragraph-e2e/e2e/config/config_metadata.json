@@ -533,6 +533,14 @@
         "regexMatches": "|(([A-Za-z0-9_]+=-?[0-9]+)(,[A-Za-z0-9_]+=-?[0-9]+)*)"
       }
     },
+    "SERIAL_CONSOLE_DISABLE": {
+      "desc": "(DANGER!) Disable the Linux serial console on the node",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "allowedValues": ["0", "1"]
+      }
+    },
     "SLIP_BAUD_RATE": {
       "desc": "Baud rate for SLIP UART. Note that before changing this value, the ESP32 configuration needs to be updated to match (make_esp32_cfg -w -b <BAUD_RATE> -f)",
       "action": "RESTART_SLIP",
