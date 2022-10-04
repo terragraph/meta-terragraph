@@ -534,7 +534,7 @@
       }
     },
     "SERIAL_CONSOLE_DISABLE": {
-      "desc": "(DANGER!) Disable the serial console on the node",
+      "desc": "(DANGER!) Disable the Linux serial console on the node",
       "action": "REBOOT",
       "type": "STRING",
       "strVal": {
