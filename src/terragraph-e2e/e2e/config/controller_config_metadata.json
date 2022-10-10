@@ -170,6 +170,16 @@
       "sync": true,
       "tag": "Network Topology"
     },
+    "linkup_p2mp_assoc_delay": {
+      "desc": "The minimum time before igniting successive P2MP links to allow firmware-layer algorithms to complete (0 to disable)",
+      "action": "REBOOT",
+      "type": "STRING",
+      "strVal": {
+        "regexMatches": "[0-9]+_?(s|min|h)"
+      },
+      "sync": true,
+      "tag": "Network Topology"
+    },
     "linkup_ignore_dampen_interval_after_resp": {
       "desc": "Whether to ignore the regular dampen interval upon receiving a link-down event from a node, allowing for quicker ignition attempts (the extended dampen interval is not affected by this setting)",
       "action": "REBOOT",

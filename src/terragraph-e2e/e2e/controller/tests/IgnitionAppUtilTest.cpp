@@ -24,6 +24,7 @@ namespace {
   std::chrono::seconds kExtendedDampenInterval{300};
   std::chrono::seconds kExtendedDampenFailureInterval{1800};
   std::chrono::seconds kBackupCnLinkInterval{300};
+  std::chrono::seconds kP2mpAssocDelay{0};
 
   // wrapper function for IgnitionAppUtil::findAllParallelIgnitionCandidates()
   std::vector<thrift::IgnitionCandidate> ignite(
@@ -35,7 +36,11 @@ namespace {
     std::unordered_map<std::string, std::chrono::steady_clock::time_point>
         cnToPossibleIgnitionTs;  // unused here
     std::unordered_map<std::string, std::chrono::steady_clock::time_point>
-        initiatorToAttemptTs; // unused here
+        initiatorToAttemptTs;  // unused here
+    std::unordered_map<
+        std::string,
+        std::pair<std::chrono::steady_clock::time_point, std::string>>
+            radioToLinkUpTs;  // unused here
     std::unordered_map<std::string, size_t> linkIterationIndex;  // unused here
     return IgnitionAppUtil::findAllParallelIgnitionCandidates(
         topologyW,
@@ -43,11 +48,13 @@ namespace {
         linkToInitialAttemptTs,
         cnToPossibleIgnitionTs,
         initiatorToAttemptTs,
+        radioToLinkUpTs,
         kBfTimeout,
         kDampenInterval,
         kExtendedDampenInterval,
         kExtendedDampenFailureInterval,
         kBackupCnLinkInterval,
+        kP2mpAssocDelay,
         linkIterationIndex);
   }
 }

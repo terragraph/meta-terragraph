@@ -56,6 +56,7 @@ IgnitionApp::IgnitionApp(
     std::chrono::seconds extendedDampenInterval,
     std::chrono::seconds extendedDampenFailureInterval,
     std::chrono::seconds backupCnLinkInterval,
+    std::chrono::seconds p2mpAssocDelay,
     bool ignoreDampenIntervalAfterResp)
     : CtrlApp(
           zmqContext,
@@ -65,6 +66,7 @@ IgnitionApp::IgnitionApp(
       extendedDampenInterval_(extendedDampenInterval),
       extendedDampenFailureInterval_(extendedDampenFailureInterval),
       backupCnLinkInterval_(backupCnLinkInterval),
+      p2mpAssocDelay_(p2mpAssocDelay),
       ignoreDampenIntervalAfterResp_{ignoreDampenIntervalAfterResp} {
   // Read and set ignition param overrides from config
   const auto ignitionParams = SharedObjects::getE2EConfigWrapper()
@@ -342,6 +344,7 @@ IgnitionApp::processSetIgnitionParams(
     linkToAttemptTs_.clear();
     linkToInitialAttemptTs_.clear();
     cnToPossibleIgnitionTs_.clear();
+    radioToLinkUpTs_.clear();
     initiatorToAttemptTs_.clear();
   }
 
@@ -416,8 +419,10 @@ IgnitionApp::processGetIgnitionState(
         *lockedTopologyW,
         cnToPossibleIgnitionTs,
         initiatorToAttemptTs,
+        radioToLinkUpTs_,
         bfTimeout_,
         backupCnLinkInterval_,
+        p2mpAssocDelay_,
         linkIterationIndex,
         linkAutoIgniteOff_);
   }
@@ -438,13 +443,34 @@ IgnitionApp::processLinkStatusEvent(
     return;
   }
 
+  auto now = std::chrono::steady_clock::now();
+
   // We received a response, so the reporting minion can now receive another
   // ignition command. Clear the controller's timeout too.
   initiatorToAttemptTs_.erase(linkStatusEvent->nodeName);
 
-  // Erase the "initial ignition attempt" time when the link comes up.
   if (linkStatusEvent->linkStatusType == thrift::LinkStatusType::LINK_UP) {
-    linkToInitialAttemptTs_.erase(linkStatusEvent->linkName);
+    // Erase the "initial ignition attempt" time when the link comes up.
+    linkToInitialAttemptTs_.erase(linkStatusEvent->link.name);
+
+    // Update last LINK_UP time for each radio
+    auto pair = std::make_pair(now, linkStatusEvent->link.name);
+    radioToLinkUpTs_[linkStatusEvent->link.a_node_mac] = pair;
+    radioToLinkUpTs_[linkStatusEvent->link.z_node_mac] = pair;
+  } else /* LINK_DOWN */ {
+    // Clear last LINK_UP time for a radio if most recent ignited link went down
+    auto aIter = radioToLinkUpTs_.find(linkStatusEvent->link.a_node_mac);
+    if (aIter != radioToLinkUpTs_.end()) {
+      if (aIter->second.second == linkStatusEvent->link.name) {
+        radioToLinkUpTs_.erase(aIter);
+      }
+    }
+    auto zIter = radioToLinkUpTs_.find(linkStatusEvent->link.z_node_mac);
+    if (zIter != radioToLinkUpTs_.end()) {
+      if (zIter->second.second == linkStatusEvent->link.name) {
+        radioToLinkUpTs_.erase(zIter);
+      }
+    }
   }
 
   // The "last ignition time" is being used mainly as a timeout (and secondarily
@@ -452,12 +478,11 @@ IgnitionApp::processLinkStatusEvent(
   // of an ignition procedure regardless of success/failure. If configured,
   // reset the timeout UNLESS ignition has been unsuccessful for an extended
   // period of time.
-  auto now = std::chrono::steady_clock::now();
-  auto iter = linkToInitialAttemptTs_.find(linkStatusEvent->linkName);
+  auto iter = linkToInitialAttemptTs_.find(linkStatusEvent->link.name);
   if (iter == linkToInitialAttemptTs_.end() ||
       (ignoreDampenIntervalAfterResp_ &&
        now - iter->second < extendedDampenFailureInterval_)) {
-    linkToAttemptTs_.erase(linkStatusEvent->linkName);
+    linkToAttemptTs_.erase(linkStatusEvent->link.name);
   }
 }
 
@@ -473,11 +498,13 @@ IgnitionApp::linkUpTimeoutExpired() {
       linkToInitialAttemptTs_,
       cnToPossibleIgnitionTs_,
       initiatorToAttemptTs_,
+      radioToLinkUpTs_,
       bfTimeout_,
       dampenInterval_,
       extendedDampenInterval_,
       extendedDampenFailureInterval_,
       backupCnLinkInterval_,
+      p2mpAssocDelay_,
       linkupIterationIndex_,
       autoIgnitionEnabled_ ? linkAutoIgniteOff_
                            : std::unordered_set<std::string>());
@@ -524,9 +551,10 @@ IgnitionApp::linkUpTimeoutExpired() {
 
   lastIgCandidates_ = igCandidates;
 
-  // Clear initial ignition attempt times
+  // Clean up various ignition records
   cleanUpInitialLinkUpAttempts(*lockedTopologyW);
   cleanUpCnLinkUpAttempts(*lockedTopologyW);
+  cleanUpRadioLinkUpRecords(*lockedTopologyW);
 
   // Remove nodes which are responders in this ignition attempt from
   // the list of nodes which should stop being responders
@@ -912,6 +940,27 @@ IgnitionApp::cleanUpCnLinkUpAttempts(const TopologyWrapper& topologyW) {
 
     if (shouldErase) {
       it = cnToPossibleIgnitionTs_.erase(it);
+    } else {
+      it++;
+    }
+  }
+}
+
+void
+IgnitionApp::cleanUpRadioLinkUpRecords(const TopologyWrapper& topologyW) {
+  for (auto it = radioToLinkUpTs_.begin(); it != radioToLinkUpTs_.end();) {
+    bool shouldErase = true;
+    for (const auto& link : topologyW.getLinksByRadioMac(it->first)) {
+      if (link.link_type == thrift::LinkType::ETHERNET) {
+        continue;  // shouldn't happen
+      }
+      if (link.is_alive) {
+        shouldErase = false;
+        break;  // a link is alive, so keep the entry
+      }
+    }
+    if (shouldErase) {
+      it = radioToLinkUpTs_.erase(it);
     } else {
       it++;
     }

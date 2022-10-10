@@ -60,6 +60,11 @@ DEFINE_time_s(
     "The minimum time that must elapse before trying to ignite using backup "
     "links (starting from when a DN-to-CN link could have been ignited from "
     "either a primary or backup link)");
+DEFINE_time_s(
+    linkup_p2mp_assoc_delay,
+    0_s,
+    "The minimum time before igniting successive P2MP links to allow "
+    "firmware-layer algorithms to complete (0 to disable)");
 DEFINE_bool(
     linkup_ignore_dampen_interval_after_resp,
     false,
@@ -395,6 +400,7 @@ main(int argc, char** argv) {
       FLAGS_linkup_extended_dampen_interval_s,
       FLAGS_linkup_extended_dampen_failure_interval_s,
       FLAGS_linkup_backup_cn_link_interval_s,
+      FLAGS_linkup_p2mp_assoc_delay_s,
       FLAGS_linkup_ignore_dampen_interval_after_resp);
   std::thread ignitionAppThread([&ignitionApp]() {
     LOG(INFO) << "Starting IgnitionApp thread...";

@@ -1609,9 +1609,10 @@ struct LinkStatusDump {
 
 // Link Status event forwarded from controller TopologyApp to IgnitionApp
 struct LinkStatusEvent {
-  1: string linkName;
+  // 1: string linkName  (deprecated in RELEASE_M81)
   2: LinkStatusType linkStatusType;
   3: string nodeName;  // node that reported this event
+  4: Topology.Link link;
 }
 
 struct BfRespScan {

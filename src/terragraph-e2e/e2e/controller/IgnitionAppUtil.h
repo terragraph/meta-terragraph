@@ -35,8 +35,13 @@ class IgnitionAppUtil {
       const std::unordered_map<
           std::string,
           std::chrono::steady_clock::time_point>& initiatorToAttemptTs,
+      const std::unordered_map<
+          std::string,
+          std::pair<std::chrono::steady_clock::time_point, std::string>>&
+              radioToLinkUpTs,
       std::chrono::seconds bfTimeout,
       std::chrono::seconds backupCnLinkInterval,
+      std::chrono::seconds p2mpAssocDelay,
       std::unordered_map<std::string, size_t>& linkupIterationIndex,
       const std::unordered_set<std::string>& linkAutoIgniteOff = {});
 
@@ -58,11 +63,16 @@ class IgnitionAppUtil {
             cnToPossibleIgnitionTs,
         std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
             initiatorToAttemptTs,
+        const std::unordered_map<
+            std::string,
+            std::pair<std::chrono::steady_clock::time_point, std::string>>&
+                radioToLinkUpTs,
         std::chrono::seconds bfTimeout,
         std::chrono::seconds dampenInterval,
         std::chrono::seconds extendedDampenInterval,
         std::chrono::seconds extendedDampenFailureInterval,
         std::chrono::seconds backupCnLinkInterval,
+        std::chrono::seconds p2mpAssocDelay,
         std::unordered_map<std::string, size_t>& linkupIterationIndex,
         const std::unordered_set<std::string>& linkAutoIgniteOff = {});
 

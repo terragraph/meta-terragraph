@@ -519,7 +519,7 @@ TopologyApp::processLinkStatus(
 
     // Notify IgnitionApp
     thrift::LinkStatusEvent linkStatusEvent;
-    linkStatusEvent.linkName = linkName;
+    linkStatusEvent.link = *link;
     linkStatusEvent.linkStatusType = linkStatus->linkStatusType;
     linkStatusEvent.nodeName = maybeNode->name;
     sendToCtrlApp(
