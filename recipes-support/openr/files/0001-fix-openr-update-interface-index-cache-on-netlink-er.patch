@@ -1,0 +1,79 @@
+From dd3232d44e96c899c1af40206c319c97fdc4ed2d Mon Sep 17 00:00:00 2001
+From: Chitrang Srivastava <chitrang.srivastava@cambiumnetworks.com>
+Date: Thu, 15 Sep 2022 10:31:51 +0530
+Subject: [PATCH] fix(openr): update interface index cache on netlink error
+
+---
+ openr/platform/NetlinkFibHandler.cpp | 16 ++++++++++++++++
+ openr/platform/NetlinkFibHandler.h   |  7 +++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/openr/platform/NetlinkFibHandler.cpp b/openr/platform/NetlinkFibHandler.cpp
+index 8d6eddb11..6c7b1cae4 100644
+--- a/openr/platform/NetlinkFibHandler.cpp
++++ b/openr/platform/NetlinkFibHandler.cpp
+@@ -13,6 +13,8 @@
+ #include <openr/if/gen-cpp2/Platform_constants.h>
+ #include <openr/platform/NetlinkFibHandler.h>
+ 
++#include <net/if.h>
++
+ namespace openr {
+ 
+ namespace {
+@@ -37,6 +39,7 @@ createSemiFutureWithClientIdError() {
+ NetlinkFibHandler::NetlinkFibHandler(fbnl::NetlinkProtocolSocket* nlSock)
+     : facebook::fb303::BaseService("openr"),
+       nlSock_(nlSock),
++      cacheInvalid(false),
+       startTime_(std::chrono::duration_cast<std::chrono::seconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count()) {
+@@ -546,13 +549,26 @@ NetlinkFibHandler::buildMplsRoute(
+   return rtBuilder.setValid(true).build();
+ }
+ 
++void NetlinkFibHandler::checkIfIndex(const int ifIndex){
++    char indexName[IF_NAMESIZE];
++    if(if_indextoname(ifIndex, indexName)==NULL){
++        XLOG(INFO) << "ifIndex " << ifIndex << " is invalid, setting flag to reload ifIndex cache on next request";
++        cacheInvalid = true;
++    }
++}
++
+ std::optional<int>
+ NetlinkFibHandler::getIfIndex(const std::string& ifName) {
++  if(cacheInvalid){
++      initializeInterfaceCache();
++      cacheInvalid = false;
++  }
+   // Lambda function to lookup ifName in cache
+   auto getCachedIndex = [this, &ifName]() -> std::optional<int> {
+     auto cache = ifNameToIndex_.rlock();
+     auto it = cache->find(ifName);
+     if (it != cache->end()) {
++      checkIfIndex(it->second);
+       return it->second;
+     }
+     return std::nullopt;
+diff --git a/openr/platform/NetlinkFibHandler.h b/openr/platform/NetlinkFibHandler.h
+index fe7cd19b9..a339412e9 100644
+--- a/openr/platform/NetlinkFibHandler.h
++++ b/openr/platform/NetlinkFibHandler.h
+@@ -190,6 +190,13 @@ class NetlinkFibHandler : public thrift::FibServiceSvIf,
+ 
+   // Time when service started, in number of seconds, since epoch
+   const int64_t startTime_{0};
++
++  /*
++   * Test if ifindex returned by cache is valid or not,
++   * if invalid we set a flag and on next request update cache
++   */
++   void checkIfIndex(const int ifIndex);
++   bool cacheInvalid;
+ };
+ 
+ } // namespace openr
+-- 
+2.17.1
+
