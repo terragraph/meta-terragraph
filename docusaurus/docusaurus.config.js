@@ -26,7 +26,8 @@ const rehypeRewriteUrlPlugin = (options) => {
 const math = require('remark-math');
 const katex = require('rehype-katex');
 
-const REPO_URL = 'https://github.com/terragraph/meta-terragraph';
+const REPO_BASE_URL = 'https://github.com/terragraph';
+const REPO_URL = REPO_BASE_URL + '/meta-terragraph';
 const DISCORD_URL = 'https://discord.gg/HQaxCevzus';
 const TGNMS_URL = 'https://github.com/terragraph/tgnms';
 const TGPLANNER_URL = 'https://github.com/terragraph/terragraph-planner';
@@ -141,7 +142,7 @@ const config = {
               },
               {
                 label: 'Meta Connectivity',
-                href: 'https://www.facebook.com/connectivity/solutions/terragraph',
+                href: 'https://www.facebook.com/connectivity',
               },
             ],
           },
@@ -150,19 +151,11 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: REPO_URL,
+                href: REPO_BASE_URL,
               },
               {
                 label: 'Discord',
                 href: DISCORD_URL,
-              },
-              {
-                label: 'Terragraph NMS',
-                href: TGNMS_URL,
-              },
-              {
-                label: 'Terragraph Planner',
-                href: TGPLANNER_URL,
               },
             ],
           },

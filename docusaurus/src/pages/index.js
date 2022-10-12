@@ -361,9 +361,57 @@ export default function Home() {
             </div>
           </div>
         </section>
+        <section className={clsx('background1', styles.homeContainer)}>
+          <div>
+            <h2>
+              A Word from Meta Connectivity on What&rsquo;s Next
+            </h2>
+            <p>
+              Meta Connectivity&rsquo;s vision for the Terragraph project has
+              been to create a robust and sustainable ecosystem capable of
+              connecting more people to a faster internet. Today, we have a
+              robust supply-side ecosystem that includes a leading silicon
+              supplier, advanced antenna module vendors, and several OEMs
+              offering hardware products and related services powered by
+              Terragraph. On the demand side, a multitude of connectivity
+              service providers worldwide have adopted Terragraph-based
+              solutions and are successfully delivering connectivity services to
+              their customers using this technology.
+            </p>
+            <p>
+              Over the years, Meta Connectivity provided extensive R&D to
+              develop a solution for the challenging last-mile connectivity
+              problem. By contributing technical specifications to standards and
+              working with silicon vendors to implement the Terragraph MAC and
+              PHY in commercially available chipsets, Meta Connectivity
+              empowered its OEM partners to implement Terragraph-based radio
+              solutions for connectivity service providers to adopt around the
+              world. Meta Connectivity also engaged with spectrum regulatory
+              bodies around the globe to make the case for de-licensing the
+              60GHz band to ensure Terragraph&rsquo;s viability as a
+              connectivity solution in more global markets.
+            </p>
+            <p>
+              We are thrilled with the early success of our OEM partners who
+              have seen positive market traction and sold a substantial number
+              units globally within the first year of commercial launch. In line
+              with our vision to make this project sustainable, we have also
+              open-sourced the Terragraph software stack &ndash; composed of
+              kernel drivers, user space software components, cloud software, a
+              network management subsystem and millimeter wave network planner
+              solution. By making the software freely available to the
+              community, the entire ecosystem is now able to carry the project
+              forward.
+            </p>
+            <p>
+              Meta hopes Terragraph will continue to increase in adoption and
+              expand people&rsquo;s access to gigabit internet connectivity.
+            </p>
+          </div>
+        </section>
         <section
           className={clsx(
-            'background1',
+            'background2',
             styles.homeContainer,
             styles.flexContainer,
           )}>
@@ -382,7 +430,7 @@ export default function Home() {
             </div>
           </div>
         </section>
-        <section className={clsx('background2', styles.homeContainer)}>
+        <section className={clsx('background1', styles.homeContainer)}>
           <div>
             <h2>
               Resources
