@@ -394,11 +394,11 @@ export default function Home() {
             <p>
               We are thrilled with the early success of our OEM partners who
               have seen positive market traction and sold a substantial number
-              units globally within the first year of commercial launch. In line
-              with our vision to make this project sustainable, we have also
-              open-sourced the Terragraph software stack &ndash; composed of
-              kernel drivers, user space software components, cloud software, a
-              network management subsystem and millimeter wave network planner
+              of units globally within the first year of commercial launch. In
+              line with our vision to make this project sustainable, we have
+              also open-sourced the Terragraph software stack &ndash; composed
+              of kernel drivers, user space software components, cloud software,
+              a network management subsystem and millimeter wave network planner
               solution. By making the software freely available to the
               community, the entire ecosystem is now able to carry the project
               forward.
