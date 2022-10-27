@@ -10,6 +10,7 @@ DEPENDS += "libnl"
 
 SRC_URI += "file://0003-wil6210-dpdk-add-missing-mutex_lock-call-in-wil_slav.patch \
             file://0004-wil6210-dpdk-Upgrade-to-DPDK-20.11.2.patch \
+            file://0005-wil6210-dpdk-driver-log-message-lower-priority.patch \
             "
 
 S = "${WORKDIR}/git"
