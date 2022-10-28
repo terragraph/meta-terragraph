@@ -1,0 +1,12 @@
+diff --git a/dpdk/drivers/wil6210/wil6210_wmi.c b/dpdk/drivers/wil6210/wil6210_wmi.c
+index 4417c1a..daef9ac 100644
+--- a/dpdk/drivers/wil6210/wil6210_wmi.c
++++ b/dpdk/drivers/wil6210/wil6210_wmi.c
+@@ -2275,6 +2275,7 @@ static const struct {
+ 	{WMI_TDM_DISCONNECT_EVENTID,		wmi_evt_tdm_disconnect},
+ 	{WMI_TDM_CHANNEL_CONFIG_EVENTID,	wmi_evt_tdm_channel_config},
+ 	{WMI_INTERNAL_FW_QUEUE_STATS_EVENTID, 	wmi_evt_internal_fw_queue_stats},
++	{WMI_PMC_EXT_EVENTID,                   wmi_evt_ignore},
+ };
+ 
+ static void wmi_complete(struct wil6210_priv *wil)
