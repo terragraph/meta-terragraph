@@ -1,0 +1,43 @@
+From ffae88d47e7e4c979d504adc031aab8767b32239 Mon Sep 17 00:00:00 2001
+From: Kapil Shukla <kapil.a.shukla@capgemini.com>
+Date: Thu, 3 Nov 2022 12:58:17 +0530
+Subject: [PATCH] VPP-Displayed-Version-String-Improvements-Fix
+
+Signed-off-by: Kapil Shukla <kapil.a.shukla@capgemini.com>
+---
+ src/scripts/version | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/scripts/version b/src/scripts/version
+index 1c265bff6..73e666d78 100755
+--- a/src/scripts/version
++++ b/src/scripts/version
+@@ -19,16 +19,22 @@ cd "$path"
+ 
+ if [ -f .version ]; then
+     vstring=$(cat .version)
++TAG=$(echo ${vstring} | cut -d ' ' -f1 | sed -e 's/^v//')
++ADD=$(echo ${vstring} | cut -s -d ' ' -f2)
++POINT=$(echo ${TAG} | cut -d. -f3)
+ else
+     vstring=$(git describe --long)
++TAG=$(echo ${vstring} | cut -d- -f1 | sed -e 's/^v//')
++ADD=$(echo ${vstring} | cut -s -d- -f2)
++POINT=$(echo ${TAG} | cut -d. -f3)
+     if [ $? != 0 ]; then
+       exit 1
+     fi
+ fi
+ 
+-TAG=$(echo ${vstring} | cut -d- -f1 | sed -e 's/^v//')
+-ADD=$(echo ${vstring} | cut -s -d- -f2)
+-POINT=$(echo ${TAG} | cut -d. -f3)
++#TAG=$(echo ${vstring} | cut -d- -f1 | sed -e 's/^v//')
++#ADD=$(echo ${vstring} | cut -s -d- -f2)
++#POINT=$(echo ${TAG} | cut -d. -f3)
+ 
+ # during make pkg-rpm vstring ends up being vXX.YY, which is not what we expect. Fix it up.
+ if [ -z "${ADD}" ]; then
+-- 
+2.25.1
+

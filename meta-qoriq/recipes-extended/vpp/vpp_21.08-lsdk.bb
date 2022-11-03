@@ -54,6 +54,7 @@ SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/vpp;proto
            file://0045-policer-classify-unrecognized-packets-as-default-TC3.patch \
            file://0046-fix-vpp-for-2R3C-policers.patch \
            file://0047-properly-respond-to-solicited-forus-ICMPv6-NS-messag.patch \
+           file://0048-VPP-Displayed-Version-String-Improvements-Fix.patch \
            "
 
 # TGHQoS and TG features that rely on hqos implementation
@@ -160,3 +161,9 @@ FILES_${PN}-dev += " \
 # TARGET_CFLAGS_append = " -DHAS_DVPP_MODULE_HEADER"
 
 BBCLASSEXTEND = "native"
+
+do_vpp_version(){
+    echo "21.01 (v${PV})" > ${S}/scripts/.version
+}
+addtask vpp_version after do_unpack
+do_unpack[postfuncs] += "do_vpp_version"
