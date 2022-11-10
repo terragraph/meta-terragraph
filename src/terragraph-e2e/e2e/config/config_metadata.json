@@ -2826,6 +2826,18 @@
       "action": "RESTART_STATS_AGENT",
       "readOnly": true
     },
+    "nodeName": {
+        "desc": "The name of this node",
+        "type": "STRING",
+        "action": "RELOAD_TOPOLOGY_NAMES",
+        "readOnly": true
+    },
+    "topologyName": {
+      "desc": "The name of the topology that this node belongs to",
+      "type": "STRING",
+      "action": "RELOAD_TOPOLOGY_NAMES",
+      "readOnly": true
+     },
     "nodeType": {
       "desc": "The type of this node (1: CN, 2: DN)",
       "type": "INTEGER",

@@ -174,6 +174,7 @@ FILES_${PN}-minion += " \
     /usr/sbin/fb_tg_restart.sh \
     /usr/sbin/hostapd_stop.sh \
     /usr/sbin/start_cpe_security.sh \
+    /usr/sbin/reload_topology_names.sh \
     "
 
 # Controller package
