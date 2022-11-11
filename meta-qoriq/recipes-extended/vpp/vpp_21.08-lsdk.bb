@@ -54,6 +54,7 @@ SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/vpp;proto
            file://0045-policer-classify-unrecognized-packets-as-default-TC3.patch \
            file://0046-fix-vpp-for-2R3C-policers.patch \
            file://0047-properly-respond-to-solicited-forus-ICMPv6-NS-messag.patch \
+	   file://0048-vpp-version-format-change.patch \
            "
 
 # TGHQoS and TG features that rely on hqos implementation

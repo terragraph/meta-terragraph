@@ -1,0 +1,21 @@
+diff -ruN a/vpp/app/version.c b/vpp/app/version.c
+--- a/vpp/app/version.c	2022-11-11 12:17:52.665882031 +0530
++++ b/vpp/app/version.c	2022-11-11 12:29:15.631962472 +0530
+@@ -29,7 +29,7 @@
+ 
+ /** The image version string */
+ char *vpe_version_string =
+-  "vpp v" VPP_BUILD_VER
++  "vpp v21.01 " "("VPP_BUILD_VER")"
+   " built by " VPP_BUILD_USER " on " VPP_BUILD_HOST " at " VPP_BUILD_DATE;
+ 
+ /** The name of the compiler */
+@@ -74,7 +74,7 @@
+   if (verbose)
+     {
+ #define _(a,b,c) vlib_cli_output (vm, "%-25s " b, a ":", c);
+-      _("Version", "%s", "v" VPP_BUILD_VER);
++      _("Version", "v21.01 (%s)", VPP_BUILD_VER);
+       _("Compiled by", "%s", VPP_BUILD_USER);
+       _("Compile host", "%s", VPP_BUILD_HOST);
+       _("Compile date", "%s", VPP_BUILD_DATE);
