@@ -218,6 +218,7 @@ in the Thrift enum `thrift::CfgAction`:
 | `RELOAD_TUNNEL_CONFIG`      | Reload tunnel configuration                   |
 | `RELOAD_VPP_CONFIG_AND_MONITOR` | Run vpp_chaperone to re-apply VPP config and restart monitor services |
 | `UPDATE_ZONE`               | Redo POP config if required or do nothing     |
+| `RELOAD_TOPOLOGY_NAMES`     | Restart stats_agent and fluent-bit services   |
 
 It is possible that multiple actions will be triggered for a single parameter,
 e.g. if an object property defines an action different from the root entry. The

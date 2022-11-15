@@ -2815,18 +2815,6 @@
   },
   "topologyInfo": {
     "nodeName": {
-      "desc": "The name of this node",
-      "type": "STRING",
-      "action": "RESTART_STATS_AGENT",
-      "readOnly": true
-    },
-    "topologyName": {
-      "desc": "The name of the topology that this node belongs to",
-      "type": "STRING",
-      "action": "RESTART_STATS_AGENT",
-      "readOnly": true
-    },
-    "nodeName": {
         "desc": "The name of this node",
         "type": "STRING",
         "action": "RELOAD_TOPOLOGY_NAMES",
