@@ -697,6 +697,7 @@ enum CfgAction {
   RELOAD_TUNNEL_CONFIG = 130,
   RELOAD_VPP_CONFIG_AND_MONITOR = 140,
   UPDATE_ZONE = 141,
+  RELOAD_TOPOLOGY_NAMES = 142,
 }
 
 // Config parameter data types

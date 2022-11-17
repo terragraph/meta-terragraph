@@ -116,6 +116,10 @@ const std::string kReloadTunnelCmd("/usr/sbin/config_tunnel.sh");
 // Run vpp_chaperone
 const std::string kRunVppChaperoneCmd(
   "/usr/sbin/run_vpp_chaperone_and_monitor.sh");
+
+// Reload topology names
+const std::string kReloadTopologyNamesCmd("/usr/sbin/reload_topology_names.sh");
+
 }
 
 namespace facebook {
@@ -500,6 +504,10 @@ ConfigApp::performNodeActions(
       case thrift::CfgAction::RELOAD_VPP_CONFIG_AND_MONITOR:
         LOG(INFO) << "Running VPP Chaperone...";
         SysUtils::system(kRunVppChaperoneCmd);
+        break;
+      case thrift::CfgAction::RELOAD_TOPOLOGY_NAMES:
+        LOG(INFO) << "Reload topology names...";
+        SysUtils::system(kReloadTopologyNamesCmd);
         break;
       case thrift::CfgAction::UPDATE_ZONE: {
         auto bgpParams = SharedObjects::getNodeConfigWrapper()->rlock()

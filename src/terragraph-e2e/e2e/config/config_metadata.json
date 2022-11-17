@@ -2814,16 +2814,16 @@
     }
   },
   "topologyInfo": {
-    "nodeName": {
+      "nodeName": {
       "desc": "The name of this node",
       "type": "STRING",
-      "action": "RESTART_STATS_AGENT",
+      "action": "RELOAD_TOPOLOGY_NAMES",
       "readOnly": true
     },
     "topologyName": {
       "desc": "The name of the topology that this node belongs to",
       "type": "STRING",
-      "action": "RESTART_STATS_AGENT",
+      "action": "RELOAD_TOPOLOGY_NAMES",
       "readOnly": true
     },
     "nodeType": {
