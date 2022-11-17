@@ -1,3 +1,3 @@
 #!/bin/sh
 sv restart stats_agent
-fluent-bit restart
+/etc/init.d/fluent-bit restart
