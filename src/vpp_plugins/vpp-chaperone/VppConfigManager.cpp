@@ -766,7 +766,8 @@ void VppConfigManager::doNat64Config (VppClient &vppClient)
                << "' is already configured on '" << nat64Iface << "'.";
 }
 
-void VppConfigManager::doCpeConfig (VppClient &vppClient)
+void VppConfigManager::deleteExistingPolicers (VppClient &vppClient,
+                                              const std::string &cpe_interface)
 {
   VppClient::PolicerConfig policerConfig;
   VppClient::PolicerConfig oldPolicerConfig;
@@ -774,6 +775,52 @@ void VppConfigManager::doCpeConfig (VppClient &vppClient)
   bool ifaceStopped = false;
   std::vector<u32> tableIds;
 
+  vppClient.getClassifierTableIds (tableIds);
+  VppClient::ClassifierTableConfig tableConfig;
+  for (const u32 &tableId : tableIds)
+    {
+      if (!ifaceStopped)
+        {
+          VLOG (1) << "Stopping interface " << cpe_interface 
+                   << " before deleting policers";
+          ifaceStopped = true;
+          vppClient.setInterfaceFlags (cpe_interface, false);
+        }
+       tableConfig.tableIndex = tableId;
+       tableConfig.isAdd = 0;  // Delete Table
+       vppClient.addDelClassifierTable (tableConfig);
+    }
+  for (u8 tc = 0; tc <= kMaxTrafficClass; tc++)
+    {
+      std::string policerName = cpe_interface + "_" + std::to_string (tc);
+      memcpy (policerConfig.name, policerName.c_str (),
+              sizeof (policerConfig.name));
+      if (vppClient.getPolicer (policerConfig.name, oldPolicerConfig))
+        {
+          if (!ifaceStopped)
+            {
+              VLOG (1) << "Stopping interface " << cpe_interface
+                       << " before deleting old policers";
+              ifaceStopped = true;
+              vppClient.setInterfaceFlags (cpe_interface, false);
+            }
+          policerConfig.isAdd = 0;
+          vppClient.addDelPolicer (policerConfig, policerIndex);
+        }
+      policerConfig.isAdd = 0; // Delete policer
+      vppClient.addDelPolicer (policerConfig, policerIndex);
+    }
+
+  if (ifaceStopped)
+    {
+      VLOG (1) << "Restarting interface " << cpe_interface;
+      vppClient.setInterfaceFlags (cpe_interface, true /* up */);
+     }
+  return;
+}
+
+void VppConfigManager::doCpeConfig (VppClient &vppClient)
+{
   if (cpeConfig_.empty ())
     {
       // Use deprecated CPE config if cpeConfig is empty.
@@ -800,54 +847,9 @@ void VppConfigManager::doCpeConfig (VppClient &vppClient)
             }
           else
             {
-              vppClient.getClassifierTableIds (tableIds);
-              VppClient::ClassifierTableConfig tableConfig;
-              for (const u32 &tableId : tableIds)
-                {
-                  if (!ifaceStopped)
-                   {
-                     VLOG (1) << "Stopping interface " << kv.first.asString ()
-                              << " before deleting policers";
-                     ifaceStopped = true;
-                     vppClient.setInterfaceFlags (kv.first.asString (), false);
-                   }
-                  tableConfig.tableIndex = tableId;
-                  tableConfig.isAdd = 0;  // Delete Table
-                  vppClient.addDelClassifierTable (tableConfig);
-                }
-              for (u8 tc = 0; tc <= kMaxTrafficClass; tc++)
-                {
-                  std::string interface = kv.first.asString ();
-                  std::string policerName = interface + "_" +
-                                            std::to_string (tc);
-                  memcpy (policerConfig.name, policerName.c_str (),
-                          sizeof (policerConfig.name));
-                  if (vppClient.getPolicer (policerConfig.name,
-                                            oldPolicerConfig))
-                    {
-                      if (!ifaceStopped)
-                        {
-                          VLOG (1) << "Stopping interface "
-                                   << kv.first.asString ()
-                                   << " before deleting old policers";
-                          ifaceStopped = true;
-                          vppClient.setInterfaceFlags (kv.first.asString (),
-                                                       false);
-                        }
-                      policerConfig.isAdd = 0;
-                      vppClient.addDelPolicer (policerConfig, policerIndex);
-                    }
-                  policerConfig.isAdd = 0; // Delete policer
-                  vppClient.addDelPolicer (policerConfig, policerIndex);
-                }
-              if (ifaceStopped)
-                {
-                  VLOG (1) << "Restarting interface " << kv.first.asString ();
-                  vppClient.setInterfaceFlags (kv.first.asString (), 
-                                               true /* up */);
-                }
-              return;
-             }
+              LOG (INFO) << "Deleting policers for CPE interface " << kv.first;
+              deleteExistingPolicers (vppClient, kv.first.asString ());
+            }
           if (kv.second.count ("dhcpRelay"))
             {
               LOG (INFO) << "Configuring DHCPv6 on'" << kv.first << "'.";
