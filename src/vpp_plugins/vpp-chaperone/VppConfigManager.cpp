@@ -767,7 +767,7 @@ void VppConfigManager::doNat64Config (VppClient &vppClient)
 }
 
 void VppConfigManager::deleteExistingPolicers (VppClient &vppClient,
-                                              const std::string &cpe_interface)
+                                              const std::string &cpeInterface)
 {
   VppClient::PolicerConfig policerConfig;
   VppClient::PolicerConfig oldPolicerConfig;
@@ -781,10 +781,10 @@ void VppConfigManager::deleteExistingPolicers (VppClient &vppClient,
     {
       if (!ifaceStopped)
         {
-          VLOG (1) << "Stopping interface " << cpe_interface 
+          VLOG (1) << "Stopping interface " << cpeInterface
                    << " before deleting policers";
           ifaceStopped = true;
-          vppClient.setInterfaceFlags (cpe_interface, false);
+          vppClient.setInterfaceFlags (cpeInterface, false);
         }
        tableConfig.tableIndex = tableId;
        tableConfig.isAdd = 0;  // Delete Table
@@ -792,17 +792,17 @@ void VppConfigManager::deleteExistingPolicers (VppClient &vppClient,
     }
   for (u8 tc = 0; tc <= kMaxTrafficClass; tc++)
     {
-      std::string policerName = cpe_interface + "_" + std::to_string (tc);
+      std::string policerName = cpeInterface + "_" + std::to_string (tc);
       memcpy (policerConfig.name, policerName.c_str (),
               sizeof (policerConfig.name));
       if (vppClient.getPolicer (policerConfig.name, oldPolicerConfig))
         {
           if (!ifaceStopped)
             {
-              VLOG (1) << "Stopping interface " << cpe_interface
+              VLOG (1) << "Stopping interface " << cpeInterface
                        << " before deleting old policers";
               ifaceStopped = true;
-              vppClient.setInterfaceFlags (cpe_interface, false);
+              vppClient.setInterfaceFlags (cpeInterface, false);
             }
           policerConfig.isAdd = 0;
           vppClient.addDelPolicer (policerConfig, policerIndex);
@@ -813,8 +813,8 @@ void VppConfigManager::deleteExistingPolicers (VppClient &vppClient,
 
   if (ifaceStopped)
     {
-      VLOG (1) << "Restarting interface " << cpe_interface;
-      vppClient.setInterfaceFlags (cpe_interface, true /* up */);
+      VLOG (1) << "Restarting interface " << cpeInterface;
+      vppClient.setInterfaceFlags (cpeInterface, true /* up */);
      }
   return;
 }
