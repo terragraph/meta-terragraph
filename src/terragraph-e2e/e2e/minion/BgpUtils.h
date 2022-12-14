@@ -54,21 +54,18 @@ class BgpUtils {
       const std::string& command);
 
   /**
-   * Reads a vtysh BGP info table by the first header and returns the number of
-   * rows. 'firstHeader' is the first table header that identifies the table.
-   */
-  static int parseVtyshBgpTable(
-      const std::string& bgpTableOutput,
-      const std::string& firstHeader,
-      std::vector<std::string>& headers,
-      std::vector<std::string>& entries);
-
-  /**
    * Creates a list of thrift::BgpRouteInfo by taking the 'Network' and
-   * 'Next Hop' values of the vtysh table entries it receives.
+   * 'Next Hop' values of the vtysh json entries it Recived Routes.
    */
-  static std::vector<thrift::BgpRouteInfo> createVtyshBgpRouteInfoList(
-      int numOfRows, const std::vector<std::string>& entries);
+ static std::vector<thrift::BgpRouteInfo> createVtyshBgpRecivedRouteInfoList(
+      (const std::string& recivedRoutesInfo,const std::string& key,const std::string& value);
+
+   /**
+   * Creates a list of thrift::BgpRouteInfo by taking the 'Network' and
+   * 'Next Hop' values of the vtysh json entries it Advertised Routes.
+   */
+ static std::vector<thrift::BgpRouteInfo> createVtyshBgpAdvertisedRouteInfoList(
+      (const std::string& recivedRoutesInfo,const std::string& key,const std::string& value);
 
   /**
    * Creates a list of thrift::BgpRouteInfo for each neighbor by parsing
