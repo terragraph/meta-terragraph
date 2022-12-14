@@ -766,59 +766,6 @@ void VppConfigManager::doNat64Config (VppClient &vppClient)
                << "' is already configured on '" << nat64Iface << "'.";
 }
 
-void VppConfigManager::deleteExistingPolicers (VppClient &vppClient,
-                                              const std::string &cpeInterface)
-{
-  VppClient::PolicerConfig policerConfig;
-  VppClient::PolicerConfig oldPolicerConfig;
-  u32 policerIndex;
-  bool ifaceStopped = false;
-  std::vector<u32> tableIds;
-
-  vppClient.getClassifierTableIds (tableIds);
-  VppClient::ClassifierTableConfig tableConfig;
-  for (const u32 &tableId : tableIds)
-    {
-      if (!ifaceStopped)
-        {
-          VLOG (1) << "Stopping interface " << cpeInterface
-                   << " before deleting policers";
-          ifaceStopped = true;
-          vppClient.setInterfaceFlags (cpeInterface, false);
-        }
-       tableConfig.tableIndex = tableId;
-       tableConfig.isAdd = 0;  // Delete Table
-       vppClient.addDelClassifierTable (tableConfig);
-    }
-  for (u8 tc = 0; tc <= kMaxTrafficClass; tc++)
-    {
-      std::string policerName = cpeInterface + "_" + std::to_string (tc);
-      memcpy (policerConfig.name, policerName.c_str (),
-              sizeof (policerConfig.name));
-      if (vppClient.getPolicer (policerConfig.name, oldPolicerConfig))
-        {
-          if (!ifaceStopped)
-            {
-              VLOG (1) << "Stopping interface " << cpeInterface
-                       << " before deleting old policers";
-              ifaceStopped = true;
-              vppClient.setInterfaceFlags (cpeInterface, false);
-            }
-          policerConfig.isAdd = 0;
-          vppClient.addDelPolicer (policerConfig, policerIndex);
-        }
-      policerConfig.isAdd = 0; // Delete policer
-      vppClient.addDelPolicer (policerConfig, policerIndex);
-    }
-
-  if (ifaceStopped)
-    {
-      VLOG (1) << "Restarting interface " << cpeInterface;
-      vppClient.setInterfaceFlags (cpeInterface, true /* up */);
-     }
-  return;
-}
-
 void VppConfigManager::doCpeConfig (VppClient &vppClient)
 {
   if (cpeConfig_.empty ())
@@ -843,12 +790,12 @@ void VppConfigManager::doCpeConfig (VppClient &vppClient)
             {
               LOG (INFO) << "Adding policers to CPE interface " << kv.first;
               doCpePolicerConfig (vppClient, kv.first.asString (),
-                                  kv.second["policers"]);
+                                  kv.second["policers"], true);
             }
-          else
+          else if (!kv.second.count ("policers"))
             {
               LOG (INFO) << "Deleting policers for CPE interface " << kv.first;
-              deleteExistingPolicers (vppClient, kv.first.asString ());
+              doCpePolicerConfig (vppClient, kv.first.asString (), 0, false);
             }
           if (kv.second.count ("dhcpRelay"))
             {
@@ -1683,12 +1630,14 @@ void VppConfigManager::setTctblEntry (VppClient &vppClient,
 
 void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
                                            const std::string &interface,
-                                           const folly::dynamic &policers)
+                                           const folly::dynamic &policers,
+                                           bool policerPresent)
 
 {
   u32 interfaceIndex = (u32)~0;
   auto ifaceMap = vppClient.getIfaceToVppIndexMap ();
   auto ifaceMapIter = ifaceMap.find (interface);
+  VppClient::PolicerConfig policerConfig;
   if (ifaceMapIter == ifaceMap.end ())
     {
       LOG (ERROR) << "Invalid interface name for CPE interface policers "
@@ -1702,89 +1651,90 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
   // otherwise VPP will crash if policed traffic is being passed while the
   // config is deleted.
   bool ifaceStopped = false;
-  // Delete old tables
-  std::vector<u32> tableIds;
-  vppClient.getClassifierTableIds (tableIds);
-  VppClient::ClassifierTableConfig tableConfig;
-  for (const u32 &tableId : tableIds)
-    {
-      if (!ifaceStopped)
-        {
-          ifaceStopped = true;
-          VLOG (1) << "Stopping interface "
-                   << interface << " before removing old policer config";
-          vppClient.setInterfaceFlags (interface, false);
-        }
-      tableConfig.tableIndex = tableId;
-      tableConfig.isAdd = 0; // Delete old table
-      vppClient.addDelClassifierTable (tableConfig);
-    }
+  u32 swIfIndex = vppClient.ifaceToVppIndex (interface);
+  u32 tableId;
+  vppClient.getClassifierByIndex (swIfIndex, tableId);
 
-  // Create table
-  tableConfig.isAdd = 1; // Add
-  // Skip 14 bytes for Ethernet header, 4 bits for IPv6 version header;
-  // match on full DSCP value contained in next 6 bits
-  std::vector<u8> maskVector = {0, 0, 0, 0, 0, 0, 0,    0,
-                                0, 0, 0, 0, 0, 0, 0x0F, 0xC0};
-  tableConfig.mask = maskVector.data ();
+  VppClient::ClassifierTableConfig tableConfig;
+  if (!ifaceStopped)
+    {
+      ifaceStopped = true;
+      VLOG (1) << "Stopping interface " << interface
+               << " before removing old policer config";
+      vppClient.setInterfaceFlags (interface, false);
+    }
+  tableConfig.tableIndex = tableId;
+  tableConfig.isAdd = 0; // Delete old table
   vppClient.addDelClassifierTable (tableConfig);
 
+  if (policerPresent)
+    {
+      // Create table
+      tableConfig.isAdd = 1; // Add
+      // Skip 14 bytes for Ethernet header, 4 bits for IPv6 version header;
+      // match on full DSCP value contained in next 6 bits
+      std::vector<u8> maskVector = {0, 0, 0, 0, 0, 0, 0,    0,
+                                    0, 0, 0, 0, 0, 0, 0x0F, 0xC0};
+      tableConfig.mask = maskVector.data ();
+      vppClient.addDelClassifierTable (tableConfig);
+    }
   // Create a policer for every TC. This will allow only packets without DSCPs
   // matching our known TCs to default to TC3.
   for (u8 tc = 0; tc <= kMaxTrafficClass; tc++)
     {
-      VppClient::PolicerConfig policerConfig;
-      auto policer = policers.find (std::to_string (tc));
-      if (policer == policers.items ().end ())
+      if (policerPresent)
         {
-          // If not explicitly configured, create a policer for this TC that
-          // does not restrict any traffic
-          policerConfig.cir = (u32)~0;
-          policerConfig.cb = (u64)~0;
-          policerConfig.eir = (u32)~0;
-          policerConfig.eb = (u64)~0;
+          auto policer = policers.find (std::to_string (tc));
+          if (policer == policers.items ().end ())
+            {
+              // If not explicitly configured, create a policer for this TC
+              // that does not restrict any traffic
+              policerConfig.cir = (u32)~0;
+              policerConfig.cb = (u64)~0;
+              policerConfig.eir = (u32)~0;
+              policerConfig.eb = (u64)~0;
+            }
+          else
+            {
+              // Parse attributes
+              auto policer_map = policer->second;
+              auto rateIter = policer_map.find ("cir");
+              if (rateIter != policer_map.items ().end ())
+                {
+                  policerConfig.cir = rateIter->second.asInt ();
+                  policerConfig.cb =
+                      policerConfig.cir * 125; // cir in bytes for 1s
+                }
+              rateIter = policer_map.find ("eir");
+              if (rateIter != policer_map.items ().end ())
+                {
+                  policerConfig.eir = rateIter->second.asInt ();
+                  policerConfig.eb =
+                      policerConfig.eir * 125; // eir in bytes for 1s
+                }
+              if (policerConfig.cir == 0)
+                {
+                  LOG (ERROR) << "CIR is 0 for policer " << policer->first
+                              << ": " << policer_map << ", skipping...";
+                  continue;
+                }
+              if (policerConfig.eir == 0)
+                {
+                  policerConfig.type = SSE2_QOS_POLICER_TYPE_API_1R2C;
+                }
+              if (policerConfig.type == SSE2_QOS_POLICER_TYPE_API_2R3C_RFC_2698
+                  && policerConfig.cir > policerConfig.eir)
+                {
+                  LOG (ERROR) << "CIR " << policerConfig.cir
+                              << " greater than EIR " << policerConfig.eir
+                              << " for policer " << policer->first << ": "
+                              << policer_map << ", skipping...";
+                  continue;
+                }
+            }
+          policerConfig.conformDscp = kAFxyConformDscp.at (tc);
+          policerConfig.exceedDscp = kAFxyExcessDscp.at (tc);
         }
-      else
-        {
-          // Parse attributes
-          auto policer_map = policer->second;
-          auto rateIter = policer_map.find ("cir");
-          if (rateIter != policer_map.items ().end ())
-            {
-              policerConfig.cir = rateIter->second.asInt ();
-              policerConfig.cb =
-                  policerConfig.cir * 125; // cir in bytes for 1s
-            }
-          rateIter = policer_map.find ("eir");
-          if (rateIter != policer_map.items ().end ())
-            {
-              policerConfig.eir = rateIter->second.asInt ();
-              policerConfig.eb =
-                  policerConfig.eir * 125; // eir in bytes for 1s
-            }
-          if (policerConfig.cir == 0)
-            {
-              LOG (ERROR) << "CIR is 0 for policer " << policer->first << ": "
-                          << policer_map << ", skipping...";
-              continue;
-            }
-          if (policerConfig.eir == 0)
-            {
-              policerConfig.type = SSE2_QOS_POLICER_TYPE_API_1R2C;
-            }
-          if (policerConfig.type == SSE2_QOS_POLICER_TYPE_API_2R3C_RFC_2698 &&
-              policerConfig.cir > policerConfig.eir)
-            {
-              LOG (ERROR) << "CIR " << policerConfig.cir
-                          << " greater than EIR " << policerConfig.eir
-                          << " for policer " << policer->first << ": "
-                          << policer_map << ", skipping...";
-              continue;
-            }
-        }
-      policerConfig.conformDscp = kAFxyConformDscp.at (tc);
-      policerConfig.exceedDscp = kAFxyExcessDscp.at (tc);
-
       // Create policers
       VppClient::PolicerConfig oldPolicerConfig;
       std::string policerName = interface + "_" + std::to_string (tc);
@@ -1804,23 +1754,38 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
           policerConfig.isAdd = 0; // Delete
           vppClient.addDelPolicer (policerConfig, policerIndex);
         }
-      policerConfig.isAdd = 1; // Add
-      vppClient.addDelPolicer (policerConfig, policerIndex);
-
-      // Create session matching to AFx1: upstream traffic is expected to be
-      // marked with DSCP corresponding to a traffic class with low drop
-      // preference (green)
-      VppClient::ClassifierSessionConfig sessionConfig;
-      std::vector<u8> matchVector = {
-          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, kAFxyMatch.at (tc), 0x80};
-      sessionConfig.match = matchVector.data ();
-      sessionConfig.hitNextIndex = policerIndex;
-      sessionConfig.tableIndex = tableConfig.tableIndex;
-      vppClient.addDelClassifierSession (sessionConfig);
+      if (policerPresent)
+        {
+          policerConfig.isAdd = 1; // Add
+          vppClient.addDelPolicer (policerConfig, policerIndex);
+        }
+      else if (!policerPresent)
+        {
+          policerConfig.isAdd = 0; // Delete
+          vppClient.addDelPolicer (policerConfig, policerIndex);
+          continue;
+        }
+      if (policerPresent)
+        {
+          // Create session matching to AFx1: upstream traffic is expected to
+          // be marked with DSCP corresponding to a traffic class with low drop
+          // preference (green)
+          VppClient::ClassifierSessionConfig sessionConfig;
+          std::vector<u8> matchVector = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+              0, 0, kAFxyMatch.at (tc), 0x80};
+          sessionConfig.match = matchVector.data ();
+          sessionConfig.hitNextIndex = policerIndex;
+          sessionConfig.tableIndex = tableConfig.tableIndex;
+          vppClient.addDelClassifierSession (sessionConfig);
+        }
     }
-  // Map table to interface
-  vppClient.setClassifierTableNetif (true, interfaceIndex,
-                                     tableConfig.tableIndex);
+
+  if (policerPresent)
+    {
+      // Map table to interface
+      vppClient.setClassifierTableNetif (true, interfaceIndex,
+                                         tableConfig.tableIndex);
+    }
   if (ifaceStopped)
     {
       VLOG (1) << "Restarting interface " << interface;
