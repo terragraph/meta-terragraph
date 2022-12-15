@@ -55,17 +55,17 @@ class BgpUtils {
 
   /**
    * Creates a list of thrift::BgpRouteInfo by taking the 'Network' and
-   * 'Next Hop' values of the vtysh json entries it Recived Routes.
+   * 'Next Hop' values of the vtysh json entries it receives.
    */
  static std::vector<thrift::BgpRouteInfo> createVtyshBgpRecivedRouteInfoList(
-      (const std::string& recivedRoutesInfo,const std::string& key,const std::string& value);
+      const std::string& recivedRoutesInfo,const std::string& key,const std::string& value);
 
-   /**
+  /**
    * Creates a list of thrift::BgpRouteInfo by taking the 'Network' and
-   * 'Next Hop' values of the vtysh json entries it Advertised Routes.
+   * 'Next Hop' values of the vtysh json entries it receives.
    */
  static std::vector<thrift::BgpRouteInfo> createVtyshBgpAdvertisedRouteInfoList(
-      (const std::string& recivedRoutesInfo,const std::string& key,const std::string& value);
+      const std::string& recivedRoutesInfo,const std::string& key,const std::string& value);
 
   /**
    * Creates a list of thrift::BgpRouteInfo for each neighbor by parsing
