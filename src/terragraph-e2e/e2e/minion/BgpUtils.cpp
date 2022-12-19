@@ -141,7 +141,6 @@ BgpUtils::fetchExabgpBgpStatus() {
 std::unordered_map<std::string, thrift::BgpInfo>
 BgpUtils::fetchVtyshBgpStatus() {
     std::unordered_map<std::string, thrift::BgpInfo> bgpStatus;
-    SysUtils::system("sv start bgpd");
     // Get version (first line may start with "Quagga" or "FRRouting")
     auto versionOutput = runVtyshCmd(kVtyshShowVersionCommand);
     if (versionOutput.hasError()) { // command failed
