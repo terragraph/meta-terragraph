@@ -140,96 +140,88 @@ BgpUtils::fetchExabgpBgpStatus() {
 
 std::unordered_map<std::string, thrift::BgpInfo>
 BgpUtils::fetchVtyshBgpStatus() {
-  std::unordered_map<std::string, thrift::BgpInfo> bgpStatus;
-
-  // Get version (first line may start with "Quagga" or "FRRouting")
-  auto versionOutput = runVtyshCmd(kVtyshShowVersionCommand);
-  if (versionOutput.hasError()) { // command failed
-    LOG(ERROR) << "vtysh version command failed: "
-               << versionOutput.error().str();
-    return bgpStatus;
-  }
-  std::string summaryCommand, advertisedRoutesFormat, receivedRoutesFormat;
-  if (versionOutput.value().rfind("FRRouting", 0) == 0) {
+    std::unordered_map<std::string, thrift::BgpInfo> bgpStatus;
+    SysUtils::system("sv start bgpd");
+    // Get version (first line may start with "Quagga" or "FRRouting")
+    auto versionOutput = runVtyshCmd(kVtyshShowVersionCommand);
+    if (versionOutput.hasError()) { // command failed
+        LOG(ERROR) << "vtysh version command failed: "
+                   << versionOutput.error().str();
+        return bgpStatus;
+    }
+    std::string summaryCommand, advertisedRoutesFormat, receivedRoutesFormat;
     summaryCommand = kVtyshFrrGetBgpSummaryCommand;
     advertisedRoutesFormat = kVtyshFrrGetBgpAdvertisedRoutesFormat;
     receivedRoutesFormat = kVtyshFrrGetBgpReceivedRoutesFormat;
-  
-  // Get summary from vtysh
-  auto bgpSummaryOutput = runVtyshCmd(summaryCommand);
-  if (bgpSummaryOutput.hasError()) { // command failed
-    LOG(ERROR) << "vtysh BGP summary command failed: "
-               << bgpSummaryOutput.error().str();
+    // Get summary from vtysh
+    auto bgpSummaryOutput = runVtyshCmd(summaryCommand);
+    if (bgpSummaryOutput.hasError()) { // command failed
+        LOG(ERROR) << "vtysh BGP summary command failed: "
+                   << bgpSummaryOutput.error().str();
+        return bgpStatus;
+    }
+    std::string bgpSummary = bgpSummaryOutput.value();
+
+    folly::dynamic bgpSummaryInfo = folly::dynamic::object;
+    try {
+        bgpSummaryInfo = folly::parseJson(bgpSummary)["peers"];
+    }
+    catch (const std::exception &ex) {
+        LOG(ERROR) << "Could not parse Bgp Summary";
+    }
+
+    // Iterate through neighbors and create BgpInfo per neighbor
+    for (const auto &summary : bgpSummaryInfo.items()) {
+        // Bgp Neighbor Information
+        thrift::BgpInfo neighbor;
+
+        // Neighbor ipv6 Address
+        std::string ipv6Address = summary.first.asString();
+        neighbor.ipv6Address = ipv6Address;
+        const char *neighborIp = ipv6Address.c_str();
+        // online
+        neighbor.online = bgpSummaryInfo[neighborIp]["pfxRcd"].asBool();
+
+        // asn
+        neighbor.asn = bgpSummaryInfo[neighborIp]["remoteAs"].asInt();
+
+        // Up Down Time
+        neighbor.upDownTime = bgpSummaryInfo[neighborIp]["peerUptime"].asString();
+
+        // state
+        neighbor.stateOrPfxRcd = bgpSummaryInfo[neighborIp]["state"].asString();
+
+        // Run 'bgp neighbor {} advertised-routes' command
+        auto advertisedRoutesOutput = runVtyshCmd(
+            folly::sformat(advertisedRoutesFormat, neighbor.ipv6Address));
+        if (advertisedRoutesOutput.hasValue()) { // ran successfully
+            neighbor.advertisedRoutes = createVtyshBgpAdvertisedRouteInfoList(
+                advertisedRoutesOutput.value(), "advertisedRoutes", "nextHopGlobal");
+        }
+        else { // command failed
+            LOG(ERROR) << "vtysh BGP advertised routes command failed for neighbor "
+                       << neighbor.ipv6Address << ": "
+                       << advertisedRoutesOutput.error().str();
+        }
+
+        // Run 'bgp neighbor {} received-routes' command
+        auto receivedRoutesOutput = runVtyshCmd(
+            folly::sformat(receivedRoutesFormat, neighbor.ipv6Address));
+        if (receivedRoutesOutput.hasValue()) { // ran successfully
+            neighbor.receivedRoutes = createVtyshBgpRecivedRouteInfoList(
+                receivedRoutesOutput.value(), "routes", "peerId");
+        }
+        else { // command failed
+            LOG(ERROR) << "vtysh BGP received routes command failed for neighbor "
+                       << neighbor.ipv6Address << ": "
+                       << receivedRoutesOutput.error().str();
+        }
+        bgpStatus.insert(std::make_pair(neighbor.ipv6Address, neighbor));
+    }
+
     return bgpStatus;
-  }
-
-  std::string bgpSummary = bgpSummaryOutput.value();
-
- folly::dynamic bgpSummaryInfo = folly::dynamic::object;
- try {
-    bgpSummaryInfo = folly::parseJson(bgpSummary)["peers"];
-  } catch (const std::exception& ex) {
-    throw std::invalid_argument("Could not parse bgp summary ");
-  }
-
- // Iterate through neighbors and create BgpInfo per neighbor
- for (const auto &summary : bgpSummaryInfo.items()) {
-    // Bgp Neighbor Information
-    thrift::BgpInfo neighbor;
-
-    // Neighbor ipv6 Address
-    std::string ipv6Address = summary.first.asString();
-    neighbor.ipv6Address = ipv6Address;
-    const char*neighborIp = ipv6Address.c_str();
-    // online
-    neighbor.online = bgpSummaryInfo[neighborIp]["pfxRcd"].asBool();
-
-    // asn
-    neighbor.asn = bgpSummaryInfo[neighborIp]["remoteAs"].asInt();
-
-    // Up Down Time
-    neighbor.upDownTime = bgpSummaryInfo[neighborIp]["peerUptime"].asString();
-
-    // state
-    neighbor.stateOrPfxRcd = bgpSummaryInfo[neighborIp]["state"].asString();
-
-    // Run 'bgp neighbor {} advertised-routes' command
-    auto advertisedRoutesOutput = runVtyshCmd(
-        folly::sformat(advertisedRoutesFormat, neighbor.ipv6Address));
-    if (advertisedRoutesOutput.hasValue()) { // ran successfully
-
-        neighbor.advertisedRoutes = createVtyshBgpAdvertisedRouteInfoList(
-            advertisedRoutesOutput.value(), "advertisedRoutes", "nextHopGlobal");
-    }
-    else { // command failed
-        LOG(ERROR) << "vtysh BGP advertised routes command failed for neighbor "
-                   << neighbor.ipv6Address << ": "
-                   << advertisedRoutesOutput.error().str();
-    }
-
-    // Run 'bgp neighbor {} received-routes' command
-    auto receivedRoutesOutput = runVtyshCmd(
-        folly::sformat(receivedRoutesFormat, neighbor.ipv6Address));
-
-    if (receivedRoutesOutput.hasValue()) { // ran successfully
-
-        neighbor.receivedRoutes = createVtyshBgpRecivedRouteInfoList(
-			receivedRoutesOutput.value(), "routes", "peerId");
-    }
-    else { // command failed
-        LOG(ERROR) << "vtysh BGP received routes command failed for neighbor "
-                   << neighbor.ipv6Address << ": "
-                   << receivedRoutesOutput.error().str();
-    }
-    bgpStatus.insert(std::make_pair(neighbor.ipv6Address, neighbor));
-  }
- }
- else {
-	  LOG(ERROR) << "FRRouting failed"; 
- }
-
-  return bgpStatus;
 }
+
 
 std::unordered_map<std::string, int>
 BgpUtils::fetchExabgpBgpStats() {
@@ -371,16 +363,16 @@ BgpUtils::runVtyshCmd(const std::string& command) {
 
 std::vector<thrift::BgpRouteInfo>
 BgpUtils::createVtyshBgpAdvertisedRouteInfoList(const std::string &advertisedRoutes,
-		const std::string &key, const std::string &value) {
-
+                                                const std::string &key, const std::string &value) {
     // Network and Next Hop
     std::vector<thrift::BgpRouteInfo> routeInfo;
     folly::dynamic advertisedRoutesInfo = folly::dynamic::object;
-     try {
-     advertisedRoutesInfo = folly::parseJson(advertisedRoutes)[key.c_str()];
-  } catch (const std::exception& ex) {
-    throw std::invalid_argument("Could not parse advertised routes");
-  }
+    try {
+        advertisedRoutesInfo = folly::parseJson(advertisedRoutes)[key.c_str()];
+    }
+    catch (const std::exception &ex) {
+        LOG(ERROR) <<"Could not parse advertised routes";
+    }
     thrift::BgpRouteInfo bgpRouteInfo;
     for (const auto &routes : advertisedRoutesInfo.items()) {
         // Advertised Routes Information
@@ -394,17 +386,17 @@ BgpUtils::createVtyshBgpAdvertisedRouteInfoList(const std::string &advertisedRou
 }
 
 std::vector<thrift::BgpRouteInfo>
-BgpUtils::createVtyshBgpRecivedRouteInfoList(const std::string &recivedRoutes, 
-		const std::string &key, const std::string &value) {
-
+BgpUtils::createVtyshBgpRecivedRouteInfoList(const std::string &recivedRoutes,
+                                             const std::string &key, const std::string &value) {
     // Network and Next Hop
     std::vector<thrift::BgpRouteInfo> routeInfo;
     folly::dynamic recivedRoutesInfo = folly::dynamic::object;
-     try {
-     recivedRoutesInfo = folly::parseJson(recivedRoutes)[key.c_str()];
-  } catch (const std::exception& ex) {
-    throw std::invalid_argument("Could not parse recived routes");
-  }
+    try {
+        recivedRoutesInfo = folly::parseJson(recivedRoutes)[key.c_str()];
+    }
+    catch (const std::exception &ex) {
+        LOG(ERROR) <<"Could not parse recived routes";
+    }
     thrift::BgpRouteInfo bgpRouteInfo;
     for (const auto &routes : recivedRoutesInfo.items()) {
         // Recived Routes Information
