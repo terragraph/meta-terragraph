@@ -792,7 +792,7 @@ void VppConfigManager::doCpeConfig (VppClient &vppClient)
               doCpePolicerConfig (vppClient, kv.first.asString (),
                                   kv.second["policers"], true);
             }
-          else if (!kv.second.count ("policers"))
+          else
             {
               LOG (INFO) << "Deleting policers for CPE interface " << kv.first;
               doCpePolicerConfig (vppClient, kv.first.asString (), 0, false);
@@ -1631,13 +1631,12 @@ void VppConfigManager::setTctblEntry (VppClient &vppClient,
 void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
                                            const std::string &interface,
                                            const folly::dynamic &policers,
-                                           bool policerPresent)
+                                           bool isAdd)
 
 {
   u32 interfaceIndex = (u32)~0;
   auto ifaceMap = vppClient.getIfaceToVppIndexMap ();
   auto ifaceMapIter = ifaceMap.find (interface);
-  VppClient::PolicerConfig policerConfig;
   if (ifaceMapIter == ifaceMap.end ())
     {
       LOG (ERROR) << "Invalid interface name for CPE interface policers "
@@ -1651,24 +1650,31 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
   // otherwise VPP will crash if policed traffic is being passed while the
   // config is deleted.
   bool ifaceStopped = false;
-  u32 swIfIndex = vppClient.ifaceToVppIndex (interface);
-  u32 tableId;
-  vppClient.getClassifierByIndex (swIfIndex, tableId);
-
   VppClient::ClassifierTableConfig tableConfig;
-  if (!ifaceStopped)
-    {
-      ifaceStopped = true;
-      VLOG (1) << "Stopping interface " << interface
-               << " before removing old policer config";
-      vppClient.setInterfaceFlags (interface, false);
-    }
-  tableConfig.tableIndex = tableId;
-  tableConfig.isAdd = 0; // Delete old table
-  vppClient.addDelClassifierTable (tableConfig);
+  u32 tableId = ~0;
 
-  if (policerPresent)
+  vppClient.getClassifierByIndex (interfaceIndex, tableId);
+  if (tableId != ~0)
     {
+      if (!ifaceStopped)
+        {
+          ifaceStopped = true;
+          VLOG (1) << "Stopping interface " << interface
+                   << " before removing old policer config";
+          vppClient.setInterfaceFlags (interface, false);
+        }
+      tableConfig.tableIndex = tableId;
+      tableConfig.isAdd = 0; // Delete old table
+      vppClient.addDelClassifierTable (tableConfig);
+    }
+  else
+    {
+      LOG (ERROR) << "Interface does not have classifier table";
+    }
+
+  if (isAdd)
+    {
+
       // Create table
       tableConfig.isAdd = 1; // Add
       // Skip 14 bytes for Ethernet header, 4 bits for IPv6 version header;
@@ -1682,7 +1688,8 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
   // matching our known TCs to default to TC3.
   for (u8 tc = 0; tc <= kMaxTrafficClass; tc++)
     {
-      if (policerPresent)
+      VppClient::PolicerConfig policerConfig;
+      if (isAdd)
         {
           auto policer = policers.find (std::to_string (tc));
           if (policer == policers.items ().end ())
@@ -1753,20 +1760,17 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
           VLOG (1) << "Remove old policer " << policerConfig.name;
           policerConfig.isAdd = 0; // Delete
           vppClient.addDelPolicer (policerConfig, policerIndex);
+
+          if (!isAdd)
+            {
+              continue;
+            }
         }
-      if (policerPresent)
+      if (isAdd)
         {
           policerConfig.isAdd = 1; // Add
           vppClient.addDelPolicer (policerConfig, policerIndex);
-        }
-      else if (!policerPresent)
-        {
-          policerConfig.isAdd = 0; // Delete
-          vppClient.addDelPolicer (policerConfig, policerIndex);
-          continue;
-        }
-      if (policerPresent)
-        {
+
           // Create session matching to AFx1: upstream traffic is expected to
           // be marked with DSCP corresponding to a traffic class with low drop
           // preference (green)
@@ -1780,7 +1784,7 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
         }
     }
 
-  if (policerPresent)
+  if (isAdd)
     {
       // Map table to interface
       vppClient.setClassifierTableNetif (true, interfaceIndex,
