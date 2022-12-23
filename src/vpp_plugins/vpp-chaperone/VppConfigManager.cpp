@@ -1669,12 +1669,10 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
     }
   else
     {
-      LOG (ERROR) << "Interface does not have classifier table";
+      LOG (INFO) << "Interface does not have classifier table";
     }
-
   if (isAdd)
     {
-
       // Create table
       tableConfig.isAdd = 1; // Add
       // Skip 14 bytes for Ethernet header, 4 bits for IPv6 version header;
@@ -1760,11 +1758,6 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
           VLOG (1) << "Remove old policer " << policerConfig.name;
           policerConfig.isAdd = 0; // Delete
           vppClient.addDelPolicer (policerConfig, policerIndex);
-
-          if (!isAdd)
-            {
-              continue;
-            }
         }
       if (isAdd)
         {
