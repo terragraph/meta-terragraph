@@ -92,7 +92,7 @@ struct NodeEnvParams {
 }
 
 struct PopConfigParams {
-  1: optional string POP_ADDR;
+  1: string POP_ADDR;
   2: optional string POP_IFACE;
   3: optional string POP_STATIC_ROUTING;
   4: optional string POP_BGP_ROUTING;

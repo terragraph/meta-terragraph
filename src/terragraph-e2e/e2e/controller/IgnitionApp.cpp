@@ -667,7 +667,7 @@ IgnitionApp::processLinkUpReq(
   }
 
   // check that the initiator is properly time-synced (i.e. GPS is enabled)
-  if (initiatorNode.status != thrift::NodeStatusType::ONLINE_INITIATOR) {
+  if (initiatorNode.status == thrift::NodeStatusType::OFFLINE) {
     std::string initiatorStatus = folly::get_default(
         TEnumMapFactory<thrift::NodeStatusType>::makeValuesToNamesMap(),
         initiatorNode.status,
@@ -683,7 +683,25 @@ IgnitionApp::processLinkUpReq(
             "Initiator node is not qualified, current state: {}.",
             initiatorStatus));
     return;
-  }
+  } else if (initiatorNode.status == thrift::NodeStatusType::ONLINE_INITIATOR) {
+	auto dnLinks = SharedObjects::getTopologyWrapper()->rlock()
+        ->getLinksByNodeName(initiatorNode.name);
+    for (const auto& dnLink : dnLinks) {
+      if (dnLink.link_type != thrift::LinkType::WIRELESS) {
+
+        continue;
+      }
+      if (!dnLink.is_alive) {
+        LOG(ERROR) << "Received initiator DN is not alive."
+                   << initiatorNode.name << "Initiator node is not alive."
+                      "Not alive: " << dnLink.name;
+        sendE2EAck(
+            senderApp, false,
+	    "Initiator node is not alive, current state: {}.");
+        return;
+      }
+    }
+  } 
 
   // prevent igniting multiple links to the same CN
   if (responderNode.node_type == thrift::NodeType::CN) {
