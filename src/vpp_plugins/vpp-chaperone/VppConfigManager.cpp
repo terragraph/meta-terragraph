@@ -795,7 +795,8 @@ void VppConfigManager::doCpeConfig (VppClient &vppClient)
           else
             {
               LOG (INFO) << "Deleting policers for CPE interface " << kv.first;
-              doCpePolicerConfig (vppClient, kv.first.asString (), 0, false);
+              doCpePolicerConfig (vppClient, kv.first.asString (),
+                                  nullptr, false);
             }
           if (kv.second.count ("dhcpRelay"))
             {
@@ -1669,7 +1670,7 @@ void VppConfigManager::doCpePolicerConfig (VppClient &vppClient,
     }
   else
     {
-      LOG (INFO) << "Interface does not have classifier table";
+      VLOG (1) << "Interface does not have classifier table";
     }
   if (isAdd)
     {
