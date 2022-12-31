@@ -205,7 +205,6 @@ TrafficApp::processStartIperfServer(
           thrift::EventId::IPERF_INFO,
           thrift::EventLevel::INFO,
           folly::sformat("iperf session finished: {}", startClient.id));
-      lockedIperfProcess.unlock();
     } else {
       LOG(INFO) << "iperf session " << startClient.id << " was killed";
       this->eventClient_->logEvent(
@@ -213,9 +212,8 @@ TrafficApp::processStartIperfServer(
           thrift::EventId::IPERF_INFO,
           thrift::EventLevel::INFO,
           folly::sformat("iperf session was killed: {}", startClient.id));
-      lockedIperfProcess.unlock();
     }
-
+      lockedIperfProcess.unlock();
     auto lockedIperfProcessErase = this->iperfProcesses_.wlock();
     lockedIperfProcessErase->erase(startClient.id);
     lockedIperfProcessErase.unlock();
@@ -306,7 +304,6 @@ TrafficApp::processStartIperfClient(
           thrift::EventId::IPERF_INFO,
           thrift::EventLevel::INFO,
           folly::sformat("iperf session finished: {}", startClient->id));
-          lockedIperfProcess.unlock();
     } else {
       LOG(INFO) << "iperf session " << startClient->id << " was killed";
       this->eventClient_->logEvent(
@@ -314,8 +311,8 @@ TrafficApp::processStartIperfClient(
           thrift::EventId::IPERF_INFO,
           thrift::EventLevel::INFO,
           folly::sformat("iperf session was killed: {}", startClient->id));
-          lockedIperfProcess.unlock();
     }
+     lockedIperfProcess.unlock();
 
     auto lockedIperfProcessErase = this->iperfProcesses_.wlock();
     lockedIperfProcessErase->erase(startClient->id);
@@ -337,10 +334,8 @@ TrafficApp::processStopIperf(
   LOG(INFO) << "Stopping iperf process for session ID: " << stopIperf->id;
 
   auto iter = lockedIperfProcess->find(stopIperf->id);
-  lockedIperfProcess.unlock();
   if (iter != lockedIperfProcess->end()) {
     pid_t pid = iter->second;
-    lockedIperfProcess.unlock();
     // Delete this map entry first so that the iperf wrapper thread knows the
     // process terminated abnormally
     auto lockedIperfProcessErase = this->iperfProcesses_.wlock();
@@ -349,6 +344,7 @@ TrafficApp::processStopIperf(
     kill(pid, SIGKILL);
     lockedIperfProcessErase.unlock();
   }
+ lockedIperfProcess.unlock();
 }
 
 void
@@ -527,7 +523,6 @@ TrafficApp::processStartPing(
           thrift::EventId::PING_INFO,
           thrift::EventLevel::INFO,
           folly::sformat("ping session finished: {}", startPing->id));
-          lockedPingProcess.unlock();
     } else {
       LOG(INFO) << "ping session " << startPing->id << " was killed";
       this->eventClient_->logEvent(
@@ -535,8 +530,8 @@ TrafficApp::processStartPing(
           thrift::EventId::PING_INFO,
           thrift::EventLevel::INFO,
           folly::sformat("ping session was killed: {}", startPing->id));
-          lockedPingProcess.unlock();
     }
+     lockedPingProcess.unlock();
 
     auto lockedPingProcessErase = pingProcesses_.wlock();
     lockedPingProcessErase->erase(startPing->id);
@@ -558,11 +553,8 @@ TrafficApp::processStopPing(
   LOG(INFO) << "Stopping ping process for session ID: " << stopPing->id;
 
   auto iter = lockedPingProcess->find(stopPing->id);
-  lockedPingProcess.unlock();
   if (iter != lockedPingProcess->end()) {
     pid_t pid = iter->second;
-
-    lockedPingProcess.unlock();
 
     // Delete this map entry first so that the ping wrapper thread knows the
     // process terminated abnormally
@@ -573,6 +565,7 @@ TrafficApp::processStopPing(
     kill(pid, SIGTERM);
     lockedPingProcessErase.unlock();
   }
+  lockedPingProcess.unlock();
 }
 
 void
