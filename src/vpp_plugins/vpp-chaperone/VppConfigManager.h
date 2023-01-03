@@ -44,7 +44,7 @@ private:
 
   // Add and delete CPE Policers.
   void doCpePolicerConfig (VppClient &vppClient, const std::string &interface,
-                           const folly::dynamic &policers);
+                           const folly::dynamic &policers, bool isAdd);
 
   // Derive CPE IP prefix based on node prefix.
   std::string deriveCpeIpPrefix (VppClient &vppClient,
