@@ -682,6 +682,205 @@ if (updEvt == TPC_UPD_DURING_LINK_UP) {
 }
 ```
 
+## 2D Scans, Massive & Diversity Modes
+The objective of **1D scans** is to find the best beam/sector on the Azimuth
+(AZ) plane, while **2D scans** search on both the Azimuth (AZ) and Elevation
+(EL) planes.
+
+**Massive mode** refers to multiple antenna tiles connected to multiple RFICs
+which are combined by the baseband (BB). In Massive mode, antenna tiles are in
+the same plane and pointing in the same directions.
+
+**Diversity mode** allows a single BB chip to operate RFIC/Antenna modules that
+are not in the same plane and are pointing in different directions by selecting
+only one of them for use at a time. The region of coverage of the different
+RFIC/Antenna modules may or may not overlap.
+
+### General Beamforming Firmware Flow
+* There are two modes for how the RFICs are programmed with the correct antenna
+  weight vectors (AWVs) for a specific beam:
+    * **Legacy mode**, where vendor FW uses the board file in BRD format to load
+      AWVs used to program the RFICs. Board files have only 61 beams.
+    * **Codebook variant mode**, where FB FW uses a master codebook of 120 beams
+      (stored on the host in JSON format) that covers a specified scan range to
+      load specific AWVs corresponding to that beam to program the RFICs.
+* For simplicity, there is a one-time download of the master codebook from the
+  host to FW.
+* The master codebook on the host will have 120 beams.
+* The main codebook configurations to support will be (as an example):
+    * **2D:** 3 EL beams and 40 AZ beams
+    * **1D:** 1 EL beam and 120 AZ beams
+* The master codebook will be defined per tile, per Tx/Rx, and per channel.
+* For either Massive or Diversity mode, beamforming consists of two stages:
+    * *Initial Beamforming (IBF)* to find coarse beams during initial link
+      establishment, using beams 0-60
+    * *Periodic Beamforming (PBF)* to perform beam refinement
+
+### Initial Beamforming
+General IBF notes:
+* During IBF, FW uses beams in IBF scan range in the protocol.
+* Those beams are loaded to the IBF scan range in RFIC; beams 0-60 (i.e. IBF
+  sweep size is 61).
+* Whenever a beam is programmed in slot programming for a diversity node, an
+  implicit mapping of the tile is determined from the beam index:
+    * Beams 0-29 are for `set1RficBitmap` (Tile 0) and beams 30-60 are for
+      `set2RficBitmap` (Tile 1)
+    * Beams 0-29 typically has the same AWV as beams 30-59
+
+#### Legacy Mode
+Massive:
+* Vendor FW loads beams to program RFIC from a board file that has 61 beams.
+
+Diversity:
+* Vendor FW loads beams to program RFIC from a constructed board file that has
+  61 beams organized as follows:
+    * Beams 0-29 are distinct and used for Tile 0
+    * Beams 30-59 are a copy of beams 0-29 and used for Tile 1
+    * Beam 60 is a copy of Beam 59
+
+For both massive and diversity modes:
+* Beam 38 is ignored due to vendor HW limitation.
+* Beam 38 is always mapped to beam 64 due to vendor HW limitation.
+
+#### 2D Codebook Variant Mode
+Massive:
+* FB FW uses a master codebook of 120 beams at the host to load 61 beams (3 EL x
+  20 AZ beams + 1) to program RFIC using get/set AWV.
+* FB FW skips every other beam from the master codebook to load those 61 beams.
+
+Diversity:
+* FB FW uses a master codebook of 120 beams at the host to load 30 beams (3 EL x
+  10 AZ beams) to program RFIC using get/set AWV for Tile 0.
+* FB FW skips every fourth beam from the master codebook to load those 30 beams;
+  beams 0-29 for Tile 0.
+* FB FW copies beams 0-30 to beams 31-60 for Tile 1.
+
+#### 1D Codebook Variant Mode
+Massive:
+* Same as Codebook 1 except the 61 beams from the master codebook corresponds to
+  1 EL x 60 AZ beams + 1.
+
+Diversity:
+* Same as Codebook 1 except the 30 beams from the master codebook corresponds to
+  1 EL x 30 AZ beams + 1.
+
+### Periodic Beamforming
+Fine PBF refines over the entire scan range:
+* **Legacy mode:** FW uses beams in the same IBF scan range in RFIC; beams 0-60
+  already programmed by vendor FW via board file.
+* **Codebook variant mode:** FW uses beams in the same IBF scan range in RFIC;
+  beams 0-60 already programmed by FB from the master codebook using get/set
+  AWV.
+
+Relative PBF refines over Azimuth (±2):
+* **Legacy mode:** FW uses the current beam ±2 AZ from beams in the same IBF
+  scan range in RFIC; beams 0-60 already programmed by vendor FW via board file.
+* **Codebook variant mode:** FW loads scan beams according to the current beam
+  ±2 AZ from the master codebook and programs them to a scratch pad scan range
+  starting at AWV index 69 using the updateAwv API. PBF sweeps through beams
+  programmed to the scratch pad scan range.
+
+### Firmware Configuration Parameters
+* `ibfProcedureType`:
+    * "0": Massive Mode
+    * "1": Diversity Mode
+* `ibfCodebookVariant`:
+    * "0": Legacy Mode
+    * "1": 1D Codebook Variant Mode
+    * "2": 2D Codebook Variant Mode
+* RFIC bitmap is an 8-bit mask that maps which RFIC is active.
+    * `ibfSet1RficBitmap`:
+        * Massive Mode: RFIC bitmap used for IBF and as MTPO reference tile
+          (which is typically a middle tile), default is XIF2.
+          *ibfSet1RficBitmap = 4* for XIF2 is mapped as the reference tile.
+        * Diversity Mode: RFIC bitmap that corresponds to Tile 0.
+    * `ibfSet2RficBitmap`:
+        * Massive Mode: Corresponds to massive tiles configuration after MTPO
+          calibration and PBF. *ibfSet2RficBitmap = 85* for 4 tiles.
+        * Diversity Mode: RFIC bitmap that corresponds to Tile 1.
+* `useUpdateAwvForPbf` (should be set to 1):
+    * "0": PBF sectors are taken from IBF scan range.
+    * "1": PBF sweeps through beams programmed to the scratch pad scan range.
+* `ibfNumberOfBeams`: Number of beams in the IBF scan range.
+* `maxTxPowerSet1`: Used to configure single tile IBF power when operating in
+  massive mode with `set1RficBitmap != set2RficBitmap`.
+
+|                               | `ibfProcedureType` | `ibfNumberOfBeams` | `ibfCodebookVariant` | `useUpdateAwvForPbf` | `ibfSet1RficBitmap` | `ibfSet2RficBitmap` |
+| ----------------------------- | ------------------ | ------------------ | -------------------- | -------------------- | ------------------- | ------------------- |
+| Massive w/ Legacy Mode        | 0 | 61 | 0 | ignored | 4 | 85 |
+| Diversity w/ Legacy Mode      | 1 | 61 | 0 | ignored | bitmap for tile 0 | bitmap for tile 1 |
+| Massive w/ 1D Codebook Mode   | 0 | 61 | 1 | 1 | 4 | 85 |
+| Diversity w/ 1D Codebook Mode | 1 | 61 | 1 | 1 | bitmap for tile 0 | bitmap for tile 1 |
+| Massive w/ 2D Codebook Mode   | 0 | 61 | 2 | 1 | 4 | 85 |
+| Diversity w/ 2D Codebook Mode | 1 | 61 | 2 | 1 | bitmap for tile 0 | bitmap for tile 1 |
+
+### Examples
+
+#### 1D Codebook Variant
+Master Codebook Variant 1 (1D), same for Massive and Diversity modes:
+
+| Beam Index | Geometric Direction           |
+| ---------- | ----------------------------- |
+| 0-119      | (-45 : 0.75 : 44.25) AZ, 0 EL |
+
+Massive board file w/ 61 beams (0-60):
+
+| Beam Index | Angular Representation     |
+| ---------- | -------------------------- |
+| 0-37       | (-45 : 1.5 : 9) AZ, 0 EL   |
+| 38         | ignored                    |
+| 39-59      | (12 : 1.5 : 43.5) AZ, 0 EL |
+| 60         | 43.5 AZ, 0 EL              |
+| 64 (38)    | 10.5 AZ, 0 EL              |
+
+Diversity board file w/ 61 beams (0-60):
+
+| Beam Index | Angular Representation  | Tile Selected in board file | Tile selected in FW |
+| ---------- | ----------------------- | --------------------------- | ------------------- |
+| 0-29       | (-45 : 3 : 42) AZ, 0 EL | Tile 1 & 0                  | Tile 0              |
+| 30-37      | (-45 : 3 : 24) AZ, 0 EL | Tile 1 & 0                  | Tile 1              |
+| 38         | ignored                 | Tile 1 & 0                  | Tile 1              |
+| 39-59      | (-18 : 3 : 42) AZ, 0 EL | Tile 1 & 0                  | Tile 1              |
+| 60         | 42 AZ, 0 EL             | Tile 1 & 0                  | Tile 1              |
+| 64 (38)    | -21 AZ, 0 EL            | Tile 1 & 0                  | Tile 1              |
+
+#### 2D Codebook Variant
+Master Codebook Variant 2 (2D), same for Massive and Diversity modes:
+
+| Beam Index | Geometric Direction           |
+| ---------- | ----------------------------- |
+| 0-39       | (-30 : 1.5 : 28.5) AZ, -18 EL |
+| 40-79      | (-30 : 1.5 : 28.5) AZ, 0 EL   |
+| 80-119     | (-30 : 1.5 : 28.5) AZ, 18 EL  |
+
+Massive board file w/ 61 beams (0-60):
+
+| Beam Index | Angular Representation     |
+| ---------- | -------------------------- |
+| 0-19       | (-30 : 3 : 24) AZ, -18 EL  |
+| 20-37      | (-30 : 3 : 18) AZ, 0 EL    |
+| 38         | ignored                    |
+| 39         | 24 AZ, 0 EL                |
+| 40-59      | (-30 : 3 : 24) AZ, 18 EL   |
+| 60         | 24 AZ, 18 EL               |
+| 64 (38)    | 21 AZ, 0 EL                |
+
+Diversity board file w/ 61 beams (0-60):
+
+| Beam Index | Angular Representation    | Tile Selected in board file | Tile selected in FW |
+| ---------- | ------------------------- | --------------------------- | ------------------- |
+| 0-9        | (-30 : 6 : 24) AZ, -18 EL | Tile 1 & 0                  | Tile 0              |
+| 10-19      | (-30 : 6 : 24) AZ, 0 EL   | Tile 1 & 0                  | Tile 0              |
+| 20-29      | (-30 : 6 : 24) AZ, 18 EL  | Tile 1 & 0                  | Tile 0              |
+| 30-37      | (-30 : 6 : 12) AZ, -18 EL | Tile 1 & 0                  | Tile 1              |
+| 38         | ignored                   | Tile 1 & 0                  | Tile 1              |
+| 39         | 24 AZ, -18 EL             | Tile 1 & 0                  | Tile 1              |
+| 40-49      | (-30 : 6 : 24) AZ, 0 EL   | Tile 1 & 0                  | Tile 1              |
+| 50-59      | (-30 : 6 : 24) AZ, 18 EL  | Tile 1 & 0                  | Tile 1              |
+| 60         | 24 AZ, 18 EL              | Tile 1 & 0                  | Tile 1              |
+| 64 (38)    | 18 AZ, -18 EL             | Tile 1 & 0                  | Tile 1              |
+
+
 <a id="beamforming-link-adaptation-glossary"></a>
 
 ## Glossary
