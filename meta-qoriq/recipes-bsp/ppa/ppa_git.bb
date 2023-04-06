@@ -6,8 +6,8 @@ DEPENDS += "u-boot-mkimage-native dtc-native"
 
 inherit deploy
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/ppa-generic;nobranch=1;protocol=http \
-    file://0001-fix-path-error.patch \
+SRC_URI = "git://github.com/nxp-qoriq/ppa-generic.git;protocol=https;nobranch=1 \
+           file://0001-fix-path-error.patch \
 "
 SRCREV = "90e13c9e148972f75f5f2e7f7a904dabf1586049"
 

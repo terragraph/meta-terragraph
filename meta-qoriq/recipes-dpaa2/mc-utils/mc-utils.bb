@@ -6,7 +6,7 @@ DEPENDS = "dtc-native"
 
 inherit deploy
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/mc-utils.git"
+SRC_URI = "git://github.com/nxp-qoriq/mc-utils.git;protocol=https"
 SRCREV = "8b3fe8cadba4a091c5ed49c25f2c33111c368426"
 
 S = "${WORKDIR}/git"
@@ -60,4 +60,3 @@ FILES_${PN}-image += "/boot"
 
 COMPATIBLE_MACHINE = "(ls2080ardb|ls2088a|ls1088a)"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
-

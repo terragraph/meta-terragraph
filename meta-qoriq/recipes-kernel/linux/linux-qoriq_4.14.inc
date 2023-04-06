@@ -6,7 +6,7 @@ SECTION = "kernel"
 LICENSE = "GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=d7810fab7487fb0aad327b76f1be7cd7"
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/linux;nobranch=1 \
+SRC_URI = "git://github.com/nxp-qoriq/linux.git;protocol=https;nobranch=1 \
            file://linux_qoriq_4_14_fixes.patch \
 "
 SRCREV = "328b263103fbd83f7c7a5d42acef266375a2f717"
@@ -36,7 +36,7 @@ do_merge_delta_config[dirs] = "${B}"
 do_merge_delta_config() {
     # create config with make config
     oe_runmake  -C ${S} O=${B} ${KERNEL_DEFCONFIG}
-    
+
     # check if bigendian is enabled
     if [ "${SITEINFO_ENDIANNESS}" = "be" ]; then
         echo "CONFIG_CPU_BIG_ENDIAN=y" >> .config

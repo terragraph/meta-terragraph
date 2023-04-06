@@ -6,7 +6,7 @@ LIC_FILES_CHKSUM = "file://${S}/../LICENSE;md5=175792518e4ac015ab6696d16c4f607e"
 DEPENDS = "openssl python3-ply-native"
 DEPENDS_append_class-target = " virtual/kernel dpdk util-linux numactl kernel-module-direct-vpp"
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/vpp;protocol=https;nobranch=1 \
+SRC_URI = "git://github.com/nxp-qoriq/vpp.git;protocol=https;nobranch=1 \
            file://0001-optionally-include-wil6210-pmd-in-dpdk.patch \
            file://0002-cmake-find-dpdk-better.patch \
            file://0003-dpdk-teach-plugin-about-wigig-interfaces.patch \
@@ -54,7 +54,7 @@ SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/vpp;proto
            file://0045-policer-classify-unrecognized-packets-as-default-TC3.patch \
            file://0046-fix-vpp-for-2R3C-policers.patch \
            file://0047-properly-respond-to-solicited-forus-ICMPv6-NS-messag.patch \
-	   file://0048-vpp-version-format-change.patch \
+           file://0048-vpp-version-format-change.patch \
            "
 
 # TGHQoS and TG features that rely on hqos implementation

@@ -4,9 +4,9 @@ LIC_FILES_CHKSUM = "file://COPYING;md5=ec8d84e9cd4de287e290275d09db27f0"
 
 RDEPENDS_${PN} += "bash"
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/restool.git;nobranch=1 \
-    file://0001-restool-fix-build-error-with-gcc7.patch \
-    file://0002-Use-environment-variable-to-disable-bus-rescans.patch \
+SRC_URI = "git://github.com/nxp-qoriq/restool.git;protocol=https;nobranch=1 \
+           file://0001-restool-fix-build-error-with-gcc7.patch \
+           file://0002-Use-environment-variable-to-disable-bus-rescans.patch \
 "
 # quilts .pc makes vendor makefile unhappy
 PATCHTOOL = "git"

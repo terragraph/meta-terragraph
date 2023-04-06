@@ -11,7 +11,7 @@ do_compile[depends] += "rcw:do_deploy u-boot:do_deploy"
 
 S = "${WORKDIR}/git"
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/atf;nobranch=1 \
+SRC_URI = "git://github.com/nxp-qoriq/atf.git;protocol=https;nobranch=1 \
            file://0001-Makefile-add-CC-gcc.patch \
            file://0001-Adaptations-for-Puma.patch \
            "
