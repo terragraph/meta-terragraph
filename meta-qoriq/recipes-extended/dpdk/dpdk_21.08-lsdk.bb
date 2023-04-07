@@ -11,7 +11,7 @@ DEPENDS_class-target += "virtual/kernel openssl"
 
 inherit meson module-base kernel-module-split
 
-SRC_URI = "git://source.codeaurora.org/external/qoriq/qoriq-components/dpdk;protocol=https;nobranch=1 \
+SRC_URI = "git://github.com/nxp-qoriq/dpdk.git;protocol=https;nobranch=1 \
            file://0001-meson-build-fixes.patch \
            file://0002-fix-vfio.patch \
            file://0003-Fix-interrupt-type-selection-for-MSI.patch \
