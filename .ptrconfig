@@ -3,7 +3,7 @@ exclude_patterns =
   build*
   yocto
 venv_pkgs =
-  black
+  black==22.12.0
   coverage
   flake8
   git+https://github.com/cooperlees/aioexabgp
