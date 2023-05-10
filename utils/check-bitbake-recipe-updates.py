@@ -370,7 +370,11 @@ def is_newer(a, b):
     """Compare two version strings, returning True if `a` is newer than `b`."""
     if a == b:
         return False
-    return LooseVersion(a) > LooseVersion(b)
+    try:
+        return LooseVersion(a) > LooseVersion(b)
+    except:
+        LOG.error(f"Cannot parse versions for comparison: '{a}', '{b}'")
+        return False
 
 
 def main():
