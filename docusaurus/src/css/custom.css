@@ -83,12 +83,10 @@
   filter: brightness(0) invert(1);
 }
 
-/* center footer on small screens */
-@media only screen and (max-width: 996px) {
-  .footer__title {
-    text-align: center;
-  }
-  .footer__items {
-    text-align: center;
-  }
+/* center footer */
+.footer__title {
+  text-align: center;
+}
+.footer__items {
+  text-align: center;
 }

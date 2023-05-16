@@ -71,8 +71,7 @@ const getFeatures = ({tgnmsUrl, tgPlannerUrl, openrUrl}) => [
     imageUrl: 'web/icon-app-groups.svg',
     description: (
       <>
-        Flexibly adopt and install equipment from a network of certified
-        partners
+        Flexibly adopt and install equipment from Terragraph partners
       </>
     ),
   },
@@ -91,7 +90,28 @@ function Feature({imageUrl, title, description}) {
   );
 }
 
-const PARTNERS = [
+const MEMBERS = [
+  {
+    name: 'Meta',
+    imageUrl: 'web/partner-meta.svg',
+    href: 'https://www.meta.com/',
+  },
+  {
+    name: 'Qualcomm',
+    imageUrl: 'web/partner-qualcomm.png',
+    href: 'https://www.qualcomm.com/',
+    products: [
+      {
+        name: 'QCA642x, QCA643x',
+        href: 'https://www.qualcomm.com/products/application/networking/qca6428',
+      },
+    ],
+  },
+  {
+    name: 'Capgemini',
+    imageUrl: 'web/partner-capgemini.png',
+    href: 'https://www.capgemini.com/',
+  },
   {
     name: 'Siklu',
     imageUrl: 'web/partner-siklu.png',
@@ -162,31 +182,15 @@ const PARTNERS = [
     imageUrl: 'web/partner-mikrotik.png',
     href: 'https://www.mikrotik.com/',
   },
-  {
-    name: 'Qualcomm',
-    imageUrl: 'web/partner-qualcomm.png',
-    href: 'https://www.qualcomm.com/',
-    products: [
-      {
-        name: 'QCA642x, QCA643x',
-        href: 'https://www.qualcomm.com/products/application/networking/qca6428',
-      },
-    ],
-  },
-  {
-    name: 'Capgemini',
-    imageUrl: 'web/partner-capgemini.png',
-    href: 'https://www.capgemini.com/',
-  },
 ];
 
-function Partner({name, imageUrl, darkStyles, onClick}) {
+function Member({name, imageUrl, darkStyles, onClick}) {
   const {colorMode} = useColorMode();
   const imgUrl = useBaseUrl(imageUrl);
   return (
-    <div className={clsx('col col--4', styles.partner)}>
+    <div className={clsx('col col--4', styles.member)}>
       <img
-        className={styles.partnerImage}
+        className={styles.memberImage}
         style={colorMode === 'dark' && darkStyles ? darkStyles : null}
         src={imgUrl}
         alt={name}
@@ -196,12 +200,12 @@ function Partner({name, imageUrl, darkStyles, onClick}) {
   );
 }
 
-function PartnerModal({name, imageUrl, href, products}) {
+function MemberModal({name, imageUrl, href, products}) {
   const imgUrl = useBaseUrl(imageUrl);
   return (
     <div className={styles.modalContainer}>
-      <div className={styles.partner}>
-        <img className={styles.partnerModalImage} src={imgUrl} alt={name} />
+      <div className={styles.member}>
+        <img className={styles.memberModalImage} src={imgUrl} alt={name} />
       </div>
       <hr />
       <div className={styles.modalContents}>
@@ -209,7 +213,7 @@ function PartnerModal({name, imageUrl, href, products}) {
           <h3>Links</h3>
           <ul>
             <li>
-              <Link to={href}>Partner Website</Link>
+              <Link to={href}>Website</Link>
             </li>
           </ul>
         </div>
@@ -226,6 +230,41 @@ function PartnerModal({name, imageUrl, href, products}) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const MEDIA = [
+  {
+    // Terragraph
+    href: 'https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2FEngineering%2Fvideos%2F1966309200184455%2F&show_text=false',
+    cls: 'col--12',
+  },
+  {
+    // Why We Build: Connectivity in New York City
+    href: 'https://www.youtube-nocookie.com/embed/SF6Wi_MVZ88',
+    cls: 'col--6',
+  },
+  {
+    // Why We Build: Meta Connectivity in Alaska
+    href: 'https://www.youtube-nocookie.com/embed/9bscnQRJ3K4',
+    cls: 'col--6',
+  },
+];
+
+function Media({href, cls}) {
+  return (
+    <div className={clsx('col text--center', cls)}>
+      <iframe
+        className={styles.media}
+        src={href}
+        width="560"
+        height="315"
+        scrolling="no"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+      />
     </div>
   );
 }
@@ -252,11 +291,11 @@ export default function Home() {
   const context = useDocusaurusContext();
   const {siteConfig = {}} = context;
 
-  const [isPartnerModalOpen, setPartnerModalOpen] = React.useState(false);
-  const [partnerModalData, setPartnerModalData] = React.useState(null);
-  const openPartnerModal = (data) => {
-    setPartnerModalData(data);
-    setPartnerModalOpen(true);
+  const [isMemberModalOpen, setMemberModalOpen] = React.useState(false);
+  const [memberModalData, setMemberModalData] = React.useState(null);
+  const openMemberModal = (data) => {
+    setMemberModalData(data);
+    setMemberModalOpen(true);
   };
   const renderBackdrop = (props) => (
     <div className={styles.modalBackdrop} {...props} />
@@ -317,13 +356,13 @@ export default function Home() {
               unreliable and difficult to scale.
             </p>
             <p>
-              To advance our efforts to bring more people online to a faster
-              internet, Meta Connectivity created Terragraph. Terragraph is a
-              wireless technology designed to make deploying gigabit
-              connectivity faster and more efficient in markets where trenching
-              fiber is difficult and cost-prohibitive. This solution can bring
-              fiber-like speeds to your network in a matter of weeks&mdash;and
-              at a fraction of the cost.
+              To advance efforts in bringing more people online to a faster
+              internet, Meta created Terragraph. Terragraph is a wireless
+              technology designed to make deploying gigabit connectivity faster
+              and more efficient in markets where trenching fiber is difficult
+              and cost-prohibitive. This solution can bring fiber-like speeds to
+              your network in a matter of weeks&mdash;and at a fraction of the
+              cost.
             </p>
             <div className={clsx('item', styles.imgContainer)}>
               <picture>
@@ -364,48 +403,42 @@ export default function Home() {
         <section className={clsx('background1', styles.homeContainer)}>
           <div>
             <h2>
-              A Word from Meta Connectivity on What&rsquo;s Next
+              Mission
             </h2>
             <p>
-              Meta Connectivity&rsquo;s vision for the Terragraph project has
-              been to create a robust and sustainable ecosystem capable of
-              connecting more people to a faster internet. Today, we have a
-              robust supply-side ecosystem that includes a leading silicon
-              supplier, advanced antenna module vendors, and several OEMs
-              offering hardware products and related services powered by
-              Terragraph. On the demand side, a multitude of connectivity
-              service providers worldwide have adopted Terragraph-based
-              solutions and are successfully delivering connectivity services to
-              their customers using this technology.
+              The Terragraph Project&rsquo;s mission is to create a robust and
+              sustainable ecosystem capable of connecting more people to a
+              faster internet. Today, there is a robust supply-side ecosystem
+              that includes a leading silicon supplier, advanced antenna module
+              vendors, and several OEMs offering hardware products and related
+              services powered by Terragraph. On the demand side, a multitude of
+              connectivity service providers worldwide have adopted
+              Terragraph-based solutions and are successfully delivering
+              connectivity services to their customers using this technology.
             </p>
             <p>
-              Over the years, Meta Connectivity provided extensive R&D to
-              develop a solution for the challenging last-mile connectivity
-              problem. By contributing technical specifications to standards and
-              working with silicon vendors to implement the Terragraph MAC and
-              PHY in commercially available chipsets, Meta Connectivity
-              empowered its OEM partners to implement Terragraph-based radio
-              solutions for connectivity service providers to adopt around the
-              world. Meta Connectivity also engaged with spectrum regulatory
-              bodies around the globe to make the case for de-licensing the
-              60GHz band to ensure Terragraph&rsquo;s viability as a
-              connectivity solution in more global markets.
+              Over the years, Meta provided extensive R&D to develop a solution
+              for the challenging last-mile connectivity problem. By
+              contributing technical specifications to standards and working
+              with silicon vendors to implement the Terragraph MAC and PHY in
+              commercially available chipsets, Meta empowered its OEM partners
+              to implement Terragraph-based radio solutions for connectivity
+              service providers to adopt around the world. Meta also engaged
+              with spectrum regulatory bodies around the globe to make the case
+              for de-licensing the 60 GHz band to ensure Terragraph&rsquo;s
+              viability as a connectivity solution in more global markets.
             </p>
             <p>
-              We are thrilled with the early success of our OEM partners who
-              have seen positive market traction and sold a substantial number
-              of units globally within the first year of commercial launch. In
-              line with our vision to make this project sustainable, we have
-              also open-sourced the Terragraph software stack &ndash; composed
-              of kernel drivers, user space software components, cloud software,
-              a network management subsystem and millimeter wave network planner
-              solution. By making the software freely available to the
-              community, the entire ecosystem is now able to carry the project
-              forward.
-            </p>
-            <p>
-              Meta hopes Terragraph will continue to increase in adoption and
-              expand people&rsquo;s access to gigabit internet connectivity.
+              Terragraph has joined{' '}
+              <Link to={siteConfig.customFields.lfConnectivityUrl}>
+                Linux Foundation Connectivity
+              </Link>, where the entire software stack is available as open
+              source software &ndash; including kernel drivers, user space
+              components, cloud software, a network management subsystem and
+              millimeter wave network planner solution. By making Terragraph
+              software freely available to the community, the ecosystem is now
+              able to carry the project forward and continue to expand
+              people&rsquo;s access to gigabit internet connectivity.
             </p>
           </div>
         </section>
@@ -415,22 +448,34 @@ export default function Home() {
             styles.homeContainer,
             styles.flexContainer,
           )}>
-          <div id="home-partners">
-            <h2>Partners</h2>
+          <div>
+            <h2>Community</h2>
             <div className={clsx('row', styles.flexCenter)}>
-              {PARTNERS.map((o) => (
-                <Partner
+              {MEMBERS.map((o) => (
+                <Member
                   key={o.name}
                   name={o.name}
                   imageUrl={o.imageUrl}
                   darkStyles={o.darkStyles}
-                  onClick={() => openPartnerModal(o)}
+                  onClick={() => openMemberModal(o)}
                 />
               ))}
             </div>
           </div>
         </section>
         <section className={clsx('background1', styles.homeContainer)}>
+          <div>
+            <h2>
+              Media
+            </h2>
+            <div className={clsx('row', styles.flexCenter)}>
+              {MEDIA.map((o, idx) => (
+                <Media key={idx} href={o.href} cls={o.cls} />
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className={clsx('background2', styles.homeContainer)}>
           <div>
             <h2>
               Resources
@@ -463,14 +508,14 @@ export default function Home() {
         </section>
       </main>
       <Modal
-        show={isPartnerModalOpen}
-        onHide={() => setPartnerModalOpen(false)}
+        show={isMemberModalOpen}
+        onHide={() => setMemberModalOpen(false)}
         className={clsx('shadow--tl', styles.modal)}
         transition={Fade}
         backdropTransition={Fade}
         renderBackdrop={renderBackdrop}
-        aria-label="Partner details">
-        {partnerModalData && <PartnerModal {...partnerModalData} />}
+        aria-label="Details">
+        {memberModalData && <MemberModal {...memberModalData} />}
       </Modal>
     </Layout>
   );

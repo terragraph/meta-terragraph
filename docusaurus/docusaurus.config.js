@@ -32,6 +32,7 @@ const DISCORD_URL = 'https://discord.gg/HQaxCevzus';
 const TGNMS_URL = 'https://github.com/terragraph/tgnms';
 const TGPLANNER_URL = 'https://github.com/terragraph/terragraph-planner';
 const OPENR_URL = 'https://github.com/facebook/openr';
+const LFCONNECTIVITY_URL = 'https://lfconnectivity.org/';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -134,19 +135,6 @@ const config = {
         style: 'dark',
         links: [
           {
-            title: 'Terragraph',
-            items: [
-              {
-                label: 'Overview',
-                to: 'docs/runbook/Overview',
-              },
-              {
-                label: 'Meta Connectivity',
-                href: 'https://www.facebook.com/connectivity',
-              },
-            ],
-          },
-          {
             title: 'Community',
             items: [
               {
@@ -160,22 +148,26 @@ const config = {
             ],
           },
           {
-            title: 'Legal',
-            // Please do not remove the privacy and terms, it's a legal requirement.
+            title: 'Project',
             items: [
               {
-                label: 'Privacy',
-                href: 'https://opensource.facebook.com/legal/privacy/',
+                label: 'LF Connectivity',
+                href: LFCONNECTIVITY_URL,
               },
               {
-                label: 'Terms',
-                href: 'https://opensource.facebook.com/legal/terms/',
+                label: 'Meta',
+                href: 'https://about.meta.com/',
               },
             ],
           },
         ],
-        // Please do not remove the credits, help to publicize Docusaurus :)
-        copyright: `Copyright \u{00A9} ${new Date().getFullYear()} Meta Platforms, Inc. Built with Docusaurus.`,
+        copyright:
+          `<div>` +
+          `Copyright \u{00A9} Terragraph Project a Series of LF Projects, LLC.` +
+          `<br/>` +
+          `For website terms of use, trademark policy and other project policies please see ` +
+          `<a href="https://lfprojects.org" target="_blank" rel="noopener noreferrer">LF Projects</a>.` +
+          `</div>`,
       },
     }),
 
@@ -192,6 +184,7 @@ const config = {
     tgnmsUrl: TGNMS_URL,
     tgPlannerUrl: TGPLANNER_URL,
     openrUrl: OPENR_URL,
+    lfConnectivityUrl: LFCONNECTIVITY_URL,
   },
 };
 
