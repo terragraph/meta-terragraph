@@ -182,23 +182,23 @@
   filter: brightness(0) invert(1);
 }
 
-.partner {
+.member {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.partnerImage {
-  height: 64px;
+.memberImage {
+  height: 80px;
   cursor: pointer;
 }
 
-[data-theme='dark'] .partnerImage {
+[data-theme='dark'] .memberImage {
   filter: brightness(0) invert(1);
 }
 
-.partnerModalImage {
-  height: 64px;
+.memberModalImage {
+  height: 80px;
 }
 
 .modalBackdrop {
@@ -240,4 +240,12 @@
 .modalContents {
   max-height: calc(100vh - 160px);
   overflow-y: auto;
+}
+
+.media {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  max-width: 100%;
+  margin-bottom: 8px;
+  overflow: hidden;
 }
