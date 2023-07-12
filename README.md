@@ -188,6 +188,6 @@ are also specified under this MIT license unless otherwise stated.
 
 [Yocto Project]: https://www.yoctoproject.org
 [Poky]: https://www.yoctoproject.org/software-item/poky/
-[Quick Start Guide]: http://www.yoctoproject.org/docs/1.6.1/yocto-project-qs/yocto-project-qs.html
+[Quick Start Guide]: https://docs.yoctoproject.org/3.1/brief-yoctoprojectqs/brief-yoctoprojectqs.html
 [ESP32 toolchain]: https://docs.espressif.com/projects/esp-idf/en/stable/get-started/linux-setup.html
 [ESP32 wifi module]: https://www.espressif.com/en/products/hardware/esp32/overview
