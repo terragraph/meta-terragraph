@@ -15,7 +15,7 @@ We actively welcome your pull requests.
 In order to accept your pull request, we need you to submit a CLA. You only need
 to do this once to work on any of Meta's open source projects.
 
-Complete your CLA here: [CLA](https://code.facebook.com/cla)
+Complete your CLA here: [https://easycla.lfx.linuxfoundation.org/]
 
 ## Issues
 We use GitHub issues to track public bugs. Please ensure your description is
