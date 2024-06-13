@@ -11,6 +11,7 @@
 
 #include <fbzmq/async/ZmqTimeout.h>
 #include <fbzmq/zmq/Zmq.h>
+#include <folly/Synchronized.h>
 
 #include "MinionApp.h"
 #include "e2e/if/gen-cpp2/Controller_types.h"
@@ -99,13 +100,13 @@ class TrafficApp final : public MinionApp {
       std::optional<std::function<void()>> initialDataCallback = std::nullopt);
 
   /** Running iperf processes. */
-  std::unordered_map<std::string /* id */, pid_t> iperfProcesses_;
+  folly::Synchronized<std::unordered_map<std::string /* id */, pid_t>> iperfProcesses_;
 
   /** Running ping processes. */
-  std::unordered_map<std::string /* id */, pid_t> pingProcesses_;
+  folly::Synchronized<std::unordered_map<std::string /* id */, pid_t>> pingProcesses_;
 
   /** List of unused ports available for iperf. */
-  std::unordered_set<int32_t> iperfAvailablePorts_;
+  folly::Synchronized<std::unordered_set<int32_t>> iperfAvailablePorts_;
 };
 
 } // namespace minion
