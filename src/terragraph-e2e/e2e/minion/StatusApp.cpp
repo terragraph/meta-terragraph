@@ -760,6 +760,19 @@ StatusApp::processFwAck(
             folly::sformat("GPS is not in sync ({})", drMessage->radioMac),
             folly::dynamic::object("sync", false)("mac", drMessage->radioMac),
             std::make_optional(drMessage->radioMac));
+      } else if (SharedObjects::getNodeConfigWrapper()->rlock()
+		 ->getNodeConfig()->popParams.POP_ADDR.empty()) {
+        newStatus = thrift::NodeStatusType::ONLINE;
+        radioStatus_[drMessage->radioMac].gpsSync = false;
+
+        LOG(ERROR) << drMessage->macPrefix() << "GPS is not in sync.";
+        eventClient_->logEventDynamic(
+            thrift::EventCategory::STATUS,
+            thrift::EventId::GPS_SYNC,
+            thrift::EventLevel::ERROR,
+            folly::sformat("GPS is not in sync ({})", drMessage->radioMac),
+            folly::dynamic::object("sync", false)("mac", drMessage->radioMac),
+            std::make_optional(drMessage->radioMac));
       } else {
         newStatus = thrift::NodeStatusType::ONLINE_INITIATOR;
         radioStatus_[drMessage->radioMac].gpsSync = true;
